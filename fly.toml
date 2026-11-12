@@ -1,12 +1,12 @@
 # The public dashboard on Fly.io. The app and its volume are created once, by hand:
 #
 #   fly apps create twitchax-downpower
-#   fly volumes create downpower_data --app twitchax-downpower --region sea --size 3
+#   fly volumes create downpower_data --app twitchax-downpower --region sjc --size 3
 #
 # after which `fly deploy` builds the Dockerfile remotely.
 
 app = 'twitchax-downpower'
-primary_region = 'sea'
+primary_region = 'sjc'
 
 [build]
   dockerfile = 'Dockerfile'

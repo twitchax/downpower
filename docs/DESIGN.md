@@ -67,6 +67,9 @@ Grilling rounds 2 and 3. The facts behind them, including the Wayback coverage c
 
 ### Sources and access
 
+Decisions 10, 12 and 13 assumed the nrc.gov 403, which had lifted by 2026-11-12. They are reopened
+under "Still open".
+
 10. **Reason text comes from our own Wayback pull of every status page.** It covers 1999 to wherever
     Wayback coverage ends (complete through 2024, 79% of 2025, sparse in 2026).
     - For each report date, take the newest 200 capture made 28 or more days after it, when the
@@ -204,22 +207,30 @@ Grilling rounds 2 and 3. The facts behind them, including the Wayback coverage c
 
 ## Still open
 
-- **The daily Event Notification channel and recent reason text.** These wait on the NRC's reply to
-  Decision 13, and on Aaron's test subscription (a `+downpower` alias) to the NRC's "Event Reports"
-  email list.
+- **Decisions 10, 12 and 13, reopened.** On 2026-11-12, nrc.gov answered an honest User-Agent with a
+  200 from both a Fly machine and the home box, on the new Drupal URLs, for pages from 1999 to the
+  present (`data-sources.md`, "The access problem").
+  - Fetching nrc.gov directly could replace the Wayback pull (Decision 10) and the rolling Wayback
+    check (Decision 12), with Wayback kept as the fallback if the block returns.
+  - The NRC email (Decision 13) no longer asks for an allowlist. It asks what the Power column
+    measures and whether a bulk export exists.
+  - Waiting on Aaron's call.
+- **The daily Event Notification channel.** The live EN page may be enough by itself. The NRC's
+  "Event Reports" email list gets a test subscription from `nrc@twitchax.com`, a Cloudflare Email
+  Routing address (live 2026-11-12) that forwards to Aaron's inbox.
 - **What the Power column measures.** The NRC's Data Dictionary says only "Power Reactor Operating
   Capacity for that date (between 0 and 100 percent)". The evidence points to percent of rated
   *thermal* power: a 99% unit annotated "100% ELECTRICAL CAPABILITY", and `Limited to … 1250 MWe`
   grid caps appearing below 100%. Decision 22 doesn't depend on the answer, but the "slope versus
   cliff" analysis does.
-- **The Fly IP test result** (Decision 13).
 - **FFD analysis design** (the staggered difference-in-differences estimator, `BREAKS.md`). This
   comes after PRD-0003.
 
 ## Deploy
 
 - `fly.toml` is at the root.
-  - App `twitchax-downpower`, region `sea`.
+  - App `twitchax-downpower` (created 2026-11-12), region `sjc`. Fly deprecated `sea`, and it refuses
+    new resources there.
   - Always on (`min_machines_running = 1`, no auto-stop), so the ingest task never skips a day.
   - Health check on `/healthz`.
 - **Gotcha: volume ownership.** Fly mounts volumes root-owned, but the image runs as uid 10001, so the
@@ -234,10 +245,10 @@ Grilling rounds 2 and 3. The facts behind them, including the Wayback coverage c
   - Pick the values by measuring peak RSS during a real backfill, not by guessing.
 - **Sizing (PRD-0002):** a 1 GB `shared-cpu-1x` VM and a 5 GB volume. Raw pages are about 1 GB
   per NRC series before compression.
-- **Outward steps, each needing Aaron's go-ahead.** The auto-mode classifier refuses these even
-  after approval, so Aaron runs them himself:
-  - `gh repo create` (approved 2026-11-12)
-  - `fly apps create` (approved for the IP test) and `fly volumes create`
+- **Outward steps, each needing Aaron's go-ahead:**
+  - `gh repo create`, approved 2026-11-12. The auto-mode classifier refuses it even after approval,
+    so Aaron runs it himself.
+  - `fly volumes create`
   - DNS
   - `CODECOV_TOKEN`, once there is real code to cover
 

@@ -6,34 +6,42 @@ map, not as gospel: re-verify a source before building an ingester on it.
 
 ## The access problem (read this first)
 
-**Live `www.nrc.gov` (and `ww2.nrc.gov`, `robots.txt` included) returns an Akamai 403 to every
-non-browser client**: curl with an honest User-Agent, and fetch tools too. Everything NRC below was
-read through Wayback Machine raw captures (`web.archive.org/web/<ts>id_/<url>`). Wayback throttles
-hard: after a few dozen requests it serves empty bodies and "Temporarily Offline" pages, and some
-captures are truncated. EIA is open to curl.
+**As of 2026-11-12, live `www.nrc.gov` answers plain clients again.** Through 2026-11-11 it (and
+`ww2.nrc.gov`, `robots.txt` included) returned an Akamai 403 to every non-browser client, so the
+2026-11-11 probe read everything NRC through Wayback raw captures
+(`web.archive.org/web/<ts>id_/<url>`). On 2026-11-12, curl with the honest User-Agent
+`downpower-research/0.1 (+https://github.com/twitchax/downpower)`, pacing requests 5 s apart, got a
+200 from **both a Fly machine in `sjc` and the home box** for:
 
-Spoofing a browser to get past the bot check is off the table. The legitimate routes:
+- `robots.txt`
+- status pages for 1999-01-05, 2024-07-02, 2026-10-14 and 2026-11-11
+- Event Notification pages for 1999-01-05, 2024-07-02 and 2026-11-11
+- `PowerReactorStatusForLast365Days.txt`
 
-- ask the NRC for bulk access, or for an allowlist
-- use the EIA mirrors described below
-- use Wayback at a polite rate
-- check whether the 403 depends on the client IP (a home box versus a Fly machine)
+Every page came from the new Drupal 11 site, and each old `/reading-rm/doc-collections/event-status/...html`
+URL returned a 301 to its new path. Whether the 403 ended with the migration or with an Akamai rule
+change is unknown, and it may come back: a fetcher should treat a 403 as "stop and alert", never as
+"retry harder". Spoofing a browser stays off the table if it does.
 
-The block is Akamai's bot management, not NRC policy: `robots.txt` (`User-agent: *`) disallows only
-search, `ads.txt` and autodiscover, so the report paths are open to crawlers. The Wayback crawler is
-increasingly blocked too: its 2026-04-10 capture of `www.nrc.gov/data/` is itself a stored 403, which
-is probably why coverage drops in 2025–26 (below). The settled plan is DESIGN.md Decisions 10–13.
+`robots.txt` (2026-11-12) gives `User-agent: *` a `Disallow` only for `ads.txt`, autodiscover and
+site search, with no `Crawl-delay`. `Amazonbot` and `Akamai-SiteSnapshot` are kept out of `/docs/`.
+
+The Wayback crawler was blocked too while the 403 lasted: its 2026-04-10 capture of `www.nrc.gov/data/`
+is itself a stored 403, which is probably why its coverage drops in 2025–26 (below). Wayback also
+throttles hard: after a few dozen requests it serves empty bodies and "Temporarily Offline" pages, and
+some captures are truncated. EIA is open to curl. DESIGN.md Decisions 10–13 were settled while the
+block stood, and are reopened ("Still open" there).
 
 ### Other channels, checked 2026-11-12
 
-None of them carries the reason text outside the block.
+None of them carries the reason text. They were surveyed while the 403 stood.
 
 | Channel | What it has | Usable? |
 |---|---|---|
-| NRC RSS: `public-involve/rss?feed=plant-status`, `?feed=event` | Titles only: "Unit - N% power", "EN number - organization". No dates, no reasons, no event text. | No: it's on www.nrc.gov, behind the block. |
-| data.gov: "U.S. Nuclear Power Reactor Plant Status", "Event Reports for Operating Reactors" | Distribution URLs point to `PowerReactorStatusForLast365Days.txt` (no reasons) and `event-notification-rpt-lastmonth.txt`. CC0. | No: both are on www.nrc.gov. |
+| NRC RSS: `public-involve/rss?feed=plant-status`, `?feed=event` | Titles only: "Unit - N% power", "EN number - organization". No dates, no reasons, no event text. | No: titles only. |
+| data.gov: "U.S. Nuclear Power Reactor Plant Status", "Event Reports for Operating Reactors" | Distribution URLs point to `PowerReactorStatusForLast365Days.txt` (no reasons) and `event-notification-rpt-lastmonth.txt`. CC0. | Numbers only. The 365-day file is live (see below). |
 | ADAMS API (`adams-api.nrc.gov`, Azure) | Not behind Akamai, but needs a free subscription key (`Ocp-Apim-Subscription-Key`). Document links point to `www.nrc.gov/docs/...`. Only scattered EN printouts were found, not a series. | No. |
-| GovDelivery (`service.govdelivery.com/...?code=USNRC`) | An "Event Reports" category. Its contents are unknown until something is subscribed. NRC's public bulletin feed (`updates.loc.gov/sitemap/USNRC.rss`) shows only ADAMS notices. | Maybe. Aaron runs a test subscription. |
+| GovDelivery (`public.govdelivery.com/accounts/USNRC/subscriber/new`) | An "Event Reports" category. Its contents are unknown until something is subscribed. NRC's public bulletin feed (`updates.loc.gov/sitemap/USNRC.rss`) shows only ADAMS notices. The sign-up form carries an MTCaptcha, so a person subscribes. | Maybe. `nrc@twitchax.com` (Cloudflare Email Routing, live 2026-11-12) is the test address. |
 
 **Contacts:**
 - Web Team: `nrc.gov/site-help/feedback`.
@@ -81,7 +89,17 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
     only 9 captures in all.
   - **The site moved to Drupal around Sep 2026.** New pages live at
     `/documents-reports/document-collections/events-reports-associated-with/power-reactor-status-reports/YYYY/YYYYMMDDps`,
-    with no `.html`.
+    with no `.html`, and old URLs 301 there.
+    - The Drupal site re-renders old years too. Live 1999-01-05 and 2026-10-14 pages share one header
+      row, `Unit | Power | Down | Reason or Comment | Change in Report (*) | Scrams (#)`, and the 1999
+      page's `Down` dates are ISO (`1996-02-20`). The format drift listed under "Quality gotchas"
+      describes Wayback's captures of the old site, not live pages.
+    - The 28-day hold still applies: on 2026-11-12, the 2026-11-11 page had only `Unit | Power`, and
+      the 2026-10-14 page had every column (25 rows below 100%, all with a reason).
+    - `PowerReactorStatusForLast365Days.txt` moved to `.../power-reactor-status-reports/PowerReactorStatusForLast365Days.txt`
+      (34,770 lines on 2026-11-12, `ReportDt|Unit|Power`, newest day first).
+    - The Data Dictionary is at
+      `/sites/default/files/doc_library/reading-rm/doc-collections/event-status/reactor-status/data_gov_powerstatus_datadictionary.xls`.
 - **Reason vocabulary is small** (sample: July 2025, 19 of 31 days):
   - 1,786 unit-days, 274 with a reason, **54 distinct strings**.
   - Strings join several tags with `;`, so there are only about **30 atomic tags**.
@@ -142,6 +160,10 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
   - 2010: HTML tables.
   - 2024: mixed-case `label: value` lines.
   - The exact cutover dates are unknown.
+  - These are the eras of Wayback's captures. The live Drupal site re-renders old pages: its
+    1999-01-05 page carries `label: value` fields (`Event Number: 35219 Facility: MILLSTONE ...`) and
+    the unit table header `Unit | SCRAM Code | RX Crit | Initial PWR | Initial RX Mode | Current PWR`.
+    New path: `.../event-notification-reports/YYYY/YYYYMMDDen`.
 - **Pages are not append-only.** Updates re-post old ENs, so deduplicate by EN number and key on the
   notification date. CFR text sometimes wraps across lines.
 - **Fitness for duty:**
