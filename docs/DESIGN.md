@@ -1,8 +1,7 @@
 # downpower: design notes
 
-**Status:** pre-PRD. These are the decisions from the kickoff grilling on 2026-11-11. The open questions
-below are the first round of the next session, and the first PRD is cut from the answers
-(`prd-management`).
+**Status:** decisions settled through grilling round 3 (2026-11-12). The first milestone is
+`.prds/PRD-0002.md`. What is still open, and what each open item waits on, is under "Still open".
 
 ## Intent
 
@@ -61,52 +60,161 @@ against legalization dates looks new.
 9. **Store: SurrealDB 4, embedded (`kv-surrealkv`) on the Fly volume.** `DOWNPOWER_DATA_DIR` points at
    it, and the default is `./data`.
 
-## Open questions: the next round
+## Decisions (settled 2026-11-12)
 
-Each question carries the recommendation from the kickoff. None of them is settled. The facts behind
-them are in `docs/research/data-sources.md`.
+Grilling rounds 2 and 3. The facts behind them, including the Wayback coverage counts, are in
+`docs/research/data-sources.md`.
 
-0. **Getting the NRC data legitimately. This blocks everything else.**
-   - Live nrc.gov returns an Akamai 403 to every non-browser client, and spoofing a browser is out.
-   - The recommendation is a three-layer source plan:
-     - **(a)** EIA's `generator-nuclear-outages` API (daily, 2007 to now, built from the NRC report) as
-       the numeric backbone.
-     - **(b)** Reason text from the NRC daily HTML pages, read through Wayback captures at a polite rate
-       for the backfill.
-     - **(c)** A request to the NRC (open-gov or webmaster contact) for bulk access or an allowlist,
-       to cover the daily update and the 28-day reason fill-in.
-   - Before choosing, test whether the 403 also applies from a Fly machine's IP.
-   - If none of this works, the reason text (the whole point) is backfill-only, and the daily update is
-     numbers-only from EIA.
-1. **What SurrealDB is responsible for.** The recommendation:
-   - Raw pages are content-addressed files on the volume.
-   - Surreal holds the normalized and derived tables.
-   - The database is always rebuildable from the raw pages.
-   - The alternative is Surreal as the system of record for raw pages too.
-2. **Classifying the reason strings.** The vocabulary turned out small: about 54 distinct strings a
-   month, built from about 30 atomic `;`-joined tags. The recommendation:
-   - Split each string into tags.
-   - Map each normalized tag to a cause through a committed, reviewed lookup table.
-   - Fail the ingest loudly on any tag the table doesn't know, so the table grows on purpose.
-   - Use an LLM only to propose entries for new tags, never at runtime.
-   - Open sub-question: how to split "Environmental Conditions" (heat versus kelp versus swell). One
-     option is to join it with temperature data.
-3. **Charting.** The recommendation:
-   - Hand-rolled SVG components. The house precedent is the control-tower ridgelines and the
-     productivity-triage small multiples, where the geometry lives in a pure module and the view only
-     places it. No Leptos UI of Aaron's uses a chart crate.
-   - Canvas only for the dense unit × day barcode: about 95 units × 10K days ≈ 1M cells, which is too
-     much for SVG.
-   - Load the `dataviz` skill before the first chart.
-4. **Hero view and first milestone.** The candidates:
-   - the fleet barcode (unit × day, colored by cause)
-   - lost MWh by cause as a stacked area over time
-   - a per-unit heat-tolerance curve
-   - FFD by state, with markers at legalization dates
-5. **Joins and their order.** The sources: NOAA (air temperature and wet-bulb), USGS (intake water
-   temperature), EIA-860 Schedule 6 (cooling type), EIA-923 Schedule 8D (cooling water temperatures),
-   EIA-923 monthly generation, and EIA-930 hourly output.
-6. **Domain.** `downpower.twitchax.com`, or something else.
+### Sources and access
+
+10. **Reason text comes from our own Wayback pull of every status page.** It covers 1999 to wherever
+    Wayback coverage ends (complete through 2024, 79% of 2025, sparse in 2026).
+    - For each report date, take the newest 200 capture made 28 or more days after it, when the
+      reason column is filled in.
+    - Politeness: one request every 5 seconds, an honest User-Agent naming the repo, and backoff on
+      429s and on Wayback's "Temporarily Offline" page (which it serves as a 200).
+    - About 9,830 pages, roughly 14 hours, run once from the home box.
+    - The "long way" was chosen over taking a third-party copy outright: the raw NRC page is the
+      record.
+11. **Numbers come from EIA's keyless bulk `NUC_STATUS.zip`.** It covers 2007 onward, about a day
+    behind, and supplies the live numbers, capacity, and the days Wayback missed.
+    - It needs no API key; the v2 API does, even for metadata.
+    - Where an NRC page and EIA both exist, the NRC page wins.
+    - EIA's percent outage is 100 minus the NRC power value, so their disagreement rate (shown on
+      `/status`) mostly catches crosswalk mistakes.
+12. **Recent reason text comes from a rolling Wayback check.** A daily job looks for captures of
+    pages that have passed the 28-day hold. If the NRC declines Decision 13, recent days are
+    numbers-only, and their cause reads "reason text not yet available".
+13. **We ask the NRC for access.** The request goes to the NRC Web Team, copying the Chief Data
+    Officer. Aaron sends it.
+    - It asks for an allowlist for a declared User-Agent at no more than one request a minute on the
+      report paths, which robots.txt already allows.
+    - Failing that, it asks for a bulk export of the status table with its comment column, plus the
+      Event Notifications.
+    - It also asks what the Power column measures (see "Still open").
+    - The Fly IP test runs anyway.
+    - Rejected: Wayback's Save Page Now used as a proxy, which just routes our requests around the
+      block, and data from third-party scrapers that fake a browser fingerprint.
+14. **The `mike-welch/NRC_Power_Reactor_Status_Reports` CSVs (1999–2016) are a checker, not a
+    source.** We compare our parse against them once and record the agreement rate in the docs. The
+    CSVs are not vendored: their repo has no license file.
+
+### Storage
+
+15. **Raw pages are the system of record.** Each fetched page is stored zstd-compressed and named by
+    its sha256, plus an append-only manifest (source, URL, capture time, fetch time, hash).
+    - Surreal holds everything derived, analysis outputs included.
+    - A `derived_version` stamp triggers a background rebuild from raw whenever the parser or the tag
+      table changes.
+    - The backfill runs on the home box. The raw files ship to the volume, and the database is
+      rebuilt there by the deployed code.
+    - Backup: Fly's daily volume snapshots plus the home-box copy.
+16. **The unit key is the NRC docket number** (for example, `05000275` is Diablo Canyon 1).
+    - A committed crosswalk CSV maps each docket to every NRC name variant, the EIA plant and
+      generator, a display name, and the retirement date.
+    - It covers units retired since 1999.
+    - A name the crosswalk doesn't know fails the backfill.
+
+### Classification
+
+17. **Causes come in two levels: fine causes grouped into 8 families.** The families are the
+    barcode's colors.
+
+    | Family | Includes |
+    |---|---|
+    | Refueling | refueling outages |
+    | Fuel cycle | coastdown, rod pattern adjustment |
+    | Forced | scrams, forced outages, trips |
+    | Maintenance | planned maintenance |
+    | Equipment limitation | steam generator, transformer, condenser, recirculation pump |
+    | Environmental | heat, water, marine life, weather |
+    | Grid | MWe/MVAR limits, dispatch |
+    | Unattributed | unknown tags, unresolved EN references, everything else |
+
+    `Main Condenser Inefficiencies` sits under Equipment, but its fine cause keeps it addressable for
+    the heat analysis.
+18. **Each tag-table entry has a kind.**
+    - `cause` attributes lost output.
+    - `flag` is context only: grid and weather alerts, conservative ops. Flags are stored as a set on
+      `unit_day`. In the July 2025 sample they mostly sit on full-power rows; for example, Hot Weather
+      Alert is on 38 of 43.
+    - `transition` covers Increasing Power, Startup in Progress and Holding Power. A transition takes
+      the unit's most recent cause within 14 days, or Unattributed if there is none.
+    - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land, and until
+      then counts as Unattributed with the EN number kept.
+    - Matching: normalize (lowercase, collapse whitespace), look up the exact key, and fall back to a
+      few regexes for parametric tags. Every variant is an explicit entry; there is no fuzzy
+      matching.
+19. **A precedence order picks the primary cause on multi-cause days:** Forced > Refueling >
+    Maintenance > Equipment > Environmental > Grid > Fuel cycle > Unattributed.
+    - Every cause stays on the row, so views can count "any mention".
+    - Splitting the loss between causes would imply a precision the text doesn't have.
+    - The heat analysis drops any day that carries a fuel-cycle tag.
+20. **Every label is either observed or attributed.**
+    - *Observed:* the tags as written and the causes the table maps them to. It's deterministic and
+      checkable against the source text.
+    - *Attributed:* everything inferred, meaning the primary cause (Decision 19), transition
+      inheritance, resolved EN references, and the heat-versus-marine split of "Environmental
+      Conditions". Each attributed value records the method that produced it (for example
+      `precedence_v1`, `inherit_14d`) and its evidence.
+    - "Environmental Conditions" is observed as `environmental_unspecified` and is never heat by
+      default.
+    - Charts default to the attributed layer and can be switched to observed only.
+21. **Unknown tags fail at three levels.**
+    - A CI test classifies every distinct string in a committed `reasons.tsv` snapshot.
+    - The backfill and rebuild fail hard on an unknown tag.
+    - The daily ingest stores the row as `unknown_tag` (counted as Unattributed) and lists it on
+      `/status`, so one new tag can't freeze the site.
+    - An LLM only proposes new table entries, offline.
+22. **Lost output = (100 − power) % × net capacity × 24 h, labeled "reported power reduction".**
+    - Capacity comes from `NUC_STATUS` from 2007 on, and from EIA-860 net summer capacity before
+      that.
+    - The heat efficiency loss ("the slope") probably never appears in the NRC column (see "Still
+      open"). It is measured separately, as the monthly gap between actual EIA-923 generation and
+      the generation implied by reported power.
+
+### Views
+
+23. **Charts are hand-rolled.**
+    - SVG views keep their geometry in a pure, unit-tested module, and the view only places it.
+    - The barcode is the one canvas view. It draws from a packed buffer with one byte per cell (3
+      bits family, 5 bits power bucket), about 1.1 MB before gzip, served by a dedicated ETag-cached
+      endpoint.
+    - Chart state lives in the URL query, parsed into one typed struct per view.
+    - Load the `dataviz` skill before building the first chart.
+24. **The hero view is the fleet barcode,** with the stacked area of lost MWh by cause beneath it as
+    its summary. Both share one filter state. It may be revisited.
+25. **Findings are markdown files in git, `findings/NNNN-slug.md`.**
+    - The frontmatter holds the view and its URL state, and the body holds the note.
+    - They are loaded into Surreal on every rebuild so they can be queried. They live in git, not
+      Surreal, because they can't be rebuilt from raw, deserve review, and can be checked in CI: a
+      test asserts every finding's state still parses.
+    - A "save as finding" button, present only in dev mode, writes the file.
+26. **Sequence.**
+    - **PRD-0002:** the status-report ledger as a deployed vertical slice.
+    - **PRD-0003:** Event Notifications. This means a Wayback backfill (Wayback has every
+      business-day page from 1999 to 2024 except federal holidays), EN reference resolution, the
+      scram cross-check, the FFD view, and a Cloudflare Email Routing mailbox for the daily
+      channel if the NRC email list carries full text.
+    - **Then the joins, in order:** EIA-860 cooling type and water body, then NOAA hourly weather
+      (wet-bulb), then EIA-923 generation, then EIA-923 Schedule 8D, then USGS intake temperature,
+      then EIA-930.
+27. **Domain: `downpower.twitchax.com`.** DNS is on Cloudflare. A domain of its own only if the
+    announcement earns one.
+
+## Still open
+
+- **The daily Event Notification channel and recent reason text.** These wait on the NRC's reply to
+  Decision 13, and on Aaron's test subscription (a `+downpower` alias) to the NRC's "Event Reports"
+  email list.
+- **What the Power column measures.** The NRC's Data Dictionary says only "Power Reactor Operating
+  Capacity for that date (between 0 and 100 percent)". The evidence points to percent of rated
+  *thermal* power: a 99% unit annotated "100% ELECTRICAL CAPABILITY", and `Limited to … 1250 MWe`
+  grid caps appearing below 100%. Decision 22 doesn't depend on the answer, but the "slope versus
+  cliff" analysis does.
+- **The Fly IP test result** (Decision 13).
+- **FFD analysis design** (the staggered difference-in-differences estimator, `BREAKS.md`). This
+  comes after PRD-0003.
 
 ## Deploy
 
@@ -124,10 +232,14 @@ them are in `docs/research/data-sources.md`.
   - Cap both in `db::open` with `surrealdb::opt::Config::datastore_option`
     (`surrealkv_max_memtable_size`, `surrealkv_block_cache_capacity`).
   - Pick the values by measuring peak RSS during a real backfill, not by guessing.
-- **Outward steps not yet taken; each needs Aaron's go-ahead:**
-  - `gh repo create`
-  - `fly apps create` and `fly volumes create`
+- **Sizing (PRD-0002):** a 1 GB `shared-cpu-1x` VM and a 5 GB volume. Raw pages are about 1 GB
+  per NRC series before compression.
+- **Outward steps, each needing Aaron's go-ahead.** The auto-mode classifier refuses these even
+  after approval, so Aaron runs them himself:
+  - `gh repo create` (approved 2026-11-12)
+  - `fly apps create` (approved for the IP test) and `fly volumes create`
   - DNS
+  - `CODECOV_TOKEN`, once there is real code to cover
 
 ## Analysis notes, for later
 
@@ -136,6 +248,10 @@ them are in `docs/research/data-sources.md`.
     once-through plants. Coffel & Mankin used dry-bulb air temperature everywhere.
   - A segmented regression per unit separates the *slope* (condenser backpressure, a smooth efficiency
     loss) from the *cliff* (NPDES discharge limits, ultimate-heat-sink tech-spec limits).
+  - If the Power column is thermal (see "Still open"), the slope is invisible in the NRC data: the
+    reactor stays at 100% while MWe drops. Only the cliff shows up there, so the slope has to come
+    from generation data (EIA-923 monthly, EIA-930 hourly). Coffel & Mankin's EIA series has the same
+    blind spot.
   - The early-morning snapshot (4–8am ET) undercounts afternoon derates. EIA-923 monthly energy, and
     possibly EIA-930 hourly nuclear output by balancing area, can measure that bias.
 - **Coastdowns.** End-of-cycle reactivity declines before a refueling outage. Label them, then exclude

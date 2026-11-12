@@ -1,7 +1,8 @@
 # Data sources: what exists, in what shape
 
-From a probe on 2026-11-11. The counts come from samples, and each one says which. Treat this file as
-the starting map, not as gospel: re-verify a source before building an ingester on it.
+From a probe on 2026-11-11, plus the Wayback coverage counts and the survey of other channels on
+2026-11-12. The counts come from samples, and each one says which. Treat this file as the starting
+map, not as gospel: re-verify a source before building an ingester on it.
 
 ## The access problem (read this first)
 
@@ -18,7 +19,30 @@ Spoofing a browser to get past the bot check is off the table. The legitimate ro
 - use Wayback at a polite rate
 - check whether the 403 depends on the client IP (a home box versus a Fly machine)
 
-This is open question 0 in `DESIGN.md`.
+The block is Akamai's bot management, not NRC policy: `robots.txt` (`User-agent: *`) disallows only
+search, `ads.txt` and autodiscover, so the report paths are open to crawlers. The Wayback crawler is
+increasingly blocked too: its 2026-04-10 capture of `www.nrc.gov/data/` is itself a stored 403, which
+is probably why coverage drops in 2025–26 (below). The settled plan is DESIGN.md Decisions 10–13.
+
+### Other channels, checked 2026-11-12
+
+None of them carries the reason text outside the block.
+
+| Channel | What it has | Usable? |
+|---|---|---|
+| NRC RSS: `public-involve/rss?feed=plant-status`, `?feed=event` | Titles only: "Unit - N% power", "EN number - organization". No dates, no reasons, no event text. | No: it's on www.nrc.gov, behind the block. |
+| data.gov: "U.S. Nuclear Power Reactor Plant Status", "Event Reports for Operating Reactors" | Distribution URLs point to `PowerReactorStatusForLast365Days.txt` (no reasons) and `event-notification-rpt-lastmonth.txt`. CC0. | No: both are on www.nrc.gov. |
+| ADAMS API (`adams-api.nrc.gov`, Azure) | Not behind Akamai, but needs a free subscription key (`Ocp-Apim-Subscription-Key`). Document links point to `www.nrc.gov/docs/...`. Only scattered EN printouts were found, not a series. | No. |
+| GovDelivery (`service.govdelivery.com/...?code=USNRC`) | An "Event Reports" category. Its contents are unknown until something is subscribed. NRC's public bulletin feed (`updates.loc.gov/sitemap/USNRC.rss`) shows only ADAMS notices. | Maybe. Aaron runs a test subscription. |
+
+**Contacts:**
+- Web Team: `nrc.gov/site-help/feedback`.
+- Chief Data Officer: Basia Sall, `Basia.Sall@nrc.gov`.
+- Statistical Official: Shaun Anderson, `Shaun.Anderson@nrc.gov`.
+- Public Document Room: `PDR.Resource@nrc.gov`.
+- FOIA: `FOIA.Resource@nrc.gov`.
+
+The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
 
 ## NRC Power Reactor Status Reports (daily % power per unit)
 
@@ -30,6 +54,10 @@ This is open question 0 in `DESIGN.md`.
   - URL: `/reading-rm/doc-collections/event-status/reactor-status/{YYYY}/{YYYY}PowerStatus.txt`.
     The 2026 file is lowercase. There is also a rolling `PowerReactorStatusForLast365Days.txt`.
   - Pipe-delimited, `ReportDt|Unit|Power`, and **no reason text**.
+  - The NRC Data Dictionary (`dd.xls`, linked from each yearly index) defines Power only as "Power
+    Reactor Operating Capacity for that date (between 0 and 100 percent)". It doesn't say thermal or
+    electrical. The evidence points to thermal: Clinton at 99% with the comment "100% ELECTRICAL
+    CAPABILITY", and `Limited to … 1250 MWe` grid caps on rows below 100%.
   - 2024: 34,404 lines, 94 units, 1.3 MB.
   - The date format drifted from `12/31/2008` to `12/31/2024 12:00:00 AM`.
 - **Daily HTML pages, 1999 and later.** These are the only source of the reason text.
@@ -39,6 +67,18 @@ This is open question 0 in `DESIGN.md`.
   - **28-day embargo:** a page shows only `Unit | Power` until it is 28 days old, so the daily ingest
     has to go back and fill in the reasons.
   - About 9,800 pages in total.
+  - **Wayback coverage** (CDX, 2026-11-12): to have the reasons, a capture must be taken 28 or more
+    days after its report date.
+
+    | Years | Report days with such a capture |
+    |---|---|
+    | 1999–2024 | all of them |
+    | 2025 | 289 of 365 (79%) |
+    | 2026, through 10-14 | 45 of 287 (16%) |
+    | Total | 9,830 of 10,149 |
+
+    This counts captures that exist; truncated bodies only show up on fetch. The new Drupal path has
+    only 9 captures in all.
   - **The site moved to Drupal around Sep 2026.** New pages live at
     `/documents-reports/document-collections/events-reports-associated-with/power-reactor-status-reports/YYYY/YYYYMMDDps`,
     with no `.html`.
@@ -46,9 +86,23 @@ This is open question 0 in `DESIGN.md`.
   - 1,786 unit-days, 274 with a reason, **54 distinct strings**.
   - Strings join several tags with `;`, so there are only about **30 atomic tags**.
   - Classification can be rules-first; an LLM may never be needed.
+  - **Every unit-day below 100% had a reason** in the sample (150 of 150).
+  - **The grid and weather tags are mostly context, not causes.** In the sample, they sit mostly on
+    rows at 100% power:
+
+    | Tag | Rows at 100% |
+    |---|---|
+    | Hot Weather Alert | 38 of 43 |
+    | Maximum Generation Alert | 59 of 68 |
+    | Conservative Operations / Ops | 29 of 33 |
+    | Yellow Grid Status / Condition | 15 of 16 |
+    | Heat Advisory | 2 of 2 |
+
+    They are `flag`s in DESIGN.md Decision 18.
   - Examples:
-    - Heat and environment: `Hot Weather Alert`, `Heat Advisory`, `Reduced Power Due to Environmental Conditions`
-      (Diablo Canyon 2 at 55%).
+    - Heat and environment: `Reduced Power Due to Environmental Conditions` (Diablo Canyon 2 at 55%),
+      and the `Hot Weather Alert` and `Heat Advisory` flags.
+    - Transitions: `Increasing Power`, `Startup in Progress`, `Holding Power`.
     - Fuel cycle: `Coastdown to Refueling Outage`, `Refueling Outage`.
     - Equipment: `Transformer Limitation`, `Steam Generator Limitations`,
       `Main Condenser Inefficiencies`, `Single Loop Ops due to Recirculation Pump Trip`, `Forced Outage`,
@@ -67,7 +121,12 @@ This is open question 0 in `DESIGN.md`.
 
 ## NRC Event Notification Reports (ENs)
 
-- **Coverage:** daily pages from **1999**.
+- **Coverage:** daily pages from **1999**, **business days only**. Weekend events land on the next
+  business day's page.
+- **Wayback coverage** (CDX, 2026-11-12):
+  - 1999–2024: 6,504 of 6,783 weekdays. The 279 missing (about 11 a year) are federal holidays.
+  - 2025: 230 pages, about 92% of business days.
+  - 2026: 48 pages.
 - **No full-history bulk file.** `event-notification-rpt-lastmonth.txt` (pipe-delimited, about 74
   columns, including `Cfr Cd1..4`, `Scram Code 1`, `Initial PWR 1` and `Event Text`) covers one month
   only; the last capture is from 2019-11, and whether it is still live is unknown.
@@ -113,6 +172,17 @@ This is open question 0 in `DESIGN.md`.
   - Works as the **bridge from NRC unit names to EIA plant and generator IDs**.
   - It also gives a numeric backbone that needs no nrc.gov access at all. Example: Diablo Canyon 2 has
     a 45% outage on 2025-07-05, matching the NRC report's 55% "Environmental Conditions" line.
+  - **The v2 API needs a key, even for metadata:** a keyless request gets a 403 `API_KEY_MISSING`.
+- **Keyless bulk file: `https://www.eia.gov/opendata/bulk/NUC_STATUS.zip`** (listed in
+  `opendata/bulk/manifest.txt`). This is the one downpower uses (DESIGN.md Decision 11).
+  - 10.8 MB zipped, 57.8 MB of NDJSON.
+  - 522 daily series at US, plant (66) and generator (107) level. Each level has capacity MW, outage
+    MW and percent outage.
+  - Series IDs look like `NUC_STATUS.OUT_PCT.6014-1.D`: EIA plant ID, then generator.
+  - Data from 2007-01-01 with about a one-day lag. Weekend and holiday data arrive the next weekday.
+  - **It is the NRC power column, transformed.** Percent outage equals 100 minus NRC power on all
+    366 days of 2024 for each unit checked (Brunswick 1, Braidwood 2, Catawba 2). Not yet checked for
+    every unit and year.
 - **EIA-860 Schedule 6D, "Cooling"** (sheet in `6_2_EnviroEquip_Y{YYYY}.xlsx`):
   - 2012 and later, plus a 2008 file.
   - Cooling type for all 54 nuclear plants in 2024: `ON` is once-through; `RI`/`RN` are induced- and
@@ -134,3 +204,18 @@ This is open question 0 in `DESIGN.md`.
   - It shows the afternoon derates the morning snapshot misses, but only for balancing areas with few
     plants.
 - **Spreadsheet gotcha:** EIA xlsx files put several title rows above the real header.
+
+## Third-party copies
+
+- **`github.com/mike-welch/NRC_Power_Reactor_Status_Reports`:**
+  - Monthly CSVs, 1999-01 to 2016-12 (216 files, about 29 MB), **with the reason column**:
+    `Date,Unit,Power,Down,Reason or Comment,Change in report (*),Number of Scrams (#)`.
+  - Scraped in 2017–19 with plain requests, before the block. `errors.log` lists missed days (for
+    example, 1999-05-08 to 05-11).
+  - No license file. The underlying NRC text is public domain.
+  - Used only as a checker for our own parse (DESIGN.md Decision 14).
+- **`zachlandes/nrc-event-scraper`:** daily EN JSONL, but its README says it fakes a Chrome TLS
+  fingerprint and User-Agent to get past Akamai. **Off limits.**
+- Copies without reason text, which add nothing: `theedge1620/NRC_event_notifications`,
+  `BSVKey/nrc-reactor-feed`, `L0GIC0L/NPP-Tracker` and askthegrid.com (built on the 365-day file).
+- Also blocked: INL's `lersearch.inl.gov` and `nrcoe.inl.gov` serve curl a Cloudflare challenge.
