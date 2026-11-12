@@ -1,0 +1,31 @@
+[package]
+name = "downpower-server"
+description = "The downpower axum server: SSR, static assets and the cache policy."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "downpower"
+path = "src/main.rs"
+
+[dependencies]
+downpower-app = { workspace = true, features = ["ssr"] }
+leptos = { workspace = true, features = ["ssr"] }
+leptos_axum.workspace = true
+axum.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+surrealdb.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tower.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

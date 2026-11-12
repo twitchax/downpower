@@ -1,0 +1,21 @@
+[package]
+name = "downpower-frontend"
+description = "The downpower wasm entry point: hydrates the server-rendered app."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# cdylib for the browser bundle, rlib so the workspace still builds and lints it on the host.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+downpower-app = { workspace = true, features = ["hydrate"] }
+leptos = { workspace = true, features = ["hydrate"] }
+wasm-bindgen.workspace = true
+console_error_panic_hook.workspace = true
+
+[lints]
+workspace = true

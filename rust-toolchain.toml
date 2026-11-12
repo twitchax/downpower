@@ -1,0 +1,13 @@
+# The single source of truth for the toolchain. CI reads this file (setup-rust-toolchain with no
+# `toolchain:` input), the Dockerfile copies it before `cargo chef cook`, and every dev box picks it
+# up through rustup. `repo_sync` tests fail if a workflow or Dockerfile pins its own.
+[toolchain]
+# Stable, coverage included, against the house nightly default: SurrealDB 4's `surrealdb-diskann`
+# 0.61 fails to compile on every nightly from 2026-09-01 through 2026-11-12 (E0277, `Arc<B>: Batch`
+# at src/graph/index.rs:507) while stable 1.99 builds it. Return to a dated nightly once a nightly
+# builds it again; `cargo +nightly check -p surrealdb-diskann` is the probe. llvm-tools stays for
+# `cargo llvm-cov`, which runs on stable here (`#[coverage(off)]` is inert, so `main` is counted).
+channel = "1.99"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+# The hydrate half of the Leptos app compiles to wasm.
+targets = ["wasm32-unknown-unknown"]

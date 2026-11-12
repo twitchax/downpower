@@ -1,0 +1,203 @@
+/*
+ * Instrument design language: canonical tokens.
+ * Every surface (app, dashboard, slide deck, editor theme, demo) imports or
+ * copies this file. Change a value here, never in a surface.
+ * Hex comments are the defaults at --accent-h: 250, for tools that cannot read
+ * oklch (Monaco themes, ffmpeg overlays, Figma), light first, then dark.
+ *
+ * Dark is the default. Light is designed, not inverted: every color is
+ * light-dark(<light>, <dark>), and each token keeps its role and its contrast
+ * in both. A surface picks with one attribute, on the root or any subtree:
+ *   (none)               dark
+ *   data-theme="light"   light
+ *   data-theme="auto"    follows the OS (prefers-color-scheme)
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* The one knob: the accent hue. Neutrals are tinted toward it, so changing it
+     re-tints the whole surface. 250 is a cool blue; pick per product. */
+  --accent-h: 250;
+
+  /* Neutrals: cool, tinted to the accent hue. Never pure gray, black or white.
+     Dark steps raise toward light; light steps recede toward dark, so bg-0 is
+     always the canvas and each step is one further from it. */
+  --bg-0: light-dark(oklch(0.985 0.003 var(--accent-h)), oklch(0.155 0.010 var(--accent-h)));  /* #f9fafc #090d10  canvas, editor, slide */
+  --bg-1: light-dark(oklch(0.965 0.005 var(--accent-h)), oklch(0.185 0.011 var(--accent-h)));  /* #f1f4f7 #0f1317  sidebars, panels, bars */
+  --bg-2: light-dark(oklch(0.94 0.007 var(--accent-h)), oklch(0.225 0.012 var(--accent-h)));   /* #e8ecf0 #181c21  raised: inputs, hover, chips, quoted block */
+  --bg-3: light-dark(oklch(0.91 0.008 var(--accent-h)), oklch(0.26 0.012 var(--accent-h)));    /* #dde2e6 #20252a  pressed, code inside a raised block */
+  --line: light-dark(oklch(0.88 0.008 var(--accent-h)), oklch(0.29 0.008 var(--accent-h)));    /* #d4d8dd #282c2f  every 1px rule and border */
+  --grid: light-dark(oklch(0.945 0.006 var(--accent-h)), oklch(0.225 0.008 var(--accent-h)));  /* #eaedf1 #191c1f  background grid lines */
+  /* Ratios are on bg-0, light / dark. */
+  --text-1: light-dark(oklch(0.24 0.010 var(--accent-h)), oklch(0.94 0.008 var(--accent-h))); /* #1c2024 #e7ecf0  primary text, answers (15.7 / 16.4:1) */
+  --text-2: light-dark(oklch(0.44 0.010 var(--accent-h)), oklch(0.72 0.008 var(--accent-h))); /* #4e5358 #a1a5a9  secondary, thought (7.4 / 7.9:1) */
+  --text-3: light-dark(oklch(0.52 0.010 var(--accent-h)), oklch(0.58 0.008 var(--accent-h))); /* #65696f #777b7f  metadata, timestamps, IDs (5.3 / 4.6:1) */
+
+  /* Accent ramp. Deep is a fill only (white text on it 7.5 / 8.4:1). Mid and sky
+     are text in both themes, so in light both darken and sky ends up below mid:
+     the ramp is a set of roles, not a lightness order. */
+  --accent-deep: light-dark(oklch(0.45 0.125 var(--accent-h)), oklch(0.42 0.13 var(--accent-h))); /* #045797 #004e90  primary action fill, selection */
+  --accent-mid: light-dark(oklch(0.52 0.14 var(--accent-h)), oklch(0.66 0.12 var(--accent-h)));   /* #116bb5 #5497d9  "live": working markers, links (5.3 / 6.3:1) */
+  --accent-sky: light-dark(oklch(0.46 0.10 var(--accent-h)), oklch(0.80 0.08 var(--accent-h)));   /* #265b8d #97c2f0  focus ring, highlight, identifiers (6.8 / 10.5:1) */
+  /* The gradient's bright stop, the same in both themes. Never text. */
+  --accent-peak: oklch(0.80 0.08 var(--accent-h));                                                 /* #97c2f0 */
+  --accent-gradient: linear-gradient(90deg, var(--accent-deep), var(--accent-mid), var(--accent-peak), var(--accent-mid), var(--accent-deep));
+  --selection: light-dark(color-mix(in oklab, var(--accent-deep) 12%, var(--bg-0)), color-mix(in oklab, var(--accent-deep) 45%, var(--bg-1)));
+
+  /* Signal hues, from the Okabe-Ito colorblind-safe set. Each means exactly one
+     thing, always alongside a shape and words. Dark uses the published values;
+     light keeps each hue and darkens it until it reads as text. Both clear 4.5:1
+     on bg-0 and bg-1 (put state labels there), and stay apart from each other,
+     the live accent and the text steps under simulated protan, deutan and tritan
+     vision (worst CIEDE2000 5.6 light, 5.3 dark). */
+  --attention: light-dark(oklch(0.54 0.113 77), #e69f00);   /* #936400  orange: needs you, outcome unknown, modified */
+  --fault: light-dark(oklch(0.48 0.130 48), #d55e00);       /* #964101  vermillion: failed, deletions */
+  --pass: light-dark(oklch(0.52 0.107 166), #009e73);       /* #047c5a  bluish green: passed, added */
+  --scheduled: light-dark(oklch(0.56 0.118 346), #cc79a7);  /* #a55583  reddish purple: waiting on a timer */
+  --add: color-mix(in srgb, var(--pass) 14%, transparent);
+  --del: color-mix(in srgb, var(--fault) 14%, transparent);
+
+  /* Owner hue: an entity's own color on its name only, never as a state.
+     Set --who-h per entity, spread apart and away from the signal hues, and
+     use oklch(var(--who-l) var(--who-c) var(--who-h)). These are numbers, which
+     light-dark() cannot carry, so both themes' values sit with the theme switch. */
+
+  /* Chart series: categorical identity, in this order, never cycled. Validated
+     per theme (protan, deutan and tritan simulated, worst CIEDE2000 16.1 light,
+     14.9 dark), each at least 3:1 on bg-0 and bg-1, where charts sit. Kept off
+     the accent and signal hues, so a series never reads as a state. */
+  --series-1: light-dark(oklch(0.58 0.095 215), oklch(0.66 0.11 215));  /* #1e889d #21a3bc  cyan */
+  --series-2: light-dark(oklch(0.62 0.12 100), oklch(0.66 0.13 100));   /* #97871d #a5931b  ochre */
+  --series-3: light-dark(oklch(0.47 0.17 300), oklch(0.56 0.17 300));   /* #6b3baa #8557c8  violet */
+
+  /* Type: one face, everywhere. */
+  --font: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --text-xs: 11px;   /* chips, legends, status bar, section labels */
+  --text-sm: 12px;   /* metadata, tree rows */
+  --text-md: 13px;   /* base: product UI */
+  --text-lg: 15px;   /* panel titles */
+  --text-xl: 22px;   /* empty states; slides and title cards scale up from here */
+  --leading: 1.55;
+
+  /* Space: 4px base. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  /* Shape: square. The 2px radius exists only for small chips. */
+  --radius: 0;
+  --radius-chip: 2px;
+  --grid-size: 24px;
+
+  /* Motion (Emil Kowalski's curves). Product stays under 300ms. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --dur-fast: 120ms;   /* hover, press */
+  --dur-ui: 200ms;     /* panels, popovers */
+  --dur-state: 320ms;  /* marker and state transitions */
+  --dur-drift: 2.4s;   /* the energy gradient, linear, infinite */
+
+  /* Slides: a 960×540 canvas where 1px is 1pt, scaled to the screen whole.
+     Decks stay dark: a deck never sets data-theme. */
+  --slide-w: 960px;
+  --slide-h: 540px;
+  --slide-display: 56px;  /* title cards, dividers, end slide */
+  --slide-figure: 64px;   /* the hero number */
+  --slide-title: 28px;    /* a content slide's takeaway */
+  --slide-stat: 24px;     /* stat strips, before → after values */
+  --slide-body: 16px;     /* prose; detail text (labels, notes, callouts) uses --text-sm */
+
+  /* Slide motion: the product curves at cinematic durations. */
+  --dur-slide: 480ms;     /* slide enter; the outgoing slide fades over --dur-state */
+  --dur-build: 600ms;     /* a build or step rises into place */
+  --stagger: 60ms;        /* between builds revealed together */
+  --dur-count: 1200ms;    /* count-ups, meters, gauges */
+  --dur-replay: 2400ms;   /* a timeline replaying its run */
+}
+
+/* The theme switch. Any element can carry it, so a subtree can differ from
+   its page. Colors follow color-scheme through light-dark(); the owner-hue
+   numbers cannot, so they are set per theme here, the light pair twice (once
+   per way of reaching light). */
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+[data-theme="auto"] { color-scheme: light dark; }
+:root, [data-theme="dark"], [data-theme="auto"] { --who-l: 0.80; --who-c: 0.085; }
+[data-theme="light"] { --who-l: 0.50; --who-c: 0.10; }
+@media (prefers-color-scheme: light) {
+  [data-theme="auto"] { --who-l: 0.50; --who-c: 0.10; }
+}
+
+/* The background grid, for canvases, empty states, slides and demo frames.
+   Fixed to the viewport so a grid panel lines up with the grid around it. */
+.grid-bg {
+  background-color: var(--bg-0);
+  background-image:
+    linear-gradient(var(--grid-line, var(--grid)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line, var(--grid)) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-attachment: fixed;
+}
+
+/* Optional crosshair corners on a framed panel. */
+.framed { position: relative; border: 1px solid var(--line); }
+.framed::before, .framed::after {
+  content: ""; position: absolute; width: 10px; height: 10px; border: 0 solid var(--text-3);
+}
+.framed::before { top: -5px; left: -5px; border-top-width: 1px; border-left-width: 1px; }
+.framed::after { bottom: -5px; right: -5px; border-bottom-width: 1px; border-right-width: 1px; }
+
+/* The one moving gradient: a 2px top edge on work that is running ... */
+.drift {
+  background: var(--accent-gradient);
+  background-size: 200% 100%;
+  animation: drift var(--dur-drift) linear infinite;
+}
+@keyframes drift {
+  from { background-position: 0% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ... and its 1px vertical spine on a running log. Finished spines are a plain var(--line) rule. */
+.spine-live {
+  background: linear-gradient(var(--accent-peak), var(--accent-mid), var(--accent-deep), var(--accent-mid), var(--accent-peak));
+  background-size: 100% 200%;
+  animation: drift-v var(--dur-drift) linear infinite;
+}
+@keyframes drift-v {
+  from { background-position: 0 0%; }
+  to { background-position: 0 -200%; }
+}
+
+/* Section labels: the only uppercase text. */
+.label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* State markers. Shape carries the meaning; color only reinforces it. */
+.marker { position: relative; flex: none; display: inline-block; box-sizing: border-box; width: 8px; height: 8px; border: 1.5px solid var(--text-3); }
+.marker.sm { width: 6px; height: 6px; border-width: 1px; }
+.marker.working { border-color: var(--accent-mid); background: var(--accent-mid); }
+.marker.scheduled { border-style: dashed; border-color: var(--scheduled); }
+.marker.attention { border-color: var(--attention); background: var(--attention); transform: rotate(45deg) scale(0.8); }
+.marker.pass { border-color: var(--pass); background: var(--pass); }
+.marker.fault { border-color: transparent; }
+.marker.fault::before, .marker.fault::after { content: ""; position: absolute; left: -1px; top: 2.5px; width: 9px; height: 1.5px; background: var(--fault); transform: rotate(45deg); }
+.marker.fault::after { transform: rotate(-45deg); }
+.marker.closed::before { content: ""; position: absolute; left: -2px; top: 2.5px; width: 10px; height: 1.5px; background: var(--text-3); transform: rotate(-45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

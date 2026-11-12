@@ -1,0 +1,112 @@
+[workspace]
+members = ["crates/downpower-app", "crates/downpower-frontend", "crates/downpower-server"]
+resolver = "3"
+
+# Shared metadata: crates inherit it with `field.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Aaron Roney <twitchax@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/twitchax/downpower"
+
+[workspace.dependencies]
+downpower-app = { path = "crates/downpower-app" }
+# Lockstep family: leptos, leptos_meta, leptos_router and leptos_axum release together and must share
+# one series, and axum follows the series leptos_axum is built on. The generator resolves them as a set.
+leptos = "0.8"
+leptos_meta = "0.8"
+leptos_router = "0.8"
+leptos_axum = "0.8"
+# Lucide only: the umbrella `icondata` crate pulls every icon set into the build.
+icondata_lu = "0.1"
+icondata_core = "0.1"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+pretty_assertions = "1"
+tower = { version = "0.5", features = ["util"] }
+# Embedded only: no network protocols or TLS, just the SurrealKV engine on the data dir.
+surrealdb = { version = "4", default-features = false, features = ["kv-surrealkv"] }
+tempfile = "3"
+
+# cargo-leptos: builds the server (`bin-package`, SSR) and the wasm hydrate bundle
+# (`lib-package`) into target/site.
+[[workspace.metadata.leptos]]
+name = "downpower"
+bin-package = "downpower-server"
+# The package is `downpower-server`, but the binary users run is `downpower`: name both,
+# or cargo-leptos looks for an executable named after the package.
+bin-target = "downpower"
+bin-exe-name = "downpower"
+lib-package = "downpower-frontend"
+# Speed for the server, size for the wasm bundle (see [profile.wasm-release]).
+lib-profile-release = "wasm-release"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+# Content-hashed asset names, so a browser can never pair a new page with a stale wasm bundle.
+# hash.txt must ship next to the server binary (leptos reads it relative to the executable).
+hash-files = true
+style-file = "style/main.scss"
+assets-dir = "public"
+site-addr = "127.0.0.1:3000"
+reload-port = 3001
+end2end-cmd = "npx playwright test"
+end2end-dir = "tests/e2e"
+
+# Lints live here, once, and every crate opts in with `[lints] workspace = true` (conclave's
+# mechanism; it replaces crate-root `#![deny]` attributes, which drifted between lib.rs and main.rs
+# and skipped the xtask crate in razel). Groups sit at priority -1 so a specific lint can override
+# them. Gate: `cargo make clippy` (`-D warnings`).
+[workspace.lints.rust]
+unused = { level = "deny", priority = -1 }
+# `cargo llvm-cov` on nightly sets `coverage_nightly`; declare it so check-cfg stays quiet.
+unexpected_cfgs = { level = "deny", check-cfg = ["cfg(coverage_nightly)"] }
+
+[workspace.lints.clippy]
+# `all` covers conclave's `correctness` + `complexity` (plus `style`, `suspicious`, `perf`).
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# Library and binary code returns errors; only tests may unwrap or expect (each test module opens
+# with `#![allow(clippy::unwrap_used, clippy::expect_used)]`). Never allow `too_many_lines`,
+# `too_many_arguments` or `needless_pass_by_value`: split the function, introduce a struct, or
+# take a reference.
+unwrap_used = "deny"
+expect_used = "deny"
+# Leptos's `#[component]` expands to a wrapper fn that drops attributes, so every component would
+# trip this and no `#[must_use]` can satisfy it (ironpad allows it workspace-wide too).
+must_use_candidate = "allow"
+
+[profile.release]
+# Ship size and speed over link time: one codegen unit and fat LTO, symbols stripped.
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+# Release-like codegen without the expensive LTO / single-CGU link, for quick perf checks.
+[profile.dev-release]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
+debug = 1
+strip = false
+
+# Release optimizations with full debug info and no LTO, so profilers see legible symbols.
+[profile.profiling]
+inherits = "release"
+debug = 2
+lto = false
+strip = false
+
+# The hydrate bundle: optimized for download size, not speed. cargo-leptos selects it through
+# `lib-profile-release`, so the server binary keeps the speed-optimized `release` profile.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+panic = "abort"

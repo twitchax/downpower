@@ -1,0 +1,43 @@
+// App styles on the instrument design language. `_tokens.scss` is a copy of the
+// `instrument-design-language` skill's tokens.css (re-copy it to pick up changes); every color,
+// size and duration below is one of its tokens.
+@use "tokens";
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  font-size: var(--text-md);
+  line-height: var(--leading);
+  color: var(--text-1);
+}
+
+main { padding: var(--s-8); display: grid; gap: var(--s-6); max-width: 960px; }
+h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
+.panel { background: var(--bg-1); padding: var(--s-4); display: grid; gap: var(--s-3); }
+.muted { color: var(--text-2); margin: 0; }
+.meta { color: var(--text-3); font-size: var(--text-sm); }
+.row { display: flex; align-items: center; gap: var(--s-2); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  font: 500 var(--text-sm) var(--font);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.btn:hover { background: var(--bg-2); color: var(--text-1); }
+.btn:focus-visible { outline: 1px solid var(--accent-sky); outline-offset: 1px; }
+// The one filled button per view.
+.btn.primary { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+
+.icon { width: 14px; height: 14px; flex: none; }

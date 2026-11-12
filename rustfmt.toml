@@ -1,0 +1,5 @@
+# House style, byte-identical across kord, ratrod and conclave: wide lines, compact struct literals.
+max_width = 200
+struct_lit_width = 40
+# No unstable options: the toolchain is stable (see rust-toolchain.toml), and stable rustfmt warns
+# about each one and ignores it.

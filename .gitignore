@@ -1,0 +1,9 @@
+/target
+# Coverage output from `cargo make codecov`.
+coverage.lcov
+# Playwright (optional `cargo make playwright`).
+node_modules/
+playwright-report/
+test-results/
+# The local data dir (DOWNPOWER_DATA_DIR default): the embedded store and the raw NRC page cache.
+/data/

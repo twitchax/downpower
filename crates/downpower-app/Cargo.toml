@@ -1,0 +1,27 @@
+[package]
+name = "downpower-app"
+description = "The downpower components, pages and document shell."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+leptos.workspace = true
+leptos_meta.workspace = true
+leptos_router.workspace = true
+icondata_lu.workspace = true
+icondata_core.workspace = true
+
+# The server builds this crate with `ssr`, the browser bundle with `hydrate`.
+[features]
+default = []
+hydrate = ["leptos/hydrate"]
+ssr = ["leptos/ssr", "leptos_meta/ssr", "leptos_router/ssr"]
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true
