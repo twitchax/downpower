@@ -68,7 +68,7 @@ jobs:
           fail_ci_if_error: false
 
   audit:
-    # RustSec advisories against Cargo.lock; needs no config.
+    # RustSec advisories against Cargo.lock; the ignores and their reasons are in .cargo/audit.toml.
     name: Security audit
     runs-on: ubuntu-latest
     steps:

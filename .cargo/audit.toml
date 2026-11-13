@@ -1,0 +1,12 @@
+# cargo-audit config, read by CI's Security audit job.
+
+[advisories]
+ignore = [
+    # rsa 0.9 (Marvin Attack timing side channel) and crypto-bigint 0.5 (non-constant-time
+    # arithmetic) arrive only through jsonwebtoken, which SurrealDB uses to verify tokens on its
+    # network sign-in path. downpower embeds the store (kv-surrealkv) and never signs in, so no key
+    # or token reaches either crate. Drop both once surrealdb-core ships a jsonwebtoken on rsa >= 0.10
+    # and crypto-bigint >= 0.7.6.
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0387",
+]
