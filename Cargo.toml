@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/downpower-app", "crates/downpower-frontend", "crates/downpower-server"]
+members = ["crates/downpower-app", "crates/downpower-frontend", "crates/downpower-ingest", "crates/downpower-server"]
 resolver = "3"
 
 # Shared metadata: crates inherit it with `field.workspace = true`.
@@ -12,6 +12,7 @@ repository = "https://github.com/twitchax/downpower"
 
 [workspace.dependencies]
 downpower-app = { path = "crates/downpower-app" }
+downpower-ingest = { path = "crates/downpower-ingest" }
 # Lockstep family: leptos, leptos_meta, leptos_router and leptos_axum release together and must share
 # one series, and axum follows the series leptos_axum is built on. The generator resolves them as a set.
 leptos = "0.8"
@@ -33,6 +34,16 @@ tower = { version = "0.5", features = ["util"] }
 # Embedded only: no network protocols or TLS, just the SurrealKV engine on the data dir.
 surrealdb = { version = "4", default-features = false, features = ["kv-surrealkv"] }
 tempfile = "3"
+# The ingest side: a polite HTTP client (rustls, gzip to spare nrc.gov the bandwidth), dates, the
+# raw store's hashing and compression, and the JSONL manifest.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "gzip"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hex = "0.4"
+zstd = "0.13"
+clap = { version = "4", features = ["derive"] }
 
 # cargo-leptos: builds the server (`bin-package`, SSR) and the wasm hydrate bundle
 # (`lib-package`) into target/site.

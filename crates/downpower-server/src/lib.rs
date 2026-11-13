@@ -1,6 +1,7 @@
 //! The axum server around the app: SSR routes, static assets from the site root, a health check,
 //! and the cache policy. `router()` is a pure function of the options, so tests drive it in-process.
 
+pub mod cli;
 pub mod db;
 pub mod http_policy;
 pub mod tests;

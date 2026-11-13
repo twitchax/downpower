@@ -1,0 +1,29 @@
+[package]
+name = "downpower-ingest"
+description = "Everything between a source and the database: the polite NRC fetcher and the raw store."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+tokio = { workspace = true, features = ["time"] }
+reqwest.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+pretty_assertions.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["time", "test-util"] }
+
+[lints]
+workspace = true

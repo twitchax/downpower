@@ -67,37 +67,38 @@ Grilling rounds 2 and 3. The facts behind them, including the Wayback coverage c
 
 ### Sources and access
 
-Decisions 10, 12 and 13 assumed the nrc.gov 403, which had lifted by 2026-11-12. They are reopened
-under "Still open".
+Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 lifted
+(`data-sources.md`, "The access problem"). The Wayback plan they replaced survives as the fallback.
 
-10. **Reason text comes from our own Wayback pull of every status page.** It covers 1999 to wherever
-    Wayback coverage ends (complete through 2024, 79% of 2025, sparse in 2026).
-    - For each report date, take the newest 200 capture made 28 or more days after it, when the
-      reason column is filled in.
-    - Politeness: one request every 5 seconds, an honest User-Agent naming the repo, and backoff on
-      429s and on Wayback's "Temporarily Offline" page (which it serves as a 200).
-    - About 9,830 pages, roughly 14 hours, run once from the home box.
-    - The "long way" was chosen over taking a third-party copy outright: the raw NRC page is the
-      record.
+10. **Pages come from nrc.gov directly.** Every status page from 1999 on, and every Event
+    Notification page, is fetched once into the raw store (Decision 15).
+    - Politeness: one request every 5 seconds under `downpower/0.1 (+https://github.com/twitchax/downpower)`,
+      the User-Agent the NRC email names, with backoff on 429s and 5xx responses.
+    - A page is settled once it has been fetched far enough past its date: 28 days for a status page
+      (the reason column fills in), 2 days for an EN page. The fetcher resumes by skipping settled
+      pages.
+    - **A 403 stops the run and alerts.** If the block returns, the fallback is the original plan: for
+      each report date, the newest Wayback capture taken 28 or more days after it.
+    - About 10,200 status pages (roughly 14 hours) and 7,000 EN pages (roughly 10 hours), run once
+      from the home box.
+    - The raw NRC page stays the record; no third-party copy is taken outright.
 11. **Numbers come from EIA's keyless bulk `NUC_STATUS.zip`.** It covers 2007 onward, about a day
-    behind, and supplies the live numbers, capacity, and the days Wayback missed.
+    behind, and supplies capacity and the days the NRC pages miss.
     - It needs no API key; the v2 API does, even for metadata.
     - Where an NRC page and EIA both exist, the NRC page wins.
     - EIA's percent outage is 100 minus the NRC power value, so their disagreement rate (shown on
       `/status`) mostly catches crosswalk mistakes.
-12. **Recent reason text comes from a rolling Wayback check.** A daily job looks for captures of
-    pages that have passed the 28-day hold. If the NRC declines Decision 13, recent days are
-    numbers-only, and their cause reads "reason text not yet available".
-13. **We ask the NRC for access.** The request goes to the NRC Web Team, copying the Chief Data
-    Officer. Aaron sends it.
-    - It asks for an allowlist for a declared User-Agent at no more than one request a minute on the
-      report paths, which robots.txt already allows.
-    - Failing that, it asks for a bulk export of the status table with its comment column, plus the
-      Event Notifications.
-    - It also asks what the Power column measures (see "Still open").
-    - The Fly IP test runs anyway.
-    - Rejected: Wayback's Save Page Now used as a proxy, which just routes our requests around the
-      block, and data from third-party scrapers that fake a browser fingerprint.
+12. **Recent reason text comes from re-fetching.** The daily job fetches the newest status page
+    (numbers only) and the page that has just passed its 28-day hold (reasons). Until a day passes
+    the hold, its cause reads "reason text not yet available".
+13. **The NRC email.** Aaron sent it to the Chief Data Officer on 2026-11-12.
+    - It asks what the Power column measures (see "Still open") and whether a bulk export of both
+      series exists.
+    - It tells the NRC that, absent an export, downpower reads the archive once at the rate and
+      User-Agent in Decision 10.
+    - Its first draft asked for an allowlist. That ask was dropped when the 403 lifted.
+    - Rejected while the block stood: Wayback's Save Page Now used as a proxy, which just routes our
+      requests around the block, and data from third-party scrapers that fake a browser fingerprint.
 14. **The `mike-welch/NRC_Power_Reactor_Status_Reports` CSVs (1999–2016) are a checker, not a
     source.** We compare our parse against them once and record the agreement rate in the docs. The
     CSVs are not vendored: their repo has no license file.
@@ -195,10 +196,9 @@ under "Still open".
     - A "save as finding" button, present only in dev mode, writes the file.
 26. **Sequence.**
     - **PRD-0002:** the status-report ledger as a deployed vertical slice.
-    - **PRD-0003:** Event Notifications. This means a Wayback backfill (Wayback has every
-      business-day page from 1999 to 2024 except federal holidays), EN reference resolution, the
-      scram cross-check, the FFD view, and a Cloudflare Email Routing mailbox for the daily
-      channel if the NRC email list carries full text.
+    - **PRD-0003:** Event Notifications. Their raw pages are fetched alongside the status pages
+      (Decision 10), so this means the EN parser, EN reference resolution, the scram cross-check,
+      the FFD view, and the email channel if the NRC list carries full text.
     - **Then the joins, in order:** EIA-860 cooling type and water body, then NOAA hourly weather
       (wet-bulb), then EIA-923 generation, then EIA-923 Schedule 8D, then USGS intake temperature,
       then EIA-930.
@@ -207,22 +207,14 @@ under "Still open".
 
 ## Still open
 
-- **Decisions 10, 12 and 13, reopened.** On 2026-11-12, nrc.gov answered an honest User-Agent with a
-  200 from both a Fly machine and the home box, on the new Drupal URLs, for pages from 1999 to the
-  present (`data-sources.md`, "The access problem").
-  - Fetching nrc.gov directly could replace the Wayback pull (Decision 10) and the rolling Wayback
-    check (Decision 12), with Wayback kept as the fallback if the block returns.
-  - The NRC email (Decision 13) no longer asks for an allowlist. It asks what the Power column
-    measures and whether a bulk export exists.
-  - Waiting on Aaron's call.
 - **The daily Event Notification channel.** The live EN page may be enough by itself. The NRC's
   "Event Reports" email list gets a test subscription from `nrc@twitchax.com`, a Cloudflare Email
   Routing address (live 2026-11-12) that forwards to Aaron's inbox.
-- **What the Power column measures.** The NRC's Data Dictionary says only "Power Reactor Operating
-  Capacity for that date (between 0 and 100 percent)". The evidence points to percent of rated
-  *thermal* power: a 99% unit annotated "100% ELECTRICAL CAPABILITY", and `Limited to … 1250 MWe`
-  grid caps appearing below 100%. Decision 22 doesn't depend on the answer, but the "slope versus
-  cliff" analysis does.
+- **What the Power column measures.** Waiting on the NRC's reply (Decision 13). Its Data
+  Dictionary says only "Power Reactor Operating Capacity for that date (between 0 and 100
+  percent)". The evidence points to percent of rated *thermal* power: a 99% unit annotated "100%
+  ELECTRICAL CAPABILITY", and `Limited to … 1250 MWe` grid caps appearing below 100%. Decision 22
+  doesn't depend on the answer, but the "slope versus cliff" analysis does.
 - **FFD analysis design** (the staggered difference-in-differences estimator, `BREAKS.md`). This
   comes after PRD-0003.
 
