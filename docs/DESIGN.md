@@ -146,9 +146,14 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       the unit's most recent cause within 14 days, or Unattributed if there is none.
     - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land, and until
       then counts as Unattributed with the EN number kept.
-    - Matching: normalize (lowercase, collapse whitespace), look up the exact key, and fall back to a
-      few regexes for parametric tags. Every variant is an explicit entry; there is no fuzzy
-      matching.
+    - Matching (revised 2026-11-13): normalize (lowercase, collapse whitespace), split the reason
+      into tags on `;` and line breaks, and look up each tag's exact key. A tag no key matches goes
+      through an ordered list of keyword rules, each a committed regex mapped to one entry, and the
+      first rule that matches wins. The observed layer records which key or rule matched. There is
+      still no fuzzy matching (no edit distance, no embeddings).
+    - Rules, because exact keys can't cover the archive: it holds 21,864 distinct tags, 12,212 of
+      them used once, and before about 2019 the column is free text. The top 1,000 keys cover 81%
+      of tag uses, and eleven rough keyword rules already cover 87%.
 19. **A precedence order picks the primary cause on multi-cause days:** Forced > Refueling >
     Maintenance > Equipment > Environmental > Grid > Fuel cycle > Unattributed.
     - Every cause stays on the row, so views can count "any mention".
@@ -164,9 +169,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - "Environmental Conditions" is observed as `environmental_unspecified` and is never heat by
       default.
     - Charts default to the attributed layer and can be switched to observed only.
-21. **Unknown tags fail at three levels.**
-    - A CI test classifies every distinct string in a committed `reasons.tsv` snapshot.
-    - The backfill and rebuild fail hard on an unknown tag.
+21. **Unknown tags fail at three levels** (revised 2026-11-13). A tag is *known* when a key or rule
+    matches it, or when the committed `catalog/unclassified.tsv` lists it, which accepts it on
+    purpose as Unattributed.
+    - A CI test checks that every distinct tag in the committed `catalog/reasons.tsv` snapshot of
+      the archive is known. `cargo xtask reasons` regenerates the snapshot from the raw store.
+    - The backfill and rebuild fail hard on a tag that isn't known.
     - The daily ingest stores the row as `unknown_tag` (counted as Unattributed) and lists it on
       `/status`, so one new tag can't freeze the site.
     - An LLM only proposes new table entries, offline.
