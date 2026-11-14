@@ -3,6 +3,7 @@
 //! from a unit's observed days, and every attributed value names its method and its evidence.
 
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 
 use crate::tags::{Cause, Family, Label, Tags};
 
@@ -48,18 +49,31 @@ pub fn observe<'a>(tags: &'a Tags, reason: &str) -> Observed<'a> {
     observed
 }
 
-/// The inference that produced an attributed cause.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The inference that produced an attributed cause, or why there is none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Method {
     /// The highest-precedence cause on the day (Decision 19).
+    #[serde(rename = "precedence_v1")]
     PrecedenceV1,
     /// A transition that continued the unit's last attributed cause, at most [`INHERIT_DAYS`] back.
     /// Inherited days extend the chain, so a run of transitions carries one cause through.
+    #[serde(rename = "inherit_14d")]
     Inherit14d,
     /// Only EN references, not yet resolved through the Event Notifications (PRD-0003).
+    #[serde(rename = "xref_unresolved")]
     XrefUnresolved,
     /// Nothing on the day names a cause.
+    #[serde(rename = "no_cause")]
     NoCause,
+    /// The page is inside its 28-day hold, so its reason text isn't published yet (Decision 12).
+    #[serde(rename = "reason_pending")]
+    ReasonPending,
+    /// The NRC published no report for the day, and the power comes from EIA (Decision 11).
+    #[serde(rename = "no_report")]
+    NoReport,
+    /// The reason carries a tag nothing knows, so the row is quarantined (Decision 21).
+    #[serde(rename = "unknown_tag")]
+    UnknownTag,
 }
 
 impl Method {
@@ -71,12 +85,16 @@ impl Method {
             Self::Inherit14d => "inherit_14d",
             Self::XrefUnresolved => "xref_unresolved",
             Self::NoCause => "no_cause",
+            Self::ReasonPending => "reason_pending",
+            Self::NoReport => "no_report",
+            Self::UnknownTag => "unknown_tag",
         }
     }
 }
 
 /// What an attributed cause rests on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Evidence {
     /// The tag that named the cause.
     Tag(String),
@@ -84,6 +102,8 @@ pub enum Evidence {
     InheritedFrom(NaiveDate),
     /// The EN references, numbered where the tag carried one.
     Xrefs(Vec<Option<u32>>),
+    /// The tags nothing knows, on a quarantined row.
+    Unknown(Vec<String>),
     None,
 }
 
@@ -97,6 +117,12 @@ pub struct Attributed<'a> {
 }
 
 impl Attributed<'_> {
+    /// An Unattributed value, with the method that says why.
+    #[must_use]
+    pub const fn unattributed(method: Method, evidence: Evidence) -> Self {
+        Self { cause: None, method, evidence }
+    }
+
     /// The family the barcode colors this unit-day with.
     #[must_use]
     pub fn family(&self) -> Family {
@@ -119,52 +145,50 @@ const fn precedence_v1(family: Family) -> u8 {
     }
 }
 
-/// Attributes one unit's days, which must be in date order. Days missing from the slice still
-/// count toward the inheritance gap, since it is measured in calendar days.
+/// Attributes one unit's days, one at a time and in date order, so a rebuild can stream them.
+/// Days never passed in still count toward the inheritance gap, since it is measured in calendar
+/// days.
+#[derive(Debug, Clone, Default)]
+pub struct Attributor<'a> {
+    /// The last attributed day, the day its cause was observed, and the cause.
+    last: Option<(NaiveDate, NaiveDate, &'a Cause)>,
+}
+
+impl<'a> Attributor<'a> {
+    /// Attributes `date`, which must follow every day passed in before it.
+    pub fn attribute(&mut self, date: NaiveDate, observed: &Observed<'a>) -> Attributed<'a> {
+        // Ties keep the cause named first, since `min_by_key` returns the first minimum.
+        if let Some((cause, tag)) = observed.causes.iter().min_by_key(|(cause, _)| precedence_v1(cause.family)) {
+            self.last = Some((date, date, cause));
+            return Attributed {
+                cause: Some(cause),
+                method: Method::PrecedenceV1,
+                evidence: Evidence::Tag(tag.clone()),
+            };
+        }
+        if observed.transition {
+            return match self.last.filter(|(previous, ..)| (date - *previous).num_days() <= INHERIT_DAYS) {
+                Some((_, origin, cause)) => {
+                    self.last = Some((date, origin, cause));
+                    Attributed {
+                        cause: Some(cause),
+                        method: Method::Inherit14d,
+                        evidence: Evidence::InheritedFrom(origin),
+                    }
+                }
+                None => Attributed::unattributed(Method::Inherit14d, Evidence::None),
+            };
+        }
+        if !observed.xrefs.is_empty() {
+            return Attributed::unattributed(Method::XrefUnresolved, Evidence::Xrefs(observed.xrefs.clone()));
+        }
+        Attributed::unattributed(Method::NoCause, Evidence::None)
+    }
+}
+
+/// Attributes one unit's days, which must be in date order (see [`Attributor`]).
 #[must_use]
 pub fn attribute<'a>(days: &[(NaiveDate, Observed<'a>)]) -> Vec<Attributed<'a>> {
-    // The last attributed day, the day its cause was observed, and the cause.
-    let mut last: Option<(NaiveDate, NaiveDate, &'a Cause)> = None;
-    days.iter()
-        .map(|(date, observed)| {
-            // Ties keep the cause named first, since `min_by_key` returns the first minimum.
-            if let Some((cause, tag)) = observed.causes.iter().min_by_key(|(cause, _)| precedence_v1(cause.family)) {
-                last = Some((*date, *date, cause));
-                return Attributed {
-                    cause: Some(cause),
-                    method: Method::PrecedenceV1,
-                    evidence: Evidence::Tag(tag.clone()),
-                };
-            }
-            if observed.transition {
-                return match last.filter(|(previous, ..)| (*date - *previous).num_days() <= INHERIT_DAYS) {
-                    Some((_, origin, cause)) => {
-                        last = Some((*date, origin, cause));
-                        Attributed {
-                            cause: Some(cause),
-                            method: Method::Inherit14d,
-                            evidence: Evidence::InheritedFrom(origin),
-                        }
-                    }
-                    None => Attributed {
-                        cause: None,
-                        method: Method::Inherit14d,
-                        evidence: Evidence::None,
-                    },
-                };
-            }
-            if !observed.xrefs.is_empty() {
-                return Attributed {
-                    cause: None,
-                    method: Method::XrefUnresolved,
-                    evidence: Evidence::Xrefs(observed.xrefs.clone()),
-                };
-            }
-            Attributed {
-                cause: None,
-                method: Method::NoCause,
-                evidence: Evidence::None,
-            }
-        })
-        .collect()
+    let mut attributor = Attributor::default();
+    days.iter().map(|(date, observed)| attributor.attribute(*date, observed)).collect()
 }

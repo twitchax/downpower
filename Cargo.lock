@@ -1475,6 +1475,8 @@ dependencies = [
  "leptos",
  "leptos_axum",
  "pretty_assertions",
+ "serde",
+ "serde_json",
  "surrealdb",
  "tempfile",
  "tokio",

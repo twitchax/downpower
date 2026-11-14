@@ -161,7 +161,36 @@ fn uat_attribution_every_value_names_a_method_that_matches_its_evidence() {
             Method::Inherit14d => value.cause.is_some() == matches!(value.evidence, Evidence::InheritedFrom(_)),
             Method::XrefUnresolved => value.cause.is_none() && matches!(value.evidence, Evidence::Xrefs(_)),
             Method::NoCause => value.cause.is_none() && value.evidence == Evidence::None,
+            Method::ReasonPending | Method::NoReport | Method::UnknownTag => false,
         };
         assert!(consistent, "{value:?}");
     }
+}
+
+#[test]
+fn uat_attribution_methods_serialize_as_their_stored_names() {
+    let methods = [
+        Method::PrecedenceV1,
+        Method::Inherit14d,
+        Method::XrefUnresolved,
+        Method::NoCause,
+        Method::ReasonPending,
+        Method::NoReport,
+        Method::UnknownTag,
+    ];
+    for method in methods {
+        assert_eq!(serde_json::to_value(method).unwrap(), method.as_str());
+        assert_eq!(serde_json::from_value::<Method>(method.as_str().into()).unwrap(), method);
+    }
+}
+
+#[test]
+fn uat_attribution_evidence_serializes_by_kind() {
+    assert_eq!(
+        serde_json::to_value(Evidence::Tag("refueling outage".to_owned())).unwrap(),
+        serde_json::json!({"tag": "refueling outage"})
+    );
+    assert_eq!(serde_json::to_value(Evidence::InheritedFrom(day(1))).unwrap(), serde_json::json!({"inherited_from": "2025-07-01"}));
+    assert_eq!(serde_json::to_value(Evidence::Xrefs(vec![Some(49154), None])).unwrap(), serde_json::json!({"xrefs": [49154, null]}));
+    assert_eq!(serde_json::to_value(Evidence::None).unwrap(), serde_json::json!("none"));
 }

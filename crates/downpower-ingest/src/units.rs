@@ -13,7 +13,7 @@ use serde::Deserialize;
 use crate::Res;
 
 /// The catalog, embedded so the binary carries it.
-const CATALOG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../catalog/units.csv"));
+pub(crate) const CATALOG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../catalog/units.csv"));
 
 /// An NRC docket number, e.g. `05000275` (Diablo Canyon 1). Part 50 licenses are `05000xxx` and
 /// Part 52 licenses (Vogtle 3 and 4) are `05200xxx`.

@@ -35,6 +35,11 @@ pass takes about 14 hours, and the events pass about 10.
 `downpower fetch --series nuc-status` stores EIA's keyless `NUC_STATUS` bulk file (daily power and
 capacity per generator from 2007) in the same raw store, in one request.
 
+`downpower serve` builds the ledger (one row per in-service unit-day) from the raw store into
+SurrealDB when the stored build is missing or was made by another parser or catalog. It rebuilds in
+the background, about 30 seconds for the whole archive, and keeps serving the previous build until
+the new one is done.
+
 ## Install
 
 ```bash
@@ -53,7 +58,7 @@ The reason classifier's tables live in `catalog/`. After a fetch, `cargo xtask r
 `catalog/reasons.tsv` (every distinct tag on the stored status pages), `cargo xtask rules` shows what
 each key and rule in `catalog/tags.toml` catches, and `cargo xtask unclassified` rewrites the list of
 tags accepted as Unattributed. CI fails when a tag in the snapshot is unknown. `cargo xtask summary`
-attributes every stored unit-day and prints the reported power reduction by family, and
+builds the ledger as a rebuild does and prints the reported power reduction by family, and
 `cargo xtask eia` compares the stored status pages with the newest stored `NUC_STATUS`.
 
 ## License

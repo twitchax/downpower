@@ -111,7 +111,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     its sha256, plus an append-only manifest (source, URL, capture time, fetch time, hash).
     - Surreal holds everything derived, analysis outputs included.
     - A `derived_version` stamp triggers a background rebuild from raw whenever the parser or the tag
-      table changes.
+      table changes. Each build is its own table, and the previous one keeps serving until the new
+      one is complete (revised 2026-11-14).
     - The backfill runs on the home box. The raw files ship to the volume, and the database is
       rebuilt there by the deployed code.
     - Backup: Fly's daily volume snapshots plus the home-box copy.
@@ -180,9 +181,10 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     purpose as Unattributed.
     - A CI test checks that every distinct tag in the committed `catalog/reasons.tsv` snapshot of
       the archive is known. `cargo xtask reasons` regenerates the snapshot from the raw store.
-    - The backfill and rebuild fail hard on a tag that isn't known.
-    - The daily ingest stores the row as `unknown_tag` (counted as Unattributed) and lists it on
-      `/status`, so one new tag can't freeze the site.
+    - The backfill and an operator's rebuild fail hard on a tag that isn't known.
+    - The daily ingest and the server's own background rebuild store the row as `unknown_tag`
+      (counted as Unattributed) and list it on `/status`, so one new tag can't freeze the site
+      (revised 2026-11-14: the server's rebuild runs unattended after a deploy).
     - An LLM only proposes new table entries, offline.
 22. **Lost output = (100 − power) % × net capacity × 24 h, labeled "reported power reduction".**
     - Capacity comes from `NUC_STATUS` from 2007 on, and from EIA-860 net summer capacity before

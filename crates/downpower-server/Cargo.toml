@@ -24,6 +24,8 @@ surrealdb.workspace = true
 downpower-ingest.workspace = true
 clap.workspace = true
 chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

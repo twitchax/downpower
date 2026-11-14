@@ -16,8 +16,12 @@ use tracing_subscriber::EnvFilter;
 use downpower_server::cli::{self, Cli, Command};
 
 #[cfg_attr(coverage_nightly, coverage(off))]
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    downpower_server::runtime()?.block_on(run())
+}
+
+#[cfg_attr(coverage_nightly, coverage(off))]
+async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
@@ -45,8 +49,10 @@ async fn serve(data_dir: &std::path::Path) -> anyhow::Result<()> {
     // Open the store before binding, so a missing or unwritable volume fails the deploy's health
     // check rather than the first ingest. Held for the server's lifetime; the ingest task will
     // take a clone.
-    let _store = downpower_server::db::open(data_dir).await?;
+    let store = downpower_server::db::open(data_dir).await?;
     tracing::info!(data_dir = %data_dir.display(), "store open");
+    // A build from another parser or catalog keeps serving while the new one builds behind it.
+    drop(downpower_server::ledger::ensure_current(&store, data_dir).await?);
 
     let addr = options.site_addr;
     let listener = TcpListener::bind(addr).await.with_context(|| format!("binding {addr}"))?;

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use surrealdb::Surreal;
 use surrealdb::engine::local::{Db, SurrealKv};
+use surrealdb::opt::Config;
 
 /// The env var naming the data dir: the Fly volume in production (see `fly.toml`).
 pub const DATA_DIR_VAR: &str = "DOWNPOWER_DATA_DIR";
@@ -18,6 +19,12 @@ const DEFAULT_DATA_DIR: &str = "data";
 
 /// The database's directory under the data dir.
 pub const DB_DIR: &str = "downpower.db";
+
+/// `SurrealKV`'s block cache and memtable caps. Uncapped, both scale with the host: the cache takes
+/// half its memory less 1 GiB (about 30 GiB on the home box) and the memtable up to 1 GiB. At
+/// 64 MiB each, a million-row rebuild peaks near 200 MB of RSS (PRD-0002.log.md, T-008).
+const BLOCK_CACHE: u64 = 64 << 20;
+const MEMTABLE: u64 = 64 << 20;
 
 const NAMESPACE: &str = "downpower";
 const DATABASE: &str = "downpower";
@@ -31,8 +38,8 @@ pub fn data_dir(var: Option<OsString>) -> PathBuf {
     var.filter(|value| !value.is_empty()).map_or_else(|| PathBuf::from(DEFAULT_DATA_DIR), PathBuf::from)
 }
 
-/// Opens the store under `data_dir`, creating both on first use, and selects downpower's
-/// namespace and database.
+/// Opens the store under `data_dir`, creating both on first use, selects downpower's namespace and
+/// database, and defines the tables the repository modules read.
 ///
 /// # Errors
 ///
@@ -41,8 +48,14 @@ pub fn data_dir(var: Option<OsString>) -> PathBuf {
 pub async fn open(data_dir: &Path) -> anyhow::Result<Store> {
     std::fs::create_dir_all(data_dir).with_context(|| format!("creating the data dir {}", data_dir.display()))?;
     let path = data_dir.join(DB_DIR);
-    let store = Surreal::new::<SurrealKv>(path.as_path()).await.with_context(|| format!("opening the store at {}", path.display()))?;
+    let config = Config::new()
+        .datastore_option("surrealkv_block_cache_capacity", BLOCK_CACHE)
+        .datastore_option("surrealkv_max_memtable_size", MEMTABLE);
+    let store = Surreal::new::<SurrealKv>((path.as_path(), config))
+        .await
+        .with_context(|| format!("opening the store at {}", path.display()))?;
     store.use_ns(NAMESPACE).use_db(DATABASE).await.context("selecting the namespace and database")?;
+    crate::ledger::define(&store).await?;
     Ok(store)
 }
 
@@ -61,17 +74,19 @@ mod unit {
         assert_eq!(data_dir(Some("/data".into())), PathBuf::from("/data"));
     }
 
-    #[tokio::test]
-    async fn open_creates_the_store_and_round_trips_a_record() {
-        let tmp = tempfile::tempdir().unwrap();
-        // A nested, not-yet-existing dir: `open` must create it, as on a fresh volume.
-        let data = tmp.path().join("fresh");
+    #[test]
+    fn open_creates_the_store_and_round_trips_a_record() {
+        crate::tests::block_on(async {
+            let tmp = tempfile::tempdir().unwrap();
+            // A nested, not-yet-existing dir: `open` must create it, as on a fresh volume.
+            let data = tmp.path().join("fresh");
 
-        let store = open(&data).await.unwrap();
-        store.query("CREATE probe:one SET ok = true").await.unwrap().check().unwrap();
-        let ok: Vec<bool> = store.query("SELECT VALUE ok FROM probe:one").await.unwrap().take(0).unwrap();
+            let store = open(&data).await.unwrap();
+            store.query("CREATE probe:one SET ok = true").await.unwrap().check().unwrap();
+            let ok: Vec<bool> = store.query("SELECT VALUE ok FROM probe:one").await.unwrap().take(0).unwrap();
 
-        assert_eq!(ok, vec![true]);
-        assert!(data.join(DB_DIR).exists());
+            assert_eq!(ok, vec![true]);
+            assert!(data.join(DB_DIR).exists());
+        });
     }
 }

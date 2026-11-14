@@ -10,8 +10,8 @@ use clap::{Parser, Subcommand};
 
 use chrono::{Datelike as _, NaiveDate};
 
-use downpower_ingest::attribution::{self, Observed};
 use downpower_ingest::eia::NucStatus;
+use downpower_ingest::ledger::{self, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
 use downpower_ingest::status::{self, StatusPage};
 use downpower_ingest::tags::{self, Family, Matched, Tags};
@@ -44,8 +44,8 @@ enum Command {
         #[arg(long, default_value_t = 8)]
         examples: usize,
     },
-    /// Observes and attributes every in-service unit-day on the stored status pages, and prints the
-    /// reported power reduction by family and method. Fails on an unknown unit or tag.
+    /// Builds the ledger from the raw store, as a rebuild does, and prints the reported power
+    /// reduction by family and method. Fails on an unknown unit or tag.
     Summary,
     /// Compares the stored status pages with the newest stored `NUC_STATUS`: how often the two
     /// disagree on a unit-day's power, and the in-service unit-days only EIA reports.
@@ -163,58 +163,31 @@ fn rules(examples: usize) -> anyhow::Result<()> {
 }
 
 /// One unit's in-service days: the date, the Power column, and what the reason says.
-type UnitDays<'a> = Vec<(chrono::NaiveDate, u8, Observed<'a>)>;
-
 fn summary(data_dir: &Path) -> anyhow::Result<()> {
     ensure!(data_dir.join("raw/manifest.jsonl").exists(), "no raw store under {}; run `downpower fetch` first", data_dir.display());
     let store = RawStore::open(data_dir)?;
     let tags = Tags::catalog()?;
     let units = Units::catalog()?;
-    let mut by_unit: std::collections::BTreeMap<&str, UnitDays> = std::collections::BTreeMap::new();
-    let mut unknown: HashMap<String, u64> = HashMap::new();
-    for (date, record) in store.latest(Series::PowerStatus)? {
-        let Some(hash) = &record.sha256 else { continue };
-        let StatusPage::Report(rows) = status::parse(&store.get(hash)?).with_context(|| format!("the status page for {date}"))? else {
-            continue;
-        };
-        for row in rows {
-            let Some(detail) = row.detail else { continue };
-            let unit = units.by_nrc_name(&row.unit).with_context(|| format!("{date}: unknown unit {:?}", row.unit))?;
-            if !unit.in_service(date) {
-                continue;
-            }
-            let observed = attribution::observe(&tags, detail.reason.as_deref().unwrap_or_default());
-            for tag in &observed.unknown {
-                *unknown.entry(tag.clone()).or_default() += 1;
-            }
-            by_unit.entry(unit.docket.as_str()).or_default().push((date, row.power, observed));
-        }
-    }
-    ensure!(unknown.is_empty(), "{} unknown tags, e.g. {:?}", unknown.len(), unknown.keys().take(5).collect::<Vec<_>>());
 
     // Per family and per method: unit-days below 100%, and the reduction in percent-points.
-    let mut families: std::collections::BTreeMap<Family, (u64, u64)> = std::collections::BTreeMap::new();
-    let mut methods: std::collections::BTreeMap<&str, (u64, u64)> = std::collections::BTreeMap::new();
-    let mut unattributed: HashMap<(&str, String), u64> = HashMap::new();
-    let mut unit_days = 0u64;
-    for (docket, days) in &by_unit {
-        let observed: Vec<_> = days.iter().map(|(date, _, observed)| (*date, observed.clone())).collect();
-        for ((_, power, _), attributed) in days.iter().zip(attribution::attribute(&observed)) {
-            unit_days += 1;
-            if *power == 100 {
-                continue;
-            }
-            let points = u64::from(100 - power);
-            for slot in [families.entry(attributed.family()).or_default(), methods.entry(attributed.method.as_str()).or_default()] {
+    let mut families: BTreeMap<Family, (u64, u64)> = BTreeMap::new();
+    let mut methods: BTreeMap<&'static str, (u64, u64)> = BTreeMap::new();
+    let mut unattributed: HashMap<(String, String), u64> = HashMap::new();
+    let started = std::time::Instant::now();
+    let built = ledger::build(&store, &tags, &units, Unknowns::Fail, |days| {
+        for day in days.into_iter().filter(|day| day.power < 100) {
+            let points = u64::from(100 - day.power);
+            for slot in [families.entry(day.family).or_default(), methods.entry(day.method.as_str()).or_default()] {
                 slot.0 += 1;
                 slot.1 += points;
             }
-            if attributed.family() == Family::Unattributed {
-                let why = attributed.cause.map_or_else(|| attributed.method.as_str().to_owned(), |cause| cause.name.clone());
-                *unattributed.entry((docket, why)).or_default() += points;
+            if day.family == Family::Unattributed {
+                let why = day.cause.unwrap_or_else(|| day.method.as_str().to_owned());
+                *unattributed.entry((day.docket, why)).or_default() += points;
             }
         }
-    }
+        Ok(())
+    })?;
     let lost: u64 = families.values().map(|(_, points)| points).sum();
     #[allow(clippy::cast_precision_loss, reason = "shares and unit-years for a human to read")]
     let line = |name: &str, (days, points): (u64, u64)| {
@@ -224,7 +197,8 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
             100.0 * points as f64 / lost.max(1) as f64
         );
     };
-    println!("{unit_days} in-service unit-days on {} units; reported power reduction by family:", by_unit.len());
+    println!("built in {:.1?}: {built:?}", started.elapsed());
+    println!("{} in-service unit-days; reported power reduction by family:", built.days);
     for (family, totals) in &families {
         line(&format!("{family:?}"), *totals);
     }
@@ -236,7 +210,7 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
     largest.sort_by_key(|(_, points)| std::cmp::Reverse(*points));
     println!("largest Unattributed shares, by unit and cause or method:");
     for ((docket, why), points) in largest.iter().take(12) {
-        let name = units.all().iter().find(|unit| unit.docket.as_str() == *docket).map_or("?", |unit| unit.name.as_str());
+        let name = units.all().iter().find(|unit| unit.docket.as_str() == docket).map_or("?", |unit| unit.name.as_str());
         #[allow(clippy::cast_precision_loss, reason = "unit-years for a human to read")]
         let years = *points as f64 / 100.0 / 365.25;
         println!("  {name:<24} {why:<20} {years:>6.1} unit-years");
