@@ -53,14 +53,22 @@ builds its own ledger from it.
 ```bash
 downpower backfill                       # fetch everything, then rebuild and fail on anything unknown
 tar -C data -cf raw.tar raw              # the blobs are zstd already
-fly ssh sftp shell -a twitchax-downpower # then, at the prompt: put raw.tar /data/raw.tar
-fly ssh console -a twitchax-downpower -C "sh -c 'tar -xf /data/raw.tar -C /data && rm /data/raw.tar && chown -R 10001:10001 /data/raw'"
-fly machine restart -a twitchax-downpower
+fly volumes create downpower_data -a twitchax-downpower -r sjc -s 5
+fly deploy --ha=false -e DOWNPOWER_FETCH=off  # the first boot fetches nothing, so the tar lands alone
+fly ips allocate-v6 -a twitchax-downpower && fly ips allocate-v4 --shared -a twitchax-downpower
+fly ssh sftp put -a twitchax-downpower raw.tar /data/raw.tar
+fly ssh console -a twitchax-downpower -C "sh -c 'tar -xf /data/raw.tar -C /data && rm /data/raw.tar'"
+fly deploy --ha=false                    # fetching on, as fly.toml sets it
 ```
 
-On restart, `serve` sees raw content its last build didn't read and rebuilds in the background. The
-tar replaces `/data/raw/manifest.jsonl`, so this is for the first ship: after that, the daily job
-keeps the volume's raw store current itself.
+A deploy of a prebuilt image (`--image`) doesn't allocate the app's public addresses, hence the
+`ips` line; a shared IPv4 and an IPv6 cost nothing.
+
+Every deploy passes `--ha=false`: a second machine would get its own volume and its own update loop.
+The image's entrypoint hands whatever `fly ssh` wrote as root to the server's user at boot. On the
+second deploy, `serve` sees raw content its last build didn't read and rebuilds in the background.
+The tar replaces `/data/raw/manifest.jsonl`, so this is for the first ship: after that, the update
+loop keeps the volume's raw store current itself.
 
 ## Install
 

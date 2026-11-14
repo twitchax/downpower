@@ -256,10 +256,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     new resources there.
   - Always on (`min_machines_running = 1`, no auto-stop), so the ingest task never skips a day.
   - Health check on `/healthz`.
-- **Gotcha: volume ownership.** Fly mounts volumes root-owned, but the image runs as uid 10001, so the
-  first boot's `db::open` will fail with permission denied. The recommended fix is an entrypoint that
-  runs as root, chowns `/data`, and then drops to uid 10001 with `setpriv` (util-linux ships in
-  `debian:stable-slim`). It isn't done in the scaffold because only a real Fly volume can test it.
+- **Gotcha: volume ownership.** Fly mounts volumes root-owned, and `fly ssh` writes files as root, but
+  the server runs as uid 10001. `docker/entrypoint.sh` starts as root, chowns whatever under `/data`
+  isn't 10001's, and drops to 10001 with `setpriv` (util-linux, in `debian:stable-slim`).
+  `docker/smoke.sh` checks it over a root-owned Docker volume, in CI and as `cargo make docker-smoke`.
+- **Gotcha: one machine.** `fly deploy` makes two machines by default, and each would get its own
+  volume and its own update loop fetching from nrc.gov. Every deploy passes `--ha=false`.
 - **Gotcha: SurrealKV sizes its memory from the host.**
   - With the defaults, the smoke run on a 256 GB box logged a 4 GiB max memtable and a ~122 GiB block
     cache. On the 1 GB Fly VM that is an OOM waiting for the first bulk ingest.

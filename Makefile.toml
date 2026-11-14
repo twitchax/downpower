@@ -162,3 +162,9 @@ npx playwright test "$@"
 [tasks.docker-build]
 command = "docker"
 args = ["build", "-t", "downpower:latest", "."]
+
+# The entrypoint over a root-owned volume, as Fly mounts one; CI runs the same script.
+[tasks.docker-smoke]
+dependencies = ["docker-build"]
+command = "docker/smoke.sh"
+args = ["downpower:latest"]

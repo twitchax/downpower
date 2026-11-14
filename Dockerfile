@@ -35,13 +35,18 @@ COPY --from=builder /app/target/release/downpower /app/downpower
 COPY --from=builder /app/target/site /app/site
 # hash-files: leptos reads hash.txt next to the binary to find the hashed assets.
 COPY --from=builder /app/target/release/hash.txt /app/hash.txt
-USER app
-# The [workspace.metadata.leptos] settings, as the env vars cargo-leptos would have passed.
-ENV LEPTOS_OUTPUT_NAME=downpower \
+# No `USER app`: the entrypoint starts as root to hand the data directory (on Fly, a root-owned
+# volume) to uid 10001, then drops to it before the server starts.
+COPY --chmod=755 docker/entrypoint.sh /app/entrypoint.sh
+# The [workspace.metadata.leptos] settings, as the env vars cargo-leptos would have passed, and the
+# data directory, where fly.toml mounts the volume.
+ENV DOWNPOWER_DATA_DIR=/data \
+    LEPTOS_OUTPUT_NAME=downpower \
     LEPTOS_SITE_ROOT=/app/site \
     LEPTOS_SITE_PKG_DIR=pkg \
     LEPTOS_SITE_ADDR=0.0.0.0:3000 \
     LEPTOS_HASH_FILES=true \
     LEPTOS_ENV=PROD
 EXPOSE 3000
-ENTRYPOINT ["/usr/bin/tini", "--", "/app/downpower"]
+# `-s`: on Fly, tini runs under Fly's own init rather than as PID 1, so it registers as a subreaper.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/app/entrypoint.sh", "/app/downpower"]

@@ -1,7 +1,7 @@
 # The public dashboard on Fly.io. The app and its volume are created once, by hand:
 #
 #   fly apps create twitchax-downpower
-#   fly volumes create downpower_data --app twitchax-downpower --region sjc --size 3
+#   fly volumes create downpower_data --app twitchax-downpower --region sjc --size 5
 #
 # after which `fly deploy` builds the Dockerfile remotely.
 
@@ -12,15 +12,14 @@ primary_region = 'sjc'
   dockerfile = 'Dockerfile'
 
 # The embedded SurrealDB file and the raw NRC page cache live on the volume, so a deploy never
-# re-downloads 25 years of reports. Fly mounts volumes root-owned while the image runs as uid
-# 10001, so the first deploy has to settle who owns /data (see docs/DESIGN.md, "Deploy").
+# re-downloads 25 years of reports. The image's DOWNPOWER_DATA_DIR is /data, and its entrypoint
+# hands the root-owned mount to the server's uid 10001 (docs/DESIGN.md, "Deploy").
 [[mounts]]
   source = 'downpower_data'
   destination = '/data'
-  initial_size = '3gb'
+  initial_size = '5gb'
 
 [env]
-  DOWNPOWER_DATA_DIR = '/data'
   # The update loop fetches new NRC pages and EIA's NUC_STATUS (crates/downpower-server/src/daily.rs).
   DOWNPOWER_FETCH = 'daily'
   RUST_LOG = 'info'

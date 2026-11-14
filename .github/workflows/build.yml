@@ -114,6 +114,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Build into the local daemon first, so the smoke test runs the image before anything is pushed.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: downpower:smoke
+          cache-from: type=gha
+      - run: docker/smoke.sh downpower:smoke
+      # The same build again, from the layer cache, to push.
       - uses: docker/build-push-action@v6
         with:
           context: .
