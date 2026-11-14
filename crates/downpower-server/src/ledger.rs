@@ -36,9 +36,9 @@ pub struct Build {
     /// The table holding its rows.
     pub table: String,
     pub built_at: DateTime<Utc>,
-    /// The raw store's manifest records when the build started: a store that has grown since
-    /// holds pages the build hasn't read.
-    pub raw_records: u64,
+    /// The raw store's [`RawStore::digest`] when the build started: a store whose digest has moved
+    /// since holds pages the build hasn't read.
+    pub raw_digest: String,
     pub summary: Summary,
 }
 
@@ -99,19 +99,27 @@ fn checked(table: &str) -> anyhow::Result<&str> {
     Ok(table)
 }
 
-/// The build the site reads, if there is one.
+/// The build the site reads, if there is one. A record an older binary wrote in another shape counts
+/// as none, so the next refresh replaces it rather than failing on it forever.
 ///
 /// # Errors
 ///
-/// When the query fails or the record doesn't parse.
+/// When the query fails.
 pub async fn current(store: &Store) -> anyhow::Result<Option<Build>> {
-    let build: Option<SerdeWrapper<Build>> = store
+    let record: Option<SerdeWrapper<serde_json::Value>> = store
         .query("SELECT * OMIT id FROM ONLY ledger:current")
         .await
         .context("reading ledger:current")?
         .take(0)
         .context("reading ledger:current")?;
-    Ok(build.map(|build| build.0))
+    let Some(SerdeWrapper(record)) = record else { return Ok(None) };
+    match serde_json::from_value(record) {
+        Ok(build) => Ok(Some(build)),
+        Err(error) => {
+            tracing::warn!(%error, "ledger:current is from another version; rebuilding over it");
+            Ok(None)
+        }
+    }
 }
 
 /// Builds the ledger from the raw store under `data_dir` into a fresh table, makes it current, and
@@ -136,7 +144,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     tracing::info!(%table, "rebuilding the ledger");
 
     let raw = RawStore::open(data_dir)?;
-    let raw_records = raw.records()?.len() as u64;
+    let raw_digest = raw.digest()?;
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<Keyed>>(IN_FLIGHT);
     let builder = tokio::task::spawn_blocking(move || {
         let catalog = Catalog::embedded()?;
@@ -168,7 +176,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
         version: ledger::derived_version(),
         table,
         built_at: Utc::now(),
-        raw_records,
+        raw_digest,
         summary,
     };
     let unit_records: Vec<UnitRecord> = units.all().iter().map(UnitRecord::from).collect();
@@ -184,27 +192,23 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     Ok(build)
 }
 
-/// Rebuilds in the background when `ledger:current` was built by another version or from fewer raw
-/// records than the store now holds, so a deploy that changes the parser or the catalog, or a raw
-/// store shipped to the volume, serves the old build until the new one is done. Unknown tags and
-/// units are quarantined (Decision 21).
+/// Rebuilds when `ledger:current` was built by another version or from other raw content, and
+/// returns the new build. A deploy that changes the parser or the catalog, a raw store shipped to
+/// the volume, and newly fetched pages all rebuild; a refetch of identical bytes doesn't. The
+/// previous build serves until the swap. Unknown tags and units are quarantined (Decision 21).
 ///
 /// # Errors
 ///
-/// When `ledger:current` or the raw manifest can't be read. A failed rebuild is logged.
-pub async fn ensure_current(store: &Store, data_dir: &Path) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
+/// When `ledger:current` or the raw manifest can't be read, or the rebuild fails, in which case the
+/// previous build stays current.
+pub async fn refresh(store: &Store, data_dir: &Path) -> anyhow::Result<Option<Build>> {
     let version = ledger::derived_version();
-    let raw_records = RawStore::open(data_dir)?.records()?.len() as u64;
-    if current(store).await?.is_some_and(|build| build.version == version && build.raw_records >= raw_records) {
-        tracing::info!(%version, raw_records, "the ledger is current");
+    let raw_digest = RawStore::open(data_dir)?.digest()?;
+    if current(store).await?.is_some_and(|build| build.version == version && build.raw_digest == raw_digest) {
+        tracing::info!(%version, "the ledger is current");
         return Ok(None);
     }
-    let (store, data_dir) = (store.clone(), data_dir.to_owned());
-    Ok(Some(tokio::spawn(async move {
-        if let Err(error) = rebuild(&store, &data_dir, Unknowns::Quarantine).await {
-            tracing::error!(error = format!("{error:#}"), "the ledger rebuild failed; the previous build keeps serving");
-        }
-    })))
+    rebuild(store, data_dir, Unknowns::Quarantine).await.map(Some)
 }
 
 /// The tables in the database.

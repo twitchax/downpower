@@ -93,6 +93,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
 12. **Recent reason text comes from re-fetching.** The daily job fetches the newest status page
     (numbers only) and the page that has just passed its 28-day hold (reasons). Until a day passes
     the hold, its cause reads "reason text not yet available".
+    - The job runs at start and every six hours (revised 2026-11-14). Each run also fetches any day
+      in the hold the store lacks, catches up on unsettled pages up to 60 days past the hold, takes
+      the last week of Event Notification pages, and fetches `NUC_STATUS` once the stored copy is
+      a week old.
+    - It rebuilds the ledger only when the raw store's content changed, and records each run for
+      `/status`. One task fetches and rebuilds, so two rebuilds never overlap.
 13. **The NRC email.** Aaron sent it to the Chief Data Officer on 2026-11-12.
     - It asks what the Power column measures (see "Still open") and whether a bulk export of both
       series exists.

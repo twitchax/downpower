@@ -34,7 +34,7 @@ pub enum Source {
 }
 
 /// A series of stored bodies. The NRC's are one page per report date (`nrc::Report`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Series {
     /// The daily Power Reactor Status Report.
@@ -218,6 +218,24 @@ impl RawStore {
             .collect()
     }
 
+    /// A digest of what a rebuild reads: the newest record's hash for every date of every series.
+    /// Refetching identical bytes leaves it unchanged, so it changes only when content does.
+    ///
+    /// # Errors
+    ///
+    /// When the manifest cannot be read (see [`RawStore::records`]).
+    pub fn digest(&self) -> Res<String> {
+        let mut latest = BTreeMap::new();
+        for record in self.records()? {
+            latest.insert((record.series, record.date), record.sha256);
+        }
+        let mut hasher = Sha256::new();
+        for ((series, date), sha256) in &latest {
+            hasher.update(format!("{series:?}\t{date}\t{}\n", sha256.as_ref().map_or("-", Hash::as_str)));
+        }
+        Ok(hex::encode(hasher.finalize()))
+    }
+
     /// The newest record for each date of `series`, oldest date first: what a rebuild reads.
     ///
     /// # Errors
@@ -329,6 +347,24 @@ mod unit {
         let latest = store.latest(Series::PowerStatus).unwrap();
 
         assert_eq!(latest.into_values().collect::<Vec<_>>(), vec![first, settled]);
+    }
+
+    #[test]
+    fn the_digest_changes_with_content_and_not_with_a_refetch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = RawStore::open(tmp.path()).unwrap();
+        let empty = store.digest().unwrap();
+        store.append(&record("1999-01-02", Some(Hash::of(b"numbers only")))).unwrap();
+        let held = store.digest().unwrap();
+
+        store.append(&record("1999-01-02", Some(Hash::of(b"numbers only")))).unwrap();
+        let refetched = store.digest().unwrap();
+        store.append(&record("1999-01-02", Some(Hash::of(b"with reasons")))).unwrap();
+        let settled = store.digest().unwrap();
+
+        assert_ne!(empty, held);
+        assert_eq!(held, refetched);
+        assert_ne!(held, settled);
     }
 
     #[test]

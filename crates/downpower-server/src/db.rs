@@ -56,6 +56,7 @@ pub async fn open(data_dir: &Path) -> anyhow::Result<Store> {
         .with_context(|| format!("opening the store at {}", path.display()))?;
     store.use_ns(NAMESPACE).use_db(DATABASE).await.context("selecting the namespace and database")?;
     crate::ledger::define(&store).await?;
+    crate::daily::define(&store).await?;
     Ok(store)
 }
 

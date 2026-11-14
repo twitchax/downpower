@@ -21,6 +21,8 @@ primary_region = 'sjc'
 
 [env]
   DOWNPOWER_DATA_DIR = '/data'
+  # The update loop fetches new NRC pages and EIA's NUC_STATUS (crates/downpower-server/src/daily.rs).
+  DOWNPOWER_FETCH = 'daily'
   RUST_LOG = 'info'
 
 [http_service]

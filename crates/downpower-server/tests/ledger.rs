@@ -153,41 +153,56 @@ fn ledger_a_failed_rebuild_leaves_the_previous_build_current() {
 }
 
 #[test]
-fn ledger_ensure_current_rebuilds_only_for_another_version() {
+fn ledger_refresh_rebuilds_only_for_another_version() {
     block_on(async {
         let tmp = tempfile::tempdir().unwrap();
         fixture(tmp.path());
         let store = db::open(tmp.path()).await.unwrap();
 
-        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
-        let built = stored::current(&store).await.unwrap().unwrap();
-        let again = stored::ensure_current(&store, tmp.path()).await.unwrap();
+        let built = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        let again = stored::refresh(&store, tmp.path()).await.unwrap();
         store.query("UPDATE ledger:current SET version = 'older'").await.unwrap().check().unwrap();
-        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
+        let rebuilt = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
 
         assert_eq!(built.version, ledger::derived_version());
         assert!(again.is_none());
-        let rebuilt = stored::current(&store).await.unwrap().unwrap();
         assert_eq!(rebuilt.version, ledger::derived_version());
         assert_ne!(rebuilt.table, built.table);
+        assert_eq!(stored::current(&store).await.unwrap(), Some(rebuilt));
     });
 }
 
 #[test]
-fn ledger_ensure_current_rebuilds_when_the_raw_store_grows() {
+fn ledger_refresh_rebuilds_for_new_content_and_not_for_a_refetch() {
     block_on(async {
         let tmp = tempfile::tempdir().unwrap();
         let raw = raw_store(tmp.path(), None);
         let store = db::open(tmp.path()).await.unwrap();
-        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
-        let before = stored::current(&store).await.unwrap().unwrap();
+        let before = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
 
+        put(&raw, Series::PowerStatus, "2025-07-15", Some(&file("status/2025-07-15.html")));
+        let refetched = stored::refresh(&store, tmp.path()).await.unwrap();
         put(&raw, Series::PowerStatus, "2025-07-17", Some(&file("status/2025-07-15.html")));
-        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
-        let after = stored::current(&store).await.unwrap().unwrap();
+        let after = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
 
-        assert_eq!((before.raw_records, after.raw_records), (3, 4));
+        assert!(refetched.is_none());
         assert!(after.summary.days > before.summary.days);
-        assert!(stored::ensure_current(&store, tmp.path()).await.unwrap().is_none());
+        assert_ne!(after.raw_digest, before.raw_digest);
+    });
+}
+
+#[test]
+fn ledger_a_current_record_in_an_older_shape_is_rebuilt_over() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let store = db::open(tmp.path()).await.unwrap();
+        store.query("UPSERT ledger:current CONTENT { version: 'older', table: 'unit_day_1' }").await.unwrap().check().unwrap();
+
+        let stale = stored::current(&store).await.unwrap();
+        let rebuilt = stored::refresh(&store, tmp.path()).await.unwrap();
+
+        assert_eq!(stale, None);
+        assert_eq!(stored::current(&store).await.unwrap(), rebuilt);
     });
 }

@@ -28,6 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+zip.workspace = true
 pretty_assertions.workspace = true
 tower.workspace = true
 tempfile.workspace = true

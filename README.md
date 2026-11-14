@@ -38,8 +38,10 @@ pass takes about 14 hours, and the events pass about 10.
 capacity per generator from 2007) in the same raw store, in one request.
 
 `downpower serve` builds the ledger (one row per in-service unit-day) from the raw store into
-SurrealDB when the stored build is missing, was made by another parser or catalog, or predates
-records the raw store has gained since. It rebuilds in the background, about 30 seconds for the
+SurrealDB when the stored build is missing, was made by another parser or catalog, or was built
+from other raw content. With `DOWNPOWER_FETCH=daily` (as on Fly), it also fetches every six hours:
+the newest status page, the one that has just passed its 28-day hold, recent Event Notification
+pages, and a weekly `NUC_STATUS`. It rebuilds in the background, about 30 seconds for the
 whole archive, and keeps serving the previous build until the new one is done. Unknown tags and
 unit names are quarantined there; `downpower rebuild` and `downpower backfill` fail on them instead.
 
@@ -56,7 +58,7 @@ fly ssh console -a twitchax-downpower -C "sh -c 'tar -xf /data/raw.tar -C /data 
 fly machine restart -a twitchax-downpower
 ```
 
-On restart, `serve` sees a raw store larger than its last build and rebuilds in the background. The
+On restart, `serve` sees raw content its last build didn't read and rebuilds in the background. The
 tar replaces `/data/raw/manifest.jsonl`, so this is for the first ship: after that, the daily job
 keeps the volume's raw store current itself.
 

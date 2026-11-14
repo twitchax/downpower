@@ -61,8 +61,10 @@ async fn serve(data_dir: &std::path::Path) -> anyhow::Result<()> {
     // take a clone.
     let store = downpower_server::db::open(data_dir).await?;
     tracing::info!(data_dir = %data_dir.display(), "store open");
-    // A build from another parser or catalog keeps serving while the new one builds behind it.
-    drop(downpower_server::ledger::ensure_current(&store, data_dir).await?);
+    // Fetches on the Fly machine and rebuilds the ledger behind the one serving; see `daily`.
+    let sources = downpower_server::daily::Sources::from_env(std::env::var_os(downpower_server::daily::FETCH_VAR).as_deref());
+    tracing::info!(fetching = sources.is_some(), "starting the update loop");
+    drop(downpower_server::daily::spawn(store.clone(), data_dir.to_owned(), sources));
 
     let addr = options.site_addr;
     let listener = TcpListener::bind(addr).await.with_context(|| format!("binding {addr}"))?;

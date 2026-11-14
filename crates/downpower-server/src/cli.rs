@@ -3,18 +3,16 @@
 use std::path::Path;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use chrono::{NaiveDate, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use downpower_ingest::eia::{self, NucStatus};
+use downpower_ingest::eia;
 use downpower_ingest::fetch::{self, Config, Fetcher, Summary};
 use downpower_ingest::ledger::Unknowns;
 use downpower_ingest::nrc::{self, Report};
 use downpower_ingest::raw::RawStore;
-use downpower_ingest::units::Units;
 
-use crate::{db, ledger};
+use crate::{daily, db, ledger};
 
 /// Why US nuclear reactors lose output.
 #[derive(Debug, Parser)]
@@ -108,12 +106,7 @@ async fn fetch_report(store: RawStore, pace: &Pace, report: Report, from: NaiveD
 }
 
 async fn fetch_nuc_status(store: &RawStore) -> anyhow::Result<Summary> {
-    let record = eia::fetch(&fetch::client()?, eia::NUC_STATUS_URL, store).await?;
-    // What EIA served is stored either way; a format change or a new generator fails here.
-    let hash = record.sha256.context("a stored NUC_STATUS has a hash")?;
-    let nuc_status = NucStatus::parse(&store.get(&hash)?).context("parsing the NUC_STATUS just stored")?;
-    nuc_status.check(&Units::catalog()?)?;
-    tracing::info!(end = ?nuc_status.end(), "NUC_STATUS checks out");
+    daily::fetch_nuc_status(store, eia::NUC_STATUS_URL).await?;
     Ok(Summary { stored: 1, ..Summary::default() })
 }
 

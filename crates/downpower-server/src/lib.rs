@@ -2,6 +2,7 @@
 //! and the cache policy. `router()` is a pure function of the options, so tests drive it in-process.
 
 pub mod cli;
+pub mod daily;
 pub mod db;
 pub mod http_policy;
 pub mod ledger;
