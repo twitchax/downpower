@@ -59,7 +59,6 @@ weather = "environmental"
 environmental_unspecified = "environmental"
 grid_limit = "grid"
 economic_dispatch = "grid"
-defueled = "unattributed"
 permanent_shutdown = "unattributed"
 outage_unspecified = "unattributed"
 
@@ -69,7 +68,7 @@ outage_unspecified = "unattributed"
 "coastdown to refueling outage" = "cause:coastdown"
 "100% electrical capability" = "cause:rated_output_limit"
 "increasing power" = "transition"
-"defueled" = "cause:defueled"
+"defueled" = "transition"
 "hot weather alert" = "flag:hot_weather_alert"
 "maintenance outage" = "cause:maintenance"
 "high system voltage action" = "flag:system_voltage"
@@ -289,7 +288,7 @@ label = "xref"
 
 [[rules]]
 pattern = 'defuel'
-label = "cause:defueled"
+label = "transition"
 
 [[rules]]
 pattern = 'outage|shut ?down|shutdown'

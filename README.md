@@ -49,7 +49,8 @@ cargo make codecov   # coverage.lcov
 The reason classifier's tables live in `catalog/`. After a fetch, `cargo xtask reasons` regenerates
 `catalog/reasons.tsv` (every distinct tag on the stored status pages), `cargo xtask rules` shows what
 each key and rule in `catalog/tags.toml` catches, and `cargo xtask unclassified` rewrites the list of
-tags accepted as Unattributed. CI fails when a tag in the snapshot is unknown.
+tags accepted as Unattributed. CI fails when a tag in the snapshot is unknown. `cargo xtask summary`
+attributes every stored unit-day and prints the reported power reduction by family.
 
 ## License
 

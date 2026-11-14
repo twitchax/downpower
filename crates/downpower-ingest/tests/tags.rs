@@ -71,6 +71,7 @@ fn uat_reasons_snapshot_the_design_examples_classify_as_designed() {
         ("contingency for limit to 1100 mwe net", "Flag(\"grid_contingency\")"),
         ("increasing power", "Transition"),
         ("startup in progress", "Transition"),
+        ("defueled", "Transition"),
         ("see en# 55049", "Xref(Some(55049))"),
     ];
     for (tag, expected) in cases {

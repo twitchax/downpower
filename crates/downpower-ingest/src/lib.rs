@@ -2,6 +2,7 @@
 //! every fetched page as the record (DESIGN.md Decisions 10 and 15), the page parsers, and the unit
 //! spine. There is no database here, since the server owns that, so these tests stay fast.
 
+pub mod attribution;
 pub mod fetch;
 pub mod nrc;
 pub mod raw;

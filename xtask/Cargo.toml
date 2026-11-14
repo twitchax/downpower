@@ -12,6 +12,7 @@ publish = false
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 downpower-ingest.workspace = true
+chrono.workspace = true
 
 [lints]
 workspace = true
