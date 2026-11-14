@@ -27,8 +27,8 @@ impl Series {
         format!("{COLLECTIONS}/{dir}/{}/{}{suffix}", date.year(), date.format("%Y%m%d"))
     }
 
-    /// Whether the NRC publishes a page for `date`. Event Notification pages skip weekends; their
-    /// federal holidays are left to 404, since the holiday calendar isn't worth encoding.
+    /// Whether the NRC publishes a page for `date`. Event Notification pages skip weekends; federal
+    /// holidays still get one (the 2026-11 backfill drew no 404s).
     #[must_use]
     pub fn publishes_on(self, date: NaiveDate) -> bool {
         match self {

@@ -1,0 +1,2 @@
+# Fixtures are NRC pages byte for byte (CRLFs and NULs included): never convert line endings.
+crates/downpower-ingest/tests/fixtures/** -text

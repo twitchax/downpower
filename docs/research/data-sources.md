@@ -74,7 +74,7 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
   - The same columns appear on 1999-01-04, 2008-07-15, 2016-07-27 and 2026-02-21.
   - **28-day embargo:** a page shows only `Unit | Power` until it is 28 days old, so the daily ingest
     has to go back and fill in the reasons.
-  - About 9,800 pages in total.
+  - 10,179 pages from 1999-01-01 through 2026-11-13.
   - **Wayback coverage** (CDX, 2026-11-12): to have the reasons, a capture must be taken 28 or more
     days after its report date.
 
@@ -100,6 +100,14 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
       (34,770 lines on 2026-11-12, `ReportDt|Unit|Power`, newest day first).
     - The Data Dictionary is at
       `/sites/default/files/doc_library/reading-rm/doc-collections/event-status/reactor-status/data_gov_powerstatus_datadictionary.xls`.
+    - **The 2026-11-13 backfill found one template on every page.** All 10,179 status pages from
+      1999-01-01 have the four region tables and the header above. Power is always an integer from
+      0 to 100, `Down` is ISO or blank, `Change in Report` is `*` or blank, and `Scrams` is blank or
+      `1` (first on 2013-06-29). Details: `.prds/PRD-0002.log.md`, T-003.
+    - **A missing day answers 200, not 404,** with "No data available for this date." and no tables.
+      1999-05-08, 2013-07-18, 2013-12-21 and 2015-12-02 to 12-04 read this way on two fetches a day
+      apart, so they are permanent gaps. A day whose page isn't published yet reads the same.
+    - Pages from 2025 on put a lone NUL byte in a blank reason cell, and join tags with `;` and CRLFs.
 - **Reason vocabulary is small** (sample: July 2025, 19 of 31 days):
   - 1,786 unit-days, 274 with a reason, **54 distinct strings**.
   - Strings join several tags with `;`, so there are only about **30 atomic tags**.
