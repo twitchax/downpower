@@ -14,7 +14,8 @@ use pretty_assertions::assert_eq;
 use tokio::time::Instant;
 
 use downpower_ingest::fetch::{self, Config, Fetcher, Summary};
-use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::nrc::Report;
+use downpower_ingest::raw::RawStore;
 
 /// Every request the fake saw: when, which path, and the User-Agent.
 type Log = Arc<Mutex<Vec<(Instant, String, String)>>>;
@@ -81,7 +82,7 @@ async fn uat_fetch_polite_paces_retries_and_resumes() {
 
     let summary = Fetcher::new(config(base.clone()), store.clone())
         .unwrap()
-        .run(Series::PowerStatus, day("1999-01-01"), day("1999-01-04"))
+        .run(Report::PowerStatus, day("1999-01-01"), day("1999-01-04"))
         .await
         .unwrap();
 
@@ -112,7 +113,7 @@ async fn uat_fetch_polite_paces_retries_and_resumes() {
 
     let rerun = Fetcher::new(config(base), store.clone())
         .unwrap()
-        .run(Series::PowerStatus, day("1999-01-01"), day("1999-01-04"))
+        .run(Report::PowerStatus, day("1999-01-01"), day("1999-01-04"))
         .await
         .unwrap();
 
@@ -128,7 +129,7 @@ async fn uat_fetch_polite_stops_on_403() {
 
     let error = Fetcher::new(config(base), store.clone())
         .unwrap()
-        .run(Series::PowerStatus, day("1999-01-01"), day("1999-01-04"))
+        .run(Report::PowerStatus, day("1999-01-01"), day("1999-01-04"))
         .await
         .unwrap_err();
 
@@ -144,7 +145,7 @@ async fn uat_fetch_polite_gives_up_after_its_attempts() {
 
     let error = Fetcher::new(config(base), RawStore::open(tmp.path()).unwrap())
         .unwrap()
-        .run(Series::PowerStatus, day("1999-01-01"), day("1999-01-01"))
+        .run(Report::PowerStatus, day("1999-01-01"), day("1999-01-01"))
         .await
         .unwrap_err();
 

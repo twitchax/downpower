@@ -1,6 +1,6 @@
 //! Repo chores that read the raw store, run as `cargo xtask <command>`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, ensure};
 use clap::{Parser, Subcommand};
 
+use chrono::{Datelike as _, NaiveDate};
+
 use downpower_ingest::attribution::{self, Observed};
+use downpower_ingest::eia::NucStatus;
 use downpower_ingest::raw::{RawStore, Series};
 use downpower_ingest::status::{self, StatusPage};
 use downpower_ingest::tags::{self, Family, Matched, Tags};
@@ -44,6 +47,9 @@ enum Command {
     /// Observes and attributes every in-service unit-day on the stored status pages, and prints the
     /// reported power reduction by family and method. Fails on an unknown unit or tag.
     Summary,
+    /// Compares the stored status pages with the newest stored `NUC_STATUS`: how often the two
+    /// disagree on a unit-day's power, and the in-service unit-days only EIA reports.
+    Eia,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -53,6 +59,7 @@ fn main() -> anyhow::Result<()> {
         Command::Unclassified => unclassified(),
         Command::Rules { examples } => rules(examples),
         Command::Summary => summary(&cli.data_dir),
+        Command::Eia => eia(&cli.data_dir),
     }
 }
 
@@ -233,6 +240,111 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
         #[allow(clippy::cast_precision_loss, reason = "unit-years for a human to read")]
         let years = *points as f64 / 100.0 / 365.25;
         println!("  {name:<24} {why:<20} {years:>6.1} unit-years");
+    }
+    Ok(())
+}
+
+/// One unit-day where the NRC page and EIA disagree: the date, the unit, NRC power, EIA power.
+type Disagreement<'a> = (NaiveDate, &'a str, u8, u8);
+
+fn eia(data_dir: &Path) -> anyhow::Result<()> {
+    ensure!(data_dir.join("raw/manifest.jsonl").exists(), "no raw store under {}; run `downpower fetch` first", data_dir.display());
+    let store = RawStore::open(data_dir)?;
+    let units = Units::catalog()?;
+    let (_, record) = store
+        .latest(Series::NucStatus)?
+        .into_iter()
+        .next_back()
+        .context("no NUC_STATUS in the raw store; run `downpower fetch --series nuc-status`")?;
+    let nuc_status = NucStatus::parse(&store.get(record.sha256.as_ref().context("a stored NUC_STATUS has a hash")?)?)?;
+    nuc_status.check(&units)?;
+
+    let mut reported: HashMap<&str, BTreeSet<NaiveDate>> = HashMap::new();
+    let mut compared = 0u64;
+    let mut nrc_only: BTreeMap<&str, (NaiveDate, NaiveDate, u64)> = BTreeMap::new();
+    let mut by_year: BTreeMap<i32, (u64, u64)> = BTreeMap::new();
+    let mut disagreements: Vec<Disagreement<'_>> = Vec::new();
+    for (date, record) in store.latest(Series::PowerStatus)? {
+        let Some(hash) = &record.sha256 else { continue };
+        let StatusPage::Report(rows) = status::parse(&store.get(hash)?).with_context(|| format!("the status page for {date}"))? else {
+            continue;
+        };
+        for row in rows {
+            let unit = units.by_nrc_name(&row.unit).with_context(|| format!("{date}: unknown unit {:?}", row.unit))?;
+            reported.entry(unit.docket.as_str()).or_default().insert(date);
+            if !unit.in_service(date) {
+                continue;
+            }
+            let Some(day) = nuc_status.day(&unit.eia, date) else {
+                if date.year() >= 2007 {
+                    let span = nrc_only.entry(unit.name.as_str()).or_insert((date, date, 0));
+                    span.1 = date;
+                    span.2 += 1;
+                }
+                continue;
+            };
+            compared += 1;
+            let year = by_year.entry(date.year()).or_default();
+            year.0 += 1;
+            if day.power != row.power {
+                year.1 += 1;
+                disagreements.push((date, unit.name.as_str(), row.power, day.power));
+            }
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss, reason = "rates for a human to read")]
+    let rate = |part: u64, whole: u64| 100.0 * part as f64 / whole.max(1) as f64;
+    println!("NUC_STATUS fetched {} and ending {:?}", record.date, nuc_status.end());
+    println!(
+        "{compared} in-service unit-days both report; they disagree on {} ({:.3}%)",
+        disagreements.len(),
+        rate(disagreements.len() as u64, compared)
+    );
+    println!(
+        "{} in-service unit-days from 2007 on that only the NRC pages report (unit: first, last, days):",
+        nrc_only.values().map(|(.., days)| days).sum::<u64>()
+    );
+    for (unit, (first, last, days)) in &nrc_only {
+        println!("  {unit:<24} {first} {last} {days:>5}");
+    }
+    println!("disagreements by year:");
+    for (year, (both, differ)) in by_year.iter().filter(|(_, (_, differ))| *differ > 0) {
+        println!("  {year}  {differ:>5} of {both:>6} ({:.3}%)", rate(*differ, *both));
+    }
+    let mut buckets: BTreeMap<&str, u64> = BTreeMap::new();
+    for &(_, _, nrc, eia) in &disagreements {
+        let bucket = match nrc.abs_diff(eia) {
+            1 => "1 point",
+            2..=5 => "2-5 points",
+            6..=20 => "6-20 points",
+            _ => "over 20 points",
+        };
+        *buckets.entry(bucket).or_default() += 1;
+    }
+    println!("by size: {buckets:?}");
+    let mut by_unit: HashMap<&str, u64> = HashMap::new();
+    for &(_, unit, ..) in &disagreements {
+        *by_unit.entry(unit).or_default() += 1;
+    }
+    let mut by_unit: Vec<_> = by_unit.into_iter().collect();
+    by_unit.sort_by_key(|(unit, count)| (std::cmp::Reverse(*count), *unit));
+    println!("most disagreements by unit: {:?}", &by_unit[..by_unit.len().min(10)]);
+    println!("examples (date, unit, NRC, EIA):");
+    for disagreement in disagreements.iter().step_by((disagreements.len() / 20).max(1)) {
+        println!("  {disagreement:?}");
+    }
+
+    let mut gaps: BTreeMap<NaiveDate, Vec<&str>> = BTreeMap::new();
+    for unit in units.all() {
+        let dates = reported.get(unit.docket.as_str());
+        for (date, _) in nuc_status.gaps(unit, |date| dates.is_some_and(|dates| dates.contains(&date))) {
+            gaps.entry(date).or_default().push(unit.name.as_str());
+        }
+    }
+    println!("{} in-service unit-days only EIA reports, on {} dates:", gaps.values().map(Vec::len).sum::<usize>(), gaps.len());
+    for (date, names) in &gaps {
+        println!("  {date}  {:>3} units  e.g. {:?}", names.len(), &names[..names.len().min(3)]);
     }
     Ok(())
 }

@@ -12,8 +12,9 @@ use reqwest::header::RETRY_AFTER;
 use reqwest::{Response, StatusCode};
 use tokio::time::{Instant, sleep, sleep_until};
 
+use crate::Res;
+use crate::nrc::{self, Report};
 use crate::raw::{RawStore, Record, Series, Source};
-use crate::{Res, nrc};
 
 /// The User-Agent the NRC email names: `downpower/0.1 (+https://github.com/twitchax/downpower)`.
 pub const USER_AGENT: &str = concat!(
@@ -23,6 +24,19 @@ pub const USER_AGENT: &str = concat!(
     env!("CARGO_PKG_VERSION_MINOR"),
     " (+https://github.com/twitchax/downpower)"
 );
+
+/// An HTTP client that sends [`USER_AGENT`], for every source.
+///
+/// # Errors
+///
+/// When the client cannot be built (e.g., no TLS roots).
+pub fn client() -> Res<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(60))
+        .build()
+        .context("building the HTTP client")
+}
 
 /// The fastest the fetcher may go against nrc.gov: the rate the NRC email promises.
 pub const MIN_INTERVAL: Duration = Duration::from_secs(5);
@@ -112,11 +126,7 @@ impl Fetcher {
     ///
     /// When the HTTP client cannot be built (e.g., no TLS roots).
     pub fn new(config: Config, store: RawStore) -> Res<Self> {
-        let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(Duration::from_secs(60))
-            .build()
-            .context("building the HTTP client")?;
+        let client = client()?;
         let pacer = Pacer { interval: config.interval, last: None };
         Ok(Self { client, config, store, pacer })
     }
@@ -127,7 +137,8 @@ impl Fetcher {
     ///
     /// On a 403, on any status other than 200, 404, 429 and 5xx, when a page fails every attempt, and
     /// when the raw store cannot be read or written.
-    pub async fn run(&mut self, series: Series, from: NaiveDate, to: NaiveDate) -> Res<Summary> {
+    pub async fn run(&mut self, report: Report, from: NaiveDate, to: NaiveDate) -> Res<Summary> {
+        let series = Series::from(report);
         let settled: HashSet<NaiveDate> = self
             .store
             .records()?
@@ -136,28 +147,28 @@ impl Fetcher {
             .map(|record| record.date)
             .collect();
         let mut summary = Summary::default();
-        for date in series.dates(from, to) {
+        for date in report.dates(from, to) {
             if settled.contains(&date) {
                 summary.skipped += 1;
                 continue;
             }
-            match self.fetch(series, date).await? {
+            match self.fetch(report, date).await? {
                 Outcome::Stored => summary.stored += 1,
                 Outcome::Missing => summary.missing += 1,
             }
             if (summary.stored + summary.missing) % 100 == 0 {
-                tracing::info!(?series, %date, summary.stored, summary.missing, summary.skipped, "progress");
+                tracing::info!(?report, %date, summary.stored, summary.missing, summary.skipped, "progress");
             }
         }
         Ok(summary)
     }
 
-    async fn fetch(&mut self, series: Series, date: NaiveDate) -> Res<Outcome> {
-        let url = format!("{}{}", self.config.base_url, series.path(date));
+    async fn fetch(&mut self, report: Report, date: NaiveDate) -> Res<Outcome> {
+        let url = format!("{}{}", self.config.base_url, report.path(date));
         let mut backoff = self.config.backoff;
         for attempt in 1..=self.config.attempts {
             self.pacer.wait().await;
-            match self.attempt(series, date, &url).await? {
+            match self.attempt(report, date, &url).await? {
                 Attempt::Done(outcome) => return Ok(outcome),
                 Attempt::Retry(retry_after) if attempt < self.config.attempts => {
                     let wait = retry_after.map_or(backoff, |asked| asked.max(backoff));
@@ -171,7 +182,7 @@ impl Fetcher {
         bail!("{url} failed {} times in a row, so the run stops here", self.config.attempts)
     }
 
-    async fn attempt(&self, series: Series, date: NaiveDate, url: &str) -> Res<Attempt> {
+    async fn attempt(&self, report: Report, date: NaiveDate, url: &str) -> Res<Attempt> {
         let fetched_at = Utc::now();
         let response = match self.client.get(url).send().await {
             Ok(response) => response,
@@ -183,7 +194,7 @@ impl Fetcher {
         let status = response.status();
         let record = |sha256, len| Record {
             source: Source::Nrc,
-            series,
+            series: report.into(),
             date,
             url: url.to_owned(),
             status: status.as_u16(),
@@ -207,12 +218,12 @@ impl Fetcher {
                 };
                 let hash = self.store.put(&body)?;
                 self.store.append(&record(Some(hash), u64::try_from(body.len()).ok()))?;
-                tracing::info!(?series, %date, len = body.len(), "stored");
+                tracing::info!(?report, %date, len = body.len(), "stored");
                 Ok(Attempt::Done(Outcome::Stored))
             }
             StatusCode::NOT_FOUND => {
                 self.store.append(&record(None, None))?;
-                tracing::info!(?series, %date, "no page");
+                tracing::info!(?report, %date, "no page");
                 Ok(Attempt::Done(Outcome::Missing))
             }
             StatusCode::FORBIDDEN => bail!("{url} returned 403. The NRC's bot block may be back, so the run stops here (docs/research/data-sources.md, \"The access problem\")"),

@@ -29,9 +29,11 @@ const ZSTD_LEVEL: i32 = 19;
 pub enum Source {
     /// Fetched live from www.nrc.gov.
     Nrc,
+    /// Fetched from www.eia.gov's keyless bulk files.
+    Eia,
 }
 
-/// A series of pages, one per report date.
+/// A series of stored bodies. The NRC's are one page per report date (`nrc::Report`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Series {
@@ -39,6 +41,8 @@ pub enum Series {
     PowerStatus,
     /// The Event Notification Report, published on business days.
     EventNotifications,
+    /// EIA's `NUC_STATUS` bulk file, every daily series in one body (`eia`).
+    NucStatus,
 }
 
 /// The lowercase hex sha256 of a body's uncompressed bytes, which names its blob.
@@ -84,7 +88,8 @@ impl From<Hash> for String {
 pub struct Record {
     pub source: Source,
     pub series: Series,
-    /// The day the page reports on.
+    /// The day the page reports on. A `NUC_STATUS` body covers every day, so its record carries the
+    /// day it was fetched.
     pub date: NaiveDate,
     pub url: String,
     /// The HTTP status of the final response.

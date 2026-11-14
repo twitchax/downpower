@@ -3,12 +3,15 @@
 use std::path::Path;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::{NaiveDate, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use downpower_ingest::eia::{self, NucStatus};
 use downpower_ingest::fetch::{self, Config, Fetcher, Summary};
-use downpower_ingest::nrc;
-use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::nrc::{self, Report};
+use downpower_ingest::raw::RawStore;
+use downpower_ingest::units::Units;
 
 /// Why US nuclear reactors lose output.
 #[derive(Debug, Parser)]
@@ -22,7 +25,8 @@ pub struct Cli {
 pub enum Command {
     /// Serve the site (the default).
     Serve,
-    /// Fetch NRC pages into the raw store, skipping the pages an earlier run settled.
+    /// Fetch NRC pages (skipping the pages an earlier run settled) or EIA's nuclear outage file
+    /// into the raw store.
     Fetch(FetchArgs),
 }
 
@@ -48,30 +52,45 @@ pub enum SeriesArg {
     Status,
     /// Event Notification Reports, business days.
     Events,
+    /// EIA's daily nuclear outage bulk file, in one request; the dates and interval don't apply.
+    NucStatus,
 }
 
-impl From<SeriesArg> for Series {
-    fn from(series: SeriesArg) -> Self {
-        match series {
-            SeriesArg::Status => Self::PowerStatus,
-            SeriesArg::Events => Self::EventNotifications,
+impl SeriesArg {
+    /// The NRC report fetched page by page, or `None` for EIA's bulk file.
+    #[must_use]
+    pub const fn report(self) -> Option<Report> {
+        match self {
+            Self::Status => Some(Report::PowerStatus),
+            Self::Events => Some(Report::EventNotifications),
+            Self::NucStatus => None,
         }
     }
 }
 
-/// Runs `downpower fetch` against nrc.gov into the raw store under `data_dir`.
+/// Runs `downpower fetch` into the raw store under `data_dir`.
 ///
 /// # Errors
 ///
-/// When the raw store cannot be opened, or the fetcher stops (see [`Fetcher::run`]).
+/// When the raw store cannot be opened, the fetcher stops (see [`Fetcher::run`]), or the
+/// `NUC_STATUS` just stored doesn't parse or names a generator the units catalog lacks.
 pub async fn fetch(args: &FetchArgs, data_dir: &Path) -> anyhow::Result<Summary> {
     let store = RawStore::open(data_dir)?;
+    let Some(report) = args.series.report() else {
+        let record = eia::fetch(&fetch::client()?, eia::NUC_STATUS_URL, &store).await?;
+        // What EIA served is stored either way; a format change or a new generator fails here.
+        let hash = record.sha256.context("a stored NUC_STATUS has a hash")?;
+        let nuc_status = NucStatus::parse(&store.get(&hash)?).context("parsing the NUC_STATUS just stored")?;
+        nuc_status.check(&Units::catalog()?)?;
+        tracing::info!(end = ?nuc_status.end(), "NUC_STATUS checks out");
+        return Ok(Summary { stored: 1, ..Summary::default() });
+    };
     let config = Config {
         interval: Duration::from_secs(args.interval_secs),
         ..Config::nrc()
     };
     let to = args.to.unwrap_or_else(|| Utc::now().date_naive());
-    Fetcher::new(config, store)?.run(args.series.into(), args.from, to).await
+    Fetcher::new(config, store)?.run(report, args.from, to).await
 }
 
 #[cfg(test)]
@@ -102,7 +121,16 @@ mod unit {
         assert_eq!(args.from, nrc::FIRST_DAY);
         assert_eq!(args.to, None);
         assert_eq!(args.interval_secs, 5);
-        assert_eq!(Series::from(args.series), Series::EventNotifications);
+        assert_eq!(args.series.report(), Some(Report::EventNotifications));
+    }
+
+    #[test]
+    fn fetch_takes_nuc_status_as_one_bulk_file() {
+        let Some(Command::Fetch(args)) = parse(&["fetch", "--series", "nuc-status"]).unwrap().command else {
+            panic!("not a fetch")
+        };
+
+        assert_eq!(args.series.report(), None);
     }
 
     #[test]

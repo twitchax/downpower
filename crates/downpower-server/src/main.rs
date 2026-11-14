@@ -1,4 +1,4 @@
-//! The `downpower` binary: set up tracing, then serve the site or fetch NRC pages (`cli`).
+//! The `downpower` binary: set up tracing, then serve the site or fetch into the raw store (`cli`).
 
 // `cargo llvm-cov` on nightly sets `coverage_nightly`; elsewhere this is inert, so the source builds
 // on stable. Enable the feature only in a crate root that uses `#[coverage(off)]`: an unused

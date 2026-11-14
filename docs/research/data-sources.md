@@ -210,9 +210,14 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
     MW and percent outage.
   - Series IDs look like `NUC_STATUS.OUT_PCT.6014-1.D`: EIA plant ID, then generator.
   - Data from 2007-01-01 with about a one-day lag. Weekend and holiday data arrive the next weekday.
-  - **It is the NRC power column, transformed.** Percent outage equals 100 minus NRC power on all
-    366 days of 2024 for each unit checked (Brunswick 1, Braidwood 2, Catawba 2). Not yet checked for
-    every unit and year.
+  - **It is the NRC power column, transformed.** Percent outage, always a whole number, equals 100
+    minus NRC power on all but 12 of the 714,972 in-service unit-days both report from 2007 to
+    2026-11-13 (`cargo xtask eia`; eight of the 12 are the duplicated 2013-07-19 page).
+  - It fills the NRC's five "No data" days since 2007 (2013-07-18, 2013-12-21, 2015-12-02 to
+    12-04). It lacks 1,556 NRC unit-days: the partial month before each retirement, River Bend 1
+    from 2013 to 2019-01-23, and holes in Vogtle 3 and 4 during startup testing.
+  - `OUT` is `CAP` × `OUT_PCT` / 100 on every day, and the median generator's capacity changes 41
+    times since 2007.
 - **EIA-860 Schedule 6D, "Cooling"** (sheet in `6_2_EnviroEquip_Y{YYYY}.xlsx`):
   - 2012 and later, plus a 2008 file.
   - Cooling type for all 54 nuclear plants in 2024: `ON` is once-through; `RI`/`RN` are induced- and

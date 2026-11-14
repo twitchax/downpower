@@ -16,7 +16,7 @@ Usage: downpower [COMMAND]
 
 Commands:
   serve  Serve the site (the default)
-  fetch  Fetch NRC pages into the raw store, skipping the pages an earlier run settled
+  fetch  Fetch NRC pages (skipping the pages an earlier run settled) or EIA's nuclear outage file into the raw store
   help   Print this message or the help of the given subcommand(s)
 ```
 
@@ -31,6 +31,9 @@ server and hashed assets under `target/site`.
 `downpower/0.1 (+https://github.com/twitchax/downpower)`, and stops on a 403. Rerunning it skips
 every page that is already settled, so an interrupted run picks up where it stopped. A full status
 pass takes about 14 hours, and the events pass about 10.
+
+`downpower fetch --series nuc-status` stores EIA's keyless `NUC_STATUS` bulk file (daily power and
+capacity per generator from 2007) in the same raw store, in one request.
 
 ## Install
 
@@ -50,7 +53,8 @@ The reason classifier's tables live in `catalog/`. After a fetch, `cargo xtask r
 `catalog/reasons.tsv` (every distinct tag on the stored status pages), `cargo xtask rules` shows what
 each key and rule in `catalog/tags.toml` catches, and `cargo xtask unclassified` rewrites the list of
 tags accepted as Unattributed. CI fails when a tag in the snapshot is unknown. `cargo xtask summary`
-attributes every stored unit-day and prints the reported power reduction by family.
+attributes every stored unit-day and prints the reported power reduction by family, and
+`cargo xtask eia` compares the stored status pages with the newest stored `NUC_STATUS`.
 
 ## License
 

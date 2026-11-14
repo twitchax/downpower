@@ -60,6 +60,8 @@ csv = "1"
 # The tag table: catalog/tags.toml, and its keyword rules.
 regex = "1"
 toml = "1"
+# EIA's NUC_STATUS.zip: one deflated NDJSON file, read through the flate2 already in the tree.
+zip = { version = "9.5", default-features = false, features = ["deflate-flate2"] }
 
 # cargo-leptos: builds the server (`bin-package`, SSR) and the wasm hydrate bundle
 # (`lib-package`) into target/site.

@@ -1,8 +1,9 @@
-//! Everything between a source and the database: the polite NRC fetcher, the raw store that keeps
-//! every fetched page as the record (DESIGN.md Decisions 10 and 15), the page parsers, and the unit
-//! spine. There is no database here, since the server owns that, so these tests stay fast.
+//! Everything between a source and the database: the polite NRC fetcher, EIA's `NUC_STATUS`, the
+//! raw store that keeps every fetched page as the record (DESIGN.md Decisions 10, 11 and 15), the
+//! page parsers, and the unit spine. There is no database here, since the server owns that, so these tests stay fast.
 
 pub mod attribution;
+pub mod eia;
 pub mod fetch;
 pub mod nrc;
 pub mod raw;
