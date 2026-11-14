@@ -120,7 +120,7 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .area { margin: 0; display: grid; gap: var(--s-2); }
 .area-plot { position: relative; height: 240px; margin-top: var(--s-4); }
 .area-plot svg { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.band { stroke: var(--bg-0); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.seam { fill: none; stroke: var(--bg-0); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .gridline { fill: none; stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .crosshair { stroke: var(--text-3); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 // The scale sits inside the plot, each label just above its gridline, so the stacked area spans the

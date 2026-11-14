@@ -240,7 +240,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       (wet-bulb), then EIA-923 generation, then EIA-923 Schedule 8D, then USGS intake temperature,
       then EIA-930.
 27. **Domain: `downpower.twitchax.com`.** DNS is on Cloudflare. A domain of its own only if the
-    announcement earns one.
+    announcement earns one. Live 2026-11-14: DNS-only A and AAAA records for the app's shared IPv4
+    and dedicated IPv6, so Fly terminates TLS with its own Let's Encrypt certificate.
 
 ## Still open
 
@@ -276,12 +277,18 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     rebuild peaks at 292 MB on two CPUs (PRD-0002.log.md).
 - **Sizing (PRD-0002):** a 1 GB `shared-cpu-1x` VM and a 5 GB volume. The raw store is 268 MB for
   both NRC series (2.3 GB uncompressed), each `NUC_STATUS` copy adds about 6 MB, and a ledger
-  build takes 282 MB, two of them while a rebuild swaps.
+  build takes 282 MB, two of them while a rebuild swaps. Ten back-to-back rebuilds left the
+  database between 532 and 782 MB, as compaction reclaims each dropped table.
+- **A rebuild on Fly takes 11 to 20 minutes** (680 s and then 1,206 s on 2026-11-14, against 31 s
+  on two dedicated cores), because a shared vCPU is throttled once its burst is spent. Peak RSS was
+  235 to 360 MB. The old
+  build serves until the swap, so a slow rebuild delays fresh data and nothing else; a dedicated
+  CPU or an incremental rebuild is the fix if that delay starts to matter.
 - **Outward steps, each needing Aaron's go-ahead:**
   - `gh repo create`, approved 2026-11-12. The auto-mode classifier refuses it even after approval,
     so Aaron runs it himself.
-  - `fly volumes create`
-  - DNS
+  - `fly volumes create`, approved and done 2026-11-14.
+  - DNS, approved and done 2026-11-14.
   - `CODECOV_TOKEN`, once there is real code to cover
 
 ## Analysis notes, for later

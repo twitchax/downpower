@@ -11,11 +11,20 @@ use downpower_core::{Families, Family};
 pub const WIDTH: f64 = 1000.0;
 pub const HEIGHT: f64 = 240.0;
 
-/// One family's band: its outline as an SVG path, bottom edge back along the top.
+/// One family's band: its outline as an SVG path, and its top edge alone, where a surface-colored
+/// seam separates it from the band above.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Band {
     pub family: Family,
     pub path: String,
+    pub top: String,
+}
+
+/// Whether `months` months are few enough to draw seams. Past ten years a month is a pixel or two
+/// wide, and seams along every step would darken the bands more than they separate them.
+#[must_use]
+pub const fn seamed(months: usize) -> bool {
+    months <= 120
 }
 
 /// The months to draw, in terawatt-hours, each indexed by [`Family::index`].
@@ -79,13 +88,14 @@ pub fn bands(stack: &[(Family, Vec<(f64, f64)>)], top: f64) -> Vec<Band> {
                 let verb = if index == 0 { 'M' } else { 'L' };
                 let _ = write!(path, "{verb}{:.1},{:.2}L{:.1},{:.2}", x(index, count), y(*upper, top), x(index + 1, count), y(*upper, top));
             }
+            let seam = path.clone();
             for (index, (lower, _)) in edges.iter().enumerate().rev() {
                 let _ = write!(path, "L{:.1},{:.2}L{:.1},{:.2}", x(index + 1, count), y(*lower, top), x(index, count), y(*lower, top));
             }
             if !path.is_empty() {
                 path.push('Z');
             }
-            Band { family: *family, path }
+            Band { family: *family, path, top: seam }
         })
         .collect()
 }
@@ -157,6 +167,14 @@ mod tests {
         let bands = bands(&stack(&months, Families::NONE.with(Family::Grid)), 2.0);
         assert_eq!(bands.len(), 1);
         assert_eq!(bands[0].path, "M0.0,120.00L500.0,120.00L500.0,0.00L1000.0,0.00L1000.0,240.00L500.0,240.00L500.0,240.00L0.0,240.00Z");
+        assert_eq!(bands[0].top, "M0.0,120.00L500.0,120.00L500.0,0.00L1000.0,0.00");
+    }
+
+    #[test]
+    fn seams_stop_past_ten_years() {
+        assert!(seamed(36));
+        assert!(seamed(120));
+        assert!(!seamed(335));
     }
 
     #[test]

@@ -6,6 +6,8 @@
 
 Why US nuclear reactors lose output: a public-data dashboard of derates, outages, and NRC events by cause
 
+Live at [downpower.twitchax.com](https://downpower.twitchax.com); [/status](https://downpower.twitchax.com/status) says what the ledger rests on.
+
 ## Usage
 
 ```text
