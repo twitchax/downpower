@@ -18,6 +18,7 @@ use downpower_ingest::tags::{self, Family, Matched, Tags};
 use downpower_ingest::units::Units;
 
 mod capacity;
+mod crosscheck;
 
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
 const UNCLASSIFIED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/unclassified.tsv");
@@ -60,6 +61,13 @@ enum Command {
         /// The directory holding the zips.
         dir: PathBuf,
     },
+    /// Compares the stored 1999–2016 status pages with the CSVs in a clone of
+    /// github.com/mike-welch/NRC_Power_Reactor_Status_Reports (DESIGN.md Decision 14), and prints
+    /// the agreement rates. The clone stays out of the repo: it has no license.
+    Crosscheck {
+        /// The clone's `Data` directory.
+        dir: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -71,6 +79,7 @@ fn main() -> anyhow::Result<()> {
         Command::Summary => summary(&cli.data_dir),
         Command::Eia => eia(&cli.data_dir),
         Command::Capacity { dir } => capacity::run(&dir, Path::new(CAPACITY)),
+        Command::Crosscheck { dir } => crosscheck::run(&cli.data_dir, &dir),
     }
 }
 

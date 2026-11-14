@@ -260,6 +260,17 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
     example, 1999-05-08 to 05-11).
   - No license file. The underlying NRC text is public domain.
   - Used only as a checker for our own parse (DESIGN.md Decision 14).
+  - **Agreement** (`cargo xtask crosscheck`, 2026-11-14): of 677,769 unit-days both have, power
+    agrees on 99.993%. Reasons agree on 99.922% of the 665,558 rows whose reason their unquoted CSV
+    lets us recover, counting the 539 where theirs is a prefix of ours (their early rows cut reasons
+    at about 75 characters). The remaining differences are on their side: `°` written as `?`,
+    reasons blank or cut at a line break, and a few 2002 power values left blank.
+  - Their early rows use the old reading-room names (`COOK 1`, `CALLAWAY 1`, `FT CALHOUN 1`, all
+    upper case until mid-2003), so the check keys rows by docket.
+  - **They have days the live site lost.** About 500 of their rows have no match here, nearly all
+    on 2013-07-18, 2013-12-21 and 2015-12-02 to 12-04, which the live pages answer with "No data
+    available". The old reading-room pages had them, so Wayback captures of those URLs may recover
+    the five days, reasons included.
 - **`zachlandes/nrc-event-scraper`:** daily EN JSONL, but its README says it fakes a Chrome TLS
   fingerprint and User-Agent to get past Akamai. **Off limits.**
 - Copies without reason text, which add nothing: `theedge1620/NRC_event_notifications`,

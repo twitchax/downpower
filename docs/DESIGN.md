@@ -263,11 +263,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
 - **Gotcha: SurrealKV sizes its memory from the host.**
   - With the defaults, the smoke run on a 256 GB box logged a 4 GiB max memtable and a ~122 GiB block
     cache. On the 1 GB Fly VM that is an OOM waiting for the first bulk ingest.
-  - Cap both in `db::open` with `surrealdb::opt::Config::datastore_option`
-    (`surrealkv_max_memtable_size`, `surrealkv_block_cache_capacity`).
-  - Pick the values by measuring peak RSS during a real backfill, not by guessing.
-- **Sizing (PRD-0002):** a 1 GB `shared-cpu-1x` VM and a 5 GB volume. Raw pages are about 1 GB
-  per NRC series before compression.
+  - Both are capped at 64 MiB in `db::open` through `surrealdb::opt::Config::datastore_option`
+    (`surrealkv_max_memtable_size`, `surrealkv_block_cache_capacity`). Measured in T-008: a full
+    rebuild peaks at 292 MB on two CPUs (PRD-0002.log.md).
+- **Sizing (PRD-0002):** a 1 GB `shared-cpu-1x` VM and a 5 GB volume. The raw store is 268 MB for
+  both NRC series (2.3 GB uncompressed), each `NUC_STATUS` copy adds about 6 MB, and a ledger
+  build takes 282 MB, two of them while a rebuild swaps.
 - **Outward steps, each needing Aaron's go-ahead:**
   - `gh repo create`, approved 2026-11-12. The auto-mode classifier refuses it even after approval,
     so Aaron runs it himself.
