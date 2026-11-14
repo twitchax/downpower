@@ -26,6 +26,10 @@ flags = [
     "grid_contingency",
 ]
 
+# Causes whose reduction is no lost electrical output, so lost output counts them as zero
+# (Decision 22). A unit at full electrical output can read just under 100% thermal power.
+no_lost_output = ["full_electrical_output"]
+
 # Fine causes and their families (Decision 17).
 [causes]
 refueling_outage = "refueling"
@@ -49,7 +53,9 @@ steam_dryer = "equipment"
 core_flow = "equipment"
 reactor_coolant = "equipment"
 fuel_defect = "equipment"
-# Below 100% thermal while at full electrical output, or held under a rated or licensed limit.
+# Below 100% thermal while at full electrical output.
+full_electrical_output = "equipment"
+# Held under a rated, licensed, turbine or administrative limit.
 rated_output_limit = "equipment"
 equipment_other = "equipment"
 heat = "environmental"
@@ -66,7 +72,7 @@ outage_unspecified = "unattributed"
 [keys]
 "refueling outage" = "cause:refueling_outage"
 "coastdown to refueling outage" = "cause:coastdown"
-"100% electrical capability" = "cause:rated_output_limit"
+"100% electrical capability" = "cause:full_electrical_output"
 "increasing power" = "transition"
 "defueled" = "transition"
 "hot weather alert" = "flag:hot_weather_alert"
@@ -141,6 +147,10 @@ label = "cause:fuel_management"
 [[rules]]
 pattern = 'steam gen|\bs/g|\bsg\b|\bsgs\b|tube plug|blowdown'
 label = "cause:steam_generator"
+
+[[rules]]
+pattern = '^(100 ?%|100 percent)( of rated)? (equivalent )?elec?t?rical|^full electrical'
+label = "cause:full_electrical_output"
 
 [[rules]]
 pattern = 'nsss limit|uprate|licensed (thermal )?power|electrical (capab|capac|output|generation|power|limit)|full electrical|maximum (operating )?power|\bmop\b|rated (electrical|thermal|power)|generator capability|capability curve|administrative (power )?limit|limited by turbine|turbine limited|mwe limit due to turbine|max(imum)? (allowable|allowed) power|max power allowed|maximum operating limit|equivalent electrical|elec?t?ical capab'

@@ -3,6 +3,7 @@
 //! page parsers, the unit spine, and the ledger they build. There is no database here, since the server owns that, so these tests stay fast.
 
 pub mod attribution;
+pub mod capacity;
 pub mod eia;
 pub mod fetch;
 pub mod ledger;

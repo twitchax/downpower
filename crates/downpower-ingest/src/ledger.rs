@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::attribution::{self, Attributed, Attributor, Evidence, Method};
+use crate::capacity::{self, Annual};
 use crate::eia::NucStatus;
 use crate::raw::{RawStore, Series};
 use crate::status::{self, Row, StatusPage};
@@ -21,7 +22,30 @@ use crate::{Res, Void};
 
 /// Bumped whenever parsing, observing, attributing or the row shape changes, so the deployed
 /// server rebuilds (Decision 15). The catalog files are hashed in beside it.
-pub const LEDGER_VERSION: u32 = 1;
+pub const LEDGER_VERSION: u32 = 2;
+
+/// The committed tables a build reads, embedded in the binary.
+#[derive(Debug, Clone)]
+pub struct Catalog {
+    pub tags: Tags,
+    pub units: Units,
+    pub capacity: Annual,
+}
+
+impl Catalog {
+    /// The tables in `catalog/`.
+    ///
+    /// # Errors
+    ///
+    /// When a table breaks a rule its parser checks.
+    pub fn embedded() -> Res<Self> {
+        Ok(Self {
+            tags: Tags::catalog()?,
+            units: Units::catalog()?,
+            capacity: Annual::catalog()?,
+        })
+    }
+}
 
 /// The stamp a build carries: 16 hex digits over [`LEDGER_VERSION`] and the catalog files the
 /// binary embeds.
@@ -29,7 +53,7 @@ pub const LEDGER_VERSION: u32 = 1;
 pub fn derived_version() -> String {
     let mut hasher = Sha256::new();
     hasher.update(LEDGER_VERSION.to_le_bytes());
-    for catalog in [crate::tags::TAGS, crate::tags::UNCLASSIFIED, crate::units::CATALOG] {
+    for catalog in [crate::tags::TAGS, crate::tags::UNCLASSIFIED, crate::units::CATALOG, capacity::CATALOG] {
         // Length-prefixed, so moving text from one file to the next changes the stamp.
         hasher.update((catalog.len() as u64).to_le_bytes());
         hasher.update(catalog.as_bytes());
@@ -84,6 +108,11 @@ pub struct UnitDay {
     pub family: Family,
     pub method: Method,
     pub evidence: Evidence,
+    /// Net capacity that day in kW: EIA-860 before 2007, `NUC_STATUS` from 2007 on (Decision 22).
+    pub capacity_kw: Option<u32>,
+    /// The reported power reduction as energy, (100 − power)% × capacity × 24 h, rounded down to
+    /// the kWh. Zero when the attributed cause books no lost output, `None` without a capacity.
+    pub lost_kwh: Option<u64>,
 }
 
 impl UnitDay {
@@ -109,8 +138,15 @@ impl UnitDay {
             family: Family::Unattributed,
             method,
             evidence: Evidence::None,
+            capacity_kw: None,
+            lost_kwh: None,
         }
     }
+}
+
+/// (100 − `power`)% of `capacity_kw` for 24 hours, in kWh, rounded down.
+fn lost_kwh(power: u8, capacity_kw: u32) -> u64 {
+    u64::from(100 - power.min(100)) * u64::from(capacity_kw) * 24 / 100
 }
 
 /// What to do with a unit name or tag the catalog doesn't know (Decisions 16 and 21).
@@ -144,13 +180,15 @@ pub struct Summary {
     /// Quarantined tags and unit names, with their uses.
     pub unknown_tags: BTreeMap<String, u64>,
     pub unknown_units: BTreeMap<String, u64>,
+    /// The lost energy across every row, and the rows below 100% with no capacity to weigh them.
+    pub lost_kwh: u64,
+    pub without_capacity: u64,
 }
 
 /// Builds the ledger one day at a time, in date order.
 #[derive(Debug)]
 pub struct Builder<'a> {
-    tags: &'a Tags,
-    units: &'a Units,
+    catalog: &'a Catalog,
     nuc_status: Option<&'a NucStatus>,
     unknowns: Unknowns,
     attributors: HashMap<&'a str, Attributor<'a>>,
@@ -161,10 +199,9 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     #[must_use]
-    pub fn new(tags: &'a Tags, units: &'a Units, nuc_status: Option<&'a NucStatus>, unknowns: Unknowns) -> Self {
+    pub fn new(catalog: &'a Catalog, nuc_status: Option<&'a NucStatus>, unknowns: Unknowns) -> Self {
         Self {
-            tags,
-            units,
+            catalog,
             nuc_status,
             unknowns,
             attributors: HashMap::new(),
@@ -196,13 +233,15 @@ impl<'a> Builder<'a> {
             self.previous = current;
         }
         if let Some(nuc_status) = self.nuc_status {
-            for unit in self.units.all() {
+            for unit in self.catalog.units.all() {
                 if reported.contains(unit.docket.as_str()) || !unit.in_service(date) {
                     continue;
                 }
                 if let Some(day) = nuc_status.day(&unit.eia, date) {
                     self.summary.from_eia += 1;
-                    days.push(UnitDay::numbers(unit, date, day.power, Source::Eia, Some(day.power), Method::NoReport));
+                    let mut row = UnitDay::numbers(unit, date, day.power, Source::Eia, Some(day.power), Method::NoReport);
+                    self.weigh(unit, &mut row, true);
+                    days.push(row);
                 }
             }
         }
@@ -226,7 +265,7 @@ impl<'a> Builder<'a> {
         let mut grouped: Vec<(&'a Unit, Vec<&'r Row>)> = Vec::with_capacity(rows.len());
         let mut index: HashMap<&str, usize> = HashMap::with_capacity(rows.len());
         for row in rows {
-            let Some(unit) = self.units.by_nrc_name(&row.unit) else {
+            let Some(unit) = self.catalog.units.by_nrc_name(&row.unit) else {
                 match self.unknowns {
                     Unknowns::Fail => bail!("{date}: unknown unit {:?}; add it to catalog/units.csv", row.unit),
                     Unknowns::Quarantine => {
@@ -279,9 +318,11 @@ impl<'a> Builder<'a> {
         }
         let Some(detail) = &row.detail else {
             self.summary.pending += 1;
-            return Ok(UnitDay::numbers(unit, date, row.power, Source::NrcPage, eia_power, Method::ReasonPending));
+            let mut pending = UnitDay::numbers(unit, date, row.power, Source::NrcPage, eia_power, Method::ReasonPending);
+            self.weigh(unit, &mut pending, true);
+            return Ok(pending);
         };
-        let observed = attribution::observe(self.tags, detail.reason.as_deref().unwrap_or_default());
+        let observed = attribution::observe(&self.catalog.tags, detail.reason.as_deref().unwrap_or_default());
         let attributed = if observed.unknown.is_empty() {
             self.attributors.entry(unit.docket.as_str()).or_default().attribute(date, &observed)
         } else {
@@ -295,7 +336,8 @@ impl<'a> Builder<'a> {
                 }
             }
         };
-        Ok(UnitDay {
+        let lost_output = attributed.cause.is_none_or(|cause| cause.lost_output);
+        let mut reported = UnitDay {
             docket: unit.docket.as_str().to_owned(),
             date,
             power: row.power,
@@ -322,7 +364,21 @@ impl<'a> Builder<'a> {
             method: attributed.method,
             evidence: attributed.evidence,
             unknown: observed.unknown,
-        })
+            capacity_kw: None,
+            lost_kwh: None,
+        };
+        self.weigh(unit, &mut reported, lost_output);
+        Ok(reported)
+    }
+
+    /// Fills in `row`'s capacity and lost energy, which is zero when `lost_output` is false.
+    fn weigh(&mut self, unit: &Unit, row: &mut UnitDay, lost_output: bool) {
+        row.capacity_kw = capacity::kw(&self.catalog.capacity, self.nuc_status, unit, row.date);
+        row.lost_kwh = row.capacity_kw.map(|capacity_kw| if lost_output { lost_kwh(row.power, capacity_kw) } else { 0 });
+        match row.lost_kwh {
+            Some(lost) => self.summary.lost_kwh += lost,
+            None => self.summary.without_capacity += u64::from(row.power < 100),
+        }
     }
 }
 
@@ -351,14 +407,14 @@ fn repeats(copy: &Row, previous: &Row) -> bool {
 /// When the raw store can't be read, a page or the `NUC_STATUS` doesn't parse, a day fails (see
 /// [`Builder::day`]), or `emit` fails. Under [`Unknowns::Fail`], also when a `NUC_STATUS` generator
 /// is missing from the catalog.
-pub fn build(store: &RawStore, tags: &Tags, units: &Units, unknowns: Unknowns, mut emit: impl FnMut(Vec<UnitDay>) -> Void) -> Res<Summary> {
+pub fn build(store: &RawStore, catalog: &Catalog, unknowns: Unknowns, mut emit: impl FnMut(Vec<UnitDay>) -> Void) -> Res<Summary> {
     let pages = store.latest(Series::PowerStatus)?;
     let nuc_status = match store.latest(Series::NucStatus)?.into_values().next_back() {
         Some(record) => {
             let hash = record.sha256.context("a stored NUC_STATUS has a hash")?;
             let nuc_status = NucStatus::parse(&store.get(&hash)?).with_context(|| format!("the NUC_STATUS fetched {}", record.date))?;
             if unknowns == Unknowns::Fail {
-                nuc_status.check(units)?;
+                nuc_status.check(&catalog.units)?;
             }
             Some(nuc_status)
         }
@@ -368,7 +424,7 @@ pub fn build(store: &RawStore, tags: &Tags, units: &Units, unknowns: Unknowns, m
         return Ok(Summary::default());
     };
     let last = pages.keys().next_back().copied().into_iter().chain(nuc_status.as_ref().and_then(NucStatus::end)).max().unwrap_or(first);
-    let mut builder = Builder::new(tags, units, nuc_status.as_ref(), unknowns);
+    let mut builder = Builder::new(catalog, nuc_status.as_ref(), unknowns);
     for date in first.iter_days().take_while(|date| *date <= last) {
         let page = match pages.get(&date).and_then(|record| record.sha256.as_ref()) {
             Some(hash) => Some(status::parse(&store.get(hash)?).with_context(|| format!("the status page for {date}"))?),

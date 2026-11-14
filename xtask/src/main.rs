@@ -11,14 +11,17 @@ use clap::{Parser, Subcommand};
 use chrono::{Datelike as _, NaiveDate};
 
 use downpower_ingest::eia::NucStatus;
-use downpower_ingest::ledger::{self, Unknowns};
+use downpower_ingest::ledger::{self, Catalog, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
 use downpower_ingest::status::{self, StatusPage};
 use downpower_ingest::tags::{self, Family, Matched, Tags};
 use downpower_ingest::units::Units;
 
+mod capacity;
+
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
 const UNCLASSIFIED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/unclassified.tsv");
+const CAPACITY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/capacity.csv");
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -50,6 +53,13 @@ enum Command {
     /// Compares the stored status pages with the newest stored `NUC_STATUS`: how often the two
     /// disagree on a unit-day's power, and the in-service unit-days only EIA reports.
     Eia,
+    /// Rewrites catalog/capacity.csv, each unit's net summer capacity for 1999 to 2006, from EIA-860
+    /// zips in `dir`: eia860a1999.zip, eia860a2000.zip and eia8602001.zip to eia8602006.zip, from
+    /// <https://www.eia.gov/electricity/data/eia860/>.
+    Capacity {
+        /// The directory holding the zips.
+        dir: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -60,6 +70,7 @@ fn main() -> anyhow::Result<()> {
         Command::Rules { examples } => rules(examples),
         Command::Summary => summary(&cli.data_dir),
         Command::Eia => eia(&cli.data_dir),
+        Command::Capacity { dir } => capacity::run(&dir, Path::new(CAPACITY)),
     }
 }
 
@@ -162,43 +173,65 @@ fn rules(examples: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// One unit's in-service days: the date, the Power column, and what the reason says.
+/// Totals for one family or method: unit-days below 100%, percent-points of reduction, lost kWh.
+#[derive(Debug, Default, Clone, Copy)]
+struct Totals {
+    days: u64,
+    points: u64,
+    kwh: u64,
+}
+
 fn summary(data_dir: &Path) -> anyhow::Result<()> {
     ensure!(data_dir.join("raw/manifest.jsonl").exists(), "no raw store under {}; run `downpower fetch` first", data_dir.display());
     let store = RawStore::open(data_dir)?;
-    let tags = Tags::catalog()?;
-    let units = Units::catalog()?;
+    let catalog = Catalog::embedded()?;
 
-    // Per family and per method: unit-days below 100%, and the reduction in percent-points.
-    let mut families: BTreeMap<Family, (u64, u64)> = BTreeMap::new();
-    let mut methods: BTreeMap<&'static str, (u64, u64)> = BTreeMap::new();
+    let mut families: BTreeMap<Family, Totals> = BTreeMap::new();
+    let mut methods: BTreeMap<&'static str, Totals> = BTreeMap::new();
+    let mut causes: HashMap<String, Totals> = HashMap::new();
     let mut unattributed: HashMap<(String, String), u64> = HashMap::new();
+    let mut without_capacity: BTreeMap<String, (NaiveDate, NaiveDate, u64)> = BTreeMap::new();
     let started = std::time::Instant::now();
-    let built = ledger::build(&store, &tags, &units, Unknowns::Fail, |days| {
+    let built = ledger::build(&store, &catalog, Unknowns::Fail, |days| {
         for day in days.into_iter().filter(|day| day.power < 100) {
+            if day.lost_kwh.is_none() {
+                let span = without_capacity.entry(day.docket.clone()).or_insert((day.date, day.date, 0));
+                span.1 = day.date;
+                span.2 += 1;
+            }
             let points = u64::from(100 - day.power);
-            for slot in [families.entry(day.family).or_default(), methods.entry(day.method.as_str()).or_default()] {
-                slot.0 += 1;
-                slot.1 += points;
+            let kwh = day.lost_kwh.unwrap_or_default();
+            let cause = day.cause.clone().unwrap_or_else(|| day.method.as_str().to_owned());
+            for slot in [
+                families.entry(day.family).or_default(),
+                methods.entry(day.method.as_str()).or_default(),
+                causes.entry(cause.clone()).or_default(),
+            ] {
+                slot.days += 1;
+                slot.points += points;
+                slot.kwh += kwh;
             }
             if day.family == Family::Unattributed {
-                let why = day.cause.unwrap_or_else(|| day.method.as_str().to_owned());
-                *unattributed.entry((day.docket, why)).or_default() += points;
+                *unattributed.entry((day.docket, cause)).or_default() += kwh;
             }
         }
         Ok(())
     })?;
-    let lost: u64 = families.values().map(|(_, points)| points).sum();
-    #[allow(clippy::cast_precision_loss, reason = "shares and unit-years for a human to read")]
-    let line = |name: &str, (days, points): (u64, u64)| {
+    #[allow(clippy::cast_precision_loss, reason = "shares, unit-years and TWh for a human to read")]
+    let line = |name: &str, totals: Totals| {
         println!(
-            "  {name:<22} {days:>8} unit-days  {:>8.1} unit-years  {:>5.1}%",
-            points as f64 / 100.0 / 365.25,
-            100.0 * points as f64 / lost.max(1) as f64
+            "  {name:<26} {:>8} unit-days  {:>7.1} unit-years  {:>7.1} TWh  {:>5.1}%",
+            totals.days,
+            totals.points as f64 / 100.0 / 365.25,
+            totals.kwh as f64 / 1e9,
+            100.0 * totals.kwh as f64 / built.lost_kwh.max(1) as f64
         );
     };
     println!("built in {:.1?}: {built:?}", started.elapsed());
-    println!("{} in-service unit-days; reported power reduction by family:", built.days);
+    println!(
+        "{} in-service unit-days; lost output by family (unit-days below 100%, power reduction, energy, share of energy):",
+        built.days
+    );
     for (family, totals) in &families {
         line(&format!("{family:?}"), *totals);
     }
@@ -206,14 +239,25 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
     for (method, totals) in &methods {
         line(method, *totals);
     }
+    let mut causes: Vec<_> = causes.into_iter().collect();
+    causes.sort_by_key(|(_, totals)| std::cmp::Reverse(totals.kwh));
+    println!("by fine cause, the largest 15:");
+    for (cause, totals) in causes.iter().take(15) {
+        line(cause, *totals);
+    }
+    println!("booking no lost output (catalog/tags.toml no_lost_output):");
+    for (cause, totals) in causes.iter().filter(|(_, totals)| totals.kwh == 0 && totals.points > 0) {
+        line(cause, *totals);
+    }
+    println!("rows below 100% without a capacity (docket: first, last, rows): {without_capacity:?}");
     let mut largest: Vec<_> = unattributed.into_iter().collect();
-    largest.sort_by_key(|(_, points)| std::cmp::Reverse(*points));
+    largest.sort_by_key(|(_, kwh)| std::cmp::Reverse(*kwh));
     println!("largest Unattributed shares, by unit and cause or method:");
-    for ((docket, why), points) in largest.iter().take(12) {
-        let name = units.all().iter().find(|unit| unit.docket.as_str() == docket).map_or("?", |unit| unit.name.as_str());
-        #[allow(clippy::cast_precision_loss, reason = "unit-years for a human to read")]
-        let years = *points as f64 / 100.0 / 365.25;
-        println!("  {name:<24} {why:<20} {years:>6.1} unit-years");
+    for ((docket, why), kwh) in largest.iter().take(12) {
+        let name = catalog.units.all().iter().find(|unit| unit.docket.as_str() == docket).map_or("?", |unit| unit.name.as_str());
+        #[allow(clippy::cast_precision_loss, reason = "TWh for a human to read")]
+        let twh = *kwh as f64 / 1e9;
+        println!("  {name:<24} {why:<20} {twh:>6.1} TWh");
     }
     Ok(())
 }

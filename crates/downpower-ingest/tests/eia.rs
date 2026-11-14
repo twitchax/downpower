@@ -119,6 +119,14 @@ fn eia_parse_accepts_a_minimal_generator() {
 }
 
 #[test]
+fn eia_capacity_skips_the_zero_rating_ahead_of_a_retirement() {
+    let nuc_status = NucStatus::parse(ndjson(r#"[["20200301",1030.2],["20200310",0],["20200311",0]]"#, r#"[["20200301",0],["20200310",0],["20200311",5]]"#).as_bytes()).unwrap();
+
+    assert_eq!(nuc_status.capacity_mw(&diablo_canyon_2(), day("2020-03-11")), Some(1030.2));
+    assert_eq!(nuc_status.day(&diablo_canyon_2(), day("2020-03-11")).unwrap().power, 95);
+}
+
+#[test]
 fn eia_parse_rejects_what_breaks_the_format() {
     let cases = [
         ("a fractional percent", ndjson(r#"[["20250705",1118]]"#, r#"[["20250705",45.5]]"#)),

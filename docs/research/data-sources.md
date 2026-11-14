@@ -218,6 +218,17 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
     from 2013 to 2019-01-23, and holes in Vogtle 3 and 4 during startup testing.
   - `OUT` is `CAP` × `OUT_PCT` / 100 on every day, and the median generator's capacity changes 41
     times since 2007.
+- **EIA-860 generator files, 1999 to 2006** (`archive/xls/eia860{YYYY}.zip` and
+  `eia860a/eia860a{YYYY}.zip`): net summer capacity per generator before `NUC_STATUS` starts.
+  - Three formats: 1999 and 2000 utility files (`ExistingGenerators{YYYY}.xls`, rated in **kW**,
+    nuclear marked `UR` or `NUC`), `GENY{yy}.dbf` for 2001 to 2003, and `GenY{yy}.xls` for 2004 to
+    2006 (both in MW).
+  - All 104 operating units appear in every year, each matching a `NUC_STATUS` generator by plant
+    and generator ID. The non-utility 860B files carry nameplate only and aren't needed.
+  - Status `SD` in 1999 and 2000 marks a unit sold or moved to a non-utility owner (TMI 1, Pilgrim,
+    Salem, Susquehanna); they kept operating. Browns Ferry 1 is `OS`, out of service, at 1,065 MW.
+  - The largest 1999–2006 changes are uprates: Vermont Yankee +23%, Brunswick 2 +16%, Arkansas
+    Nuclear 2 +15%. The fleet goes from 97.4 GW to 100.3 GW.
 - **EIA-860 Schedule 6D, "Cooling"** (sheet in `6_2_EnviroEquip_Y{YYYY}.xlsx`):
   - 2012 and later, plus a 2008 file.
   - Cooling type for all 54 nuclear plants in 2024: `ON` is once-through; `RI`/`RN` are induced- and

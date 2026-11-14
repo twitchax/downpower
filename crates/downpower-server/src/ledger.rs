@@ -13,9 +13,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use surrealdb::types::SerdeWrapper;
 
-use downpower_ingest::ledger::{self, Summary, UnitDay, Unknowns};
+use downpower_ingest::ledger::{self, Catalog, Summary, UnitDay, Unknowns};
 use downpower_ingest::raw::RawStore;
-use downpower_ingest::tags::Tags;
 use downpower_ingest::units::{Unit, Units};
 
 use crate::db::Store;
@@ -56,6 +55,7 @@ struct UnitRecord {
     nrc_names: Vec<String>,
     eia_plant: u32,
     eia_generator: String,
+    commercial: Option<NaiveDate>,
     shutdown: Option<NaiveDate>,
     restart: Option<NaiveDate>,
 }
@@ -68,6 +68,7 @@ impl From<&Unit> for UnitRecord {
             nrc_names: unit.nrc_names.clone(),
             eia_plant: unit.eia.plant,
             eia_generator: unit.eia.generator.clone(),
+            commercial: unit.commercial,
             shutdown: unit.shutdown,
             restart: unit.restart,
         }
@@ -134,10 +135,9 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     let raw = RawStore::open(data_dir)?;
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<Keyed>>(IN_FLIGHT);
     let builder = tokio::task::spawn_blocking(move || {
-        let tags = Tags::catalog()?;
-        let units = Units::catalog()?;
+        let catalog = Catalog::embedded()?;
         let mut batch = Vec::with_capacity(BATCH);
-        let summary = ledger::build(&raw, &tags, &units, unknowns, |days| {
+        let summary = ledger::build(&raw, &catalog, unknowns, |days| {
             batch.extend(days.into_iter().map(|day| Keyed { id: (day.docket.clone(), day.date), day }));
             if batch.len() >= BATCH {
                 sender.blocking_send(std::mem::replace(&mut batch, Vec::with_capacity(BATCH))).context("the ledger writer stopped")?;

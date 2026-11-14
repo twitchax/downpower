@@ -120,6 +120,10 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - A committed crosswalk CSV maps each docket to every NRC name variant, the EIA plant and
       generator, a display name, and the retirement date.
     - It covers units retired since 1999.
+    - A unit is in service from commercial operation (Watts Bar 2, Vogtle 3 and 4 started after
+      1999), and out of service between a shutdown and a restart, such as Browns Ferry 1 from 1985
+      to 2007. The pages list a unit in startup testing or a defueled unit at low power, and
+      neither is lost output (revised 2026-11-14).
     - A name the crosswalk doesn't know fails the backfill.
 
 ### Classification
@@ -188,7 +192,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - An LLM only proposes new table entries, offline.
 22. **Lost output = (100 − power) % × net capacity × 24 h, labeled "reported power reduction".**
     - Capacity comes from `NUC_STATUS` from 2007 on, and from EIA-860 net summer capacity before
-      that.
+      that (`catalog/capacity.csv`). A zero `NUC_STATUS` rating isn't one: EIA zeroes a retiring
+      unit's capacity weeks before it stops.
+    - "100% electrical capability" and its variants become their own cause,
+      `full_electrical_output`, which books no lost output (`no_lost_output` in `catalog/tags.toml`,
+      revised 2026-11-14). A unit at full electrical output reading 97–99% thermal has lost no
+      energy against its net capacity. Turbine, administrative and uprate limits still count.
     - The heat efficiency loss ("the slope") probably never appears in the NRC column (see "Still
       open"). It is measured separately, as the monthly gap between actual EIA-923 generation and
       the generation implied by reported power.

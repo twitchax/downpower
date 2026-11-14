@@ -9,11 +9,10 @@ use pretty_assertions::assert_eq;
 
 use downpower_ingest::attribution::{Evidence, Method};
 use downpower_ingest::eia::NucStatus;
-use downpower_ingest::ledger::{self, Builder, ObservedCause, Source, UnitDay, Unknowns};
+use downpower_ingest::ledger::{self, Builder, Catalog, ObservedCause, Source, UnitDay, Unknowns};
 use downpower_ingest::raw::{RawStore, Record, Series};
 use downpower_ingest::status::{Detail, Row, StatusPage};
-use downpower_ingest::tags::{Family, Tags};
-use downpower_ingest::units::Units;
+use downpower_ingest::tags::Family;
 
 const NUC_STATUS: &[u8] = include_bytes!("fixtures/eia/nuc_status.txt");
 
@@ -48,23 +47,21 @@ fn page(rows: Vec<Row>) -> StatusPage {
     StatusPage::Report(rows)
 }
 
-struct Catalog {
-    tags: Tags,
-    units: Units,
+struct Fixture {
+    catalog: Catalog,
     nuc_status: NucStatus,
 }
 
-fn catalog() -> Catalog {
-    Catalog {
-        tags: Tags::catalog().unwrap(),
-        units: Units::catalog().unwrap(),
+fn catalog() -> Fixture {
+    Fixture {
+        catalog: Catalog::embedded().unwrap(),
         nuc_status: NucStatus::parse(NUC_STATUS).unwrap(),
     }
 }
 
-impl Catalog {
+impl Fixture {
     fn builder(&self, unknowns: Unknowns) -> Builder<'_> {
-        Builder::new(&self.tags, &self.units, Some(&self.nuc_status), unknowns)
+        Builder::new(&self.catalog, Some(&self.nuc_status), unknowns)
     }
 }
 
@@ -282,7 +279,7 @@ fn ledger_build_streams_from_the_first_page_to_the_last_day_either_source_covers
     let catalog = catalog();
     let mut days: Vec<UnitDay> = Vec::new();
 
-    let summary = ledger::build(&store, &catalog.tags, &catalog.units, Unknowns::Fail, |rows| {
+    let summary = ledger::build(&store, &catalog.catalog, Unknowns::Fail, |rows| {
         days.extend(rows);
         Ok(())
     })
@@ -307,7 +304,76 @@ fn ledger_build_over_an_empty_store_builds_nothing() {
     let store = RawStore::open(tmp.path()).unwrap();
     let catalog = catalog();
 
-    let summary = ledger::build(&store, &catalog.tags, &catalog.units, Unknowns::Fail, |_| panic!("no rows")).unwrap();
+    let summary = ledger::build(&store, &catalog.catalog, Unknowns::Fail, |_| panic!("no rows")).unwrap();
 
     assert_eq!(summary, ledger::Summary::default());
+}
+
+#[test]
+fn ledger_lost_output_is_the_reduction_times_capacity_for_a_day() {
+    let catalog = catalog();
+    let mut builder = catalog.builder(Unknowns::Fail);
+
+    let days = builder
+        .day(day("2025-07-05"), Some(&page(vec![row("Diablo Canyon 2", 55, "Reduced Power Due to Environmental Conditions")])))
+        .unwrap();
+
+    // NUC_STATUS rates Diablo Canyon 2 at 1,118 MW: 45% of it for 24 hours.
+    assert_eq!((days[0].capacity_kw, days[0].lost_kwh), (Some(1_118_000), Some(12_074_400)));
+    assert_eq!(builder.finish().lost_kwh, 12_074_400);
+}
+
+#[test]
+fn ledger_full_electrical_output_books_no_lost_output() {
+    let catalog = catalog();
+    let mut builder = catalog.builder(Unknowns::Fail);
+
+    let days = builder.day(day("2025-07-07"), Some(&page(vec![row("Diablo Canyon 2", 98, "100% Electrical Capability")]))).unwrap();
+
+    assert_eq!((days[0].cause.as_deref(), days[0].family), (Some("full_electrical_output"), Family::Equipment));
+    assert_eq!((days[0].capacity_kw, days[0].lost_kwh), (Some(1_118_000), Some(0)));
+}
+
+#[test]
+fn ledger_capacity_before_2007_comes_from_eia_860() {
+    let catalog = catalog();
+    let mut builder = catalog.builder(Unknowns::Fail);
+
+    let days = builder.day(day("1999-07-01"), Some(&page(vec![row("Diablo Canyon 2", 0, "Refueling Outage")]))).unwrap();
+
+    let capacity_kw = catalog.catalog.capacity.kw("05000323", 1999).unwrap();
+    assert_eq!(days[0].capacity_kw, Some(capacity_kw));
+    assert_eq!(days[0].lost_kwh, Some(u64::from(capacity_kw) * 24));
+}
+
+#[test]
+fn ledger_without_nuc_status_days_from_2007_have_no_capacity() {
+    let catalog = catalog();
+    let mut builder = Builder::new(&catalog.catalog, None, Unknowns::Fail);
+
+    let days = builder.day(day("2025-07-05"), Some(&page(vec![row("Diablo Canyon 2", 55, "")]))).unwrap();
+
+    assert_eq!((days[0].capacity_kw, days[0].lost_kwh, days[0].eia_power), (None, None, None));
+    assert_eq!(builder.finish().without_capacity, 1);
+}
+
+#[test]
+fn ledger_eia_860_rates_every_unit_in_service_from_1999_to_2006() {
+    let catalog = Catalog::embedded().unwrap();
+
+    let mut missing = Vec::new();
+    for unit in catalog.units.all() {
+        for year in 1999..=2006 {
+            let in_service = NaiveDate::from_ymd_opt(year, 1, 1)
+                .unwrap()
+                .iter_days()
+                .take_while(|date| *date <= NaiveDate::from_ymd_opt(year, 12, 31).unwrap())
+                .any(|date| unit.in_service(date));
+            if in_service && catalog.capacity.kw(unit.docket.as_str(), year).is_none() {
+                missing.push((unit.name.as_str(), year));
+            }
+        }
+    }
+
+    assert_eq!(missing, []);
 }

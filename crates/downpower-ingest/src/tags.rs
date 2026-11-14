@@ -35,6 +35,9 @@ pub enum Family {
 pub struct Cause {
     pub name: String,
     pub family: Family,
+    /// Whether the reduction is lost electrical output. A unit at full electrical output reading
+    /// just under 100% thermal loses none (`no_lost_output` in `catalog/tags.toml`).
+    pub lost_output: bool,
 }
 
 /// What a tag is (Decision 18).
@@ -80,6 +83,8 @@ enum Spec {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
+    #[serde(default)]
+    no_lost_output: Vec<String>,
     causes: HashMap<String, Family>,
     flags: Vec<String>,
     keys: HashMap<String, String>,
@@ -124,7 +129,18 @@ impl Tags {
     pub fn parse(table: &str, unclassified: &str) -> Res<Self> {
         let file: File = toml::from_str(table).context("parsing the tag table")?;
 
-        let mut causes: Vec<Cause> = file.causes.into_iter().map(|(name, family)| Cause { name, family }).collect();
+        for name in &file.no_lost_output {
+            ensure!(file.causes.contains_key(name), "no_lost_output names unknown cause {name:?}");
+        }
+        let mut causes: Vec<Cause> = file
+            .causes
+            .into_iter()
+            .map(|(name, family)| Cause {
+                lost_output: !file.no_lost_output.contains(&name),
+                name,
+                family,
+            })
+            .collect();
         causes.sort_by(|a, b| a.name.cmp(&b.name));
         let mut flags = file.flags;
         flags.sort();

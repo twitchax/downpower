@@ -117,8 +117,8 @@ fn ledger_rows_read_back_as_written() {
         let store = db::open(tmp.path()).await.unwrap();
         let mut in_memory = Vec::new();
         let raw = RawStore::open(tmp.path()).unwrap();
-        let (tags, units) = (downpower_ingest::tags::Tags::catalog().unwrap(), Units::catalog().unwrap());
-        ledger::build(&raw, &tags, &units, Unknowns::Fail, |days| {
+        let catalog = ledger::Catalog::embedded().unwrap();
+        ledger::build(&raw, &catalog, Unknowns::Fail, |days| {
             in_memory.extend(days);
             Ok(())
         })

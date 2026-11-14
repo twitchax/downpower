@@ -13,6 +13,9 @@ anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 downpower-ingest.workspace = true
 chrono.workspace = true
+zip.workspace = true
+calamine.workspace = true
+dbase.workspace = true
 
 [lints]
 workspace = true

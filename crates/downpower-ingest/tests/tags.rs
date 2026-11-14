@@ -55,6 +55,9 @@ fn uat_reasons_snapshot_the_design_examples_classify_as_designed() {
         ("reactor trip due to main transformer fire. see en# 52210.", "scram/Forced"),
         ("reduced power for planned maintenance", "maintenance/Maintenance"),
         ("transformer limitation", "transformer/Equipment"),
+        ("100% electrical capability", "full_electrical_output/Equipment"),
+        ("100% of rated electrical capability", "full_electrical_output/Equipment"),
+        ("limited by turbine controls", "rated_output_limit/Equipment"),
         ("steam generator limitations", "steam_generator/Equipment"),
         ("main condenser inefficiencies", "main_condenser_inefficiencies/Equipment"),
         ("single loop ops due to recirculation pump trip", "recirculation_pump/Equipment"),
@@ -87,4 +90,16 @@ fn uat_reasons_snapshot_keys_win_over_rules() {
 
     assert_eq!(classified.matched, Matched::Key);
     assert!(matches!(classified.label, Label::Cause(cause) if cause.family == Family::Maintenance));
+}
+
+#[test]
+fn uat_reasons_snapshot_only_full_electrical_output_books_no_lost_output() {
+    let tags = Tags::catalog().unwrap();
+
+    let label = |tag: &str| tags.classify(tag).unwrap().label;
+    let Label::Cause(full) = label("100% electrical capability") else { panic!("not a cause") };
+    let Label::Cause(limited) = label("limited by turbine controls") else { panic!("not a cause") };
+
+    assert!(!full.lost_output);
+    assert!(limited.lost_output);
 }

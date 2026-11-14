@@ -86,6 +86,7 @@ fn shutdowns_match_the_last_day_at_power_on_the_pages() {
     assert_eq!(
         retired,
         [
+            "Browns Ferry 1",
             "Crystal River 3",
             "Duane Arnold",
             "Fort Calhoun",
@@ -101,5 +102,28 @@ fn shutdowns_match_the_last_day_at_power_on_the_pages() {
             "Vermont Yankee"
         ]
     );
-    assert!(units.all().iter().all(|unit| unit.restart.is_none()));
+    let restarted: Vec<_> = units.all().iter().filter(|unit| unit.restart.is_some()).map(|unit| unit.name.as_str()).collect();
+    assert_eq!(restarted, ["Browns Ferry 1"]);
+}
+
+#[test]
+fn units_built_since_1999_enter_service_at_commercial_operation() {
+    let units = Units::catalog().unwrap();
+
+    let commercial: Vec<_> = units.all().iter().filter_map(|unit| unit.commercial.map(|day| (unit.name.as_str(), day.to_string()))).collect();
+
+    assert_eq!(
+        commercial,
+        [("Vogtle 3", "2023-07-31".to_owned()), ("Vogtle 4", "2024-04-29".to_owned()), ("Watts Bar 2", "2016-10-19".to_owned())]
+    );
+}
+
+#[test]
+fn browns_ferry_1_is_out_of_service_until_its_2007_restart() {
+    let units = Units::catalog().unwrap();
+    let browns_ferry_1 = units.by_nrc_name("Browns Ferry 1").unwrap();
+
+    assert!(!browns_ferry_1.in_service("1999-01-01".parse().unwrap()));
+    assert!(!browns_ferry_1.in_service("2007-05-21".parse().unwrap()));
+    assert!(browns_ferry_1.in_service("2007-05-22".parse().unwrap()));
 }

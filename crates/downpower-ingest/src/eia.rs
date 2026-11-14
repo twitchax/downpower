@@ -207,11 +207,13 @@ impl NucStatus {
         self.generators.get(generator)?.get(&date).copied()
     }
 
-    /// `generator`'s net capacity on `date`: the latest reported on or before it, which carries a
-    /// rating across the days EIA skips and past the end of the file.
+    /// `generator`'s net capacity on `date`: the latest positive rating on or before it, which
+    /// carries a rating across the days EIA skips and past the end of the file. EIA zeroes a
+    /// retiring unit's capacity weeks ahead (Indian Point 2 from early March 2020, still at full
+    /// power), so a zero is no rating.
     #[must_use]
     pub fn capacity_mw(&self, generator: &EiaGenerator, date: NaiveDate) -> Option<f64> {
-        self.generators.get(generator)?.range(..=date).next_back().map(|(_, day)| day.capacity_mw)
+        self.generators.get(generator)?.range(..=date).rev().map(|(_, day)| day.capacity_mw).find(|&mw| mw > 0.0)
     }
 
     /// Checks that every generator maps to a unit.

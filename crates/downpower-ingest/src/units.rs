@@ -61,20 +61,27 @@ pub struct Unit {
     /// Every spelling the status pages have used for the unit.
     pub nrc_names: Vec<String>,
     pub eia: EiaGenerator,
-    /// The day the unit permanently ceased operations, per its NRC facility page. It is the last
-    /// day in service: the morning report usually still shows the unit at power.
+    /// The first day of commercial operation, for a unit that began after 1999. The pages list a
+    /// new unit through months of startup testing at low power, which is no lost output.
+    pub commercial: Option<NaiveDate>,
+    /// The last day in service before the unit stopped operating, for good or, with a restart, for
+    /// an extended shutdown. The morning report usually still shows the unit at power that day.
     pub shutdown: Option<NaiveDate>,
-    /// The day a shut-down unit returned to power.
+    /// The day a shut-down unit returned to service.
     pub restart: Option<NaiveDate>,
-    /// Where the shutdown and restart dates come from.
+    /// Where the commercial, shutdown and restart dates come from.
     pub source: Option<String>,
 }
 
 impl Unit {
-    /// Whether the unit was in service on `date`: not after its shutdown, unless it has since
-    /// restarted. A unit out of service loses no output, whatever its Power column reads.
+    /// Whether the unit was in service on `date`: in commercial operation, and not after its
+    /// shutdown unless it has since restarted. A unit out of service loses no output, whatever its
+    /// Power column reads.
     #[must_use]
     pub fn in_service(&self, date: NaiveDate) -> bool {
+        if self.commercial.is_some_and(|commercial| date < commercial) {
+            return false;
+        }
         match (self.shutdown, self.restart) {
             (Some(shutdown), Some(restart)) => date <= shutdown || date >= restart,
             (Some(shutdown), None) => date <= shutdown,
@@ -92,6 +99,7 @@ struct CsvRow {
     nrc_names: String,
     eia_plant: u32,
     eia_generator: String,
+    commercial: Option<NaiveDate>,
     shutdown: Option<NaiveDate>,
     restart: Option<NaiveDate>,
     source: Option<String>,
@@ -137,11 +145,19 @@ impl Units {
                     plant: row.eia_plant,
                     generator: row.eia_generator,
                 },
+                commercial: row.commercial,
                 shutdown: row.shutdown,
                 restart: row.restart,
                 source: row.source,
             };
-            ensure!(unit.shutdown.is_none() || unit.source.is_some(), "line {line}: {} has a shutdown date but no source", unit.name);
+            ensure!(
+                (unit.commercial.is_none() && unit.shutdown.is_none()) || unit.source.is_some(),
+                "line {line}: {} has a date but no source",
+                unit.name
+            );
+            if let (Some(commercial), Some(shutdown)) = (unit.commercial, unit.shutdown) {
+                ensure!(commercial < shutdown, "line {line}: {} shuts down before commercial operation", unit.name);
+            }
             if let Some(restart) = unit.restart {
                 ensure!(
                     unit.shutdown.is_some_and(|shutdown| shutdown < restart),
@@ -198,7 +214,7 @@ mod unit {
 
     use super::*;
 
-    const HEADER: &str = "docket,name,nrc_names,eia_plant,eia_generator,shutdown,restart,source\n";
+    const HEADER: &str = "docket,name,nrc_names,eia_plant,eia_generator,commercial,shutdown,restart,source\n";
 
     fn error(rows: &str) -> String {
         format!("{:#}", Units::parse(&format!("{HEADER}{rows}")).unwrap_err())
@@ -210,7 +226,7 @@ mod unit {
 
     #[test]
     fn every_key_finds_its_unit() {
-        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,6026,1,,,\n")).unwrap();
+        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,6026,1,,,,\n")).unwrap();
         let unit = &units.all()[0];
 
         assert_eq!(unit.docket.as_str(), "05000373");
@@ -223,10 +239,10 @@ mod unit {
     #[test]
     fn service_ends_after_the_shutdown_day_and_resumes_at_restart() {
         let units = Units::parse(&format!(
-            "{HEADER}05000255,Palisades,Palisades,1715,1,2022-05-20,2025-10-01,test\n05000271,Vermont Yankee,Vermont Yankee,3751,1,2014-12-29,,test\n"
+            "{HEADER}05000255,Palisades,Palisades,1715,1,,2022-05-20,2025-10-01,test\n05000271,Vermont Yankee,Vermont Yankee,3751,1,,2014-12-29,,test\n05200025,Vogtle 3,Vogtle 3,649,3,2023-07-31,,,test\n"
         ))
         .unwrap();
-        let [palisades, vermont] = units.all() else { panic!("two units") };
+        let [palisades, vermont, vogtle] = units.all() else { panic!("three units") };
 
         assert!(palisades.in_service(day("2022-05-20")));
         assert!(!palisades.in_service(day("2022-05-21")));
@@ -234,20 +250,24 @@ mod unit {
         assert!(palisades.in_service(day("2025-10-01")));
         assert!(vermont.in_service(day("2014-12-29")));
         assert!(!vermont.in_service(day("2014-12-30")));
+        assert!(!vogtle.in_service(day("2023-07-30")));
+        assert!(vogtle.in_service(day("2023-07-31")));
     }
 
     #[test]
     fn the_table_is_checked() {
         let cases = [
-            ("5000373,LaSalle 1,LaSalle 1,6026,1,,,\n", "not an NRC power reactor docket"),
-            ("05000373,A,A,1,1,,,\n05000373,B,B,2,1,,,\n", "docket 05000373 appears twice"),
-            ("05000373,A,A,1,1,,,\n05000374,B,A,2,1,,,\n", "NRC name \"A\": appears twice"),
-            ("05000373,A,A,1,1,,,\n05000374,B,B,1,1,,,\n", "EIA generator"),
-            ("05000373,A,A; B,1,1,,,\n", "blank or padded"),
-            ("05000373,A,A,1,1,2020-01-01,,\n", "has a shutdown date but no source"),
-            ("05000373,A,A,1,1,2020-01-01,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,1,1,,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,plant,1,,,\n", "line 2"),
+            ("5000373,LaSalle 1,LaSalle 1,6026,1,,,,\n", "not an NRC power reactor docket"),
+            ("05000373,A,A,1,1,,,,\n05000373,B,B,2,1,,,,\n", "docket 05000373 appears twice"),
+            ("05000373,A,A,1,1,,,,\n05000374,B,A,2,1,,,,\n", "NRC name \"A\": appears twice"),
+            ("05000373,A,A,1,1,,,,\n05000374,B,B,1,1,,,,\n", "EIA generator"),
+            ("05000373,A,A; B,1,1,,,,\n", "blank or padded"),
+            ("05000373,A,A,1,1,,2020-01-01,,\n", "has a date but no source"),
+            ("05000373,A,A,1,1,2020-01-01,,,\n", "has a date but no source"),
+            ("05000373,A,A,1,1,2021-01-01,2020-01-01,,x\n", "shuts down before commercial operation"),
+            ("05000373,A,A,1,1,,2020-01-01,2019-01-01,x\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,1,1,,,2019-01-01,x\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,plant,1,,,,\n", "line 2"),
         ];
         for (rows, expected) in cases {
             let error = error(rows);
