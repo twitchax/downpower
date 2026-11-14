@@ -1,0 +1,296 @@
+# The tag table (DESIGN.md Decisions 17, 18 and 21). A reason splits into tags on `;` and line breaks,
+# each tag is normalized (lowercase, whitespace collapsed), and then known by, in order:
+#   1. its exact key under [keys],
+#   2. the first rule under [[rules]] whose pattern matches it,
+#   3. catalog/unclassified.tsv, which accepts it on purpose as Unattributed.
+# A label is `cause:<fine cause>`, `flag:<flag>`, `transition` or `xref`.
+#
+# `cargo xtask reasons` regenerates catalog/reasons.tsv from the raw store, and
+# `cargo xtask unclassified` rewrites the accepted-unknown list from it. Review that diff before
+# committing it.
+
+# Context only: alerts and conditions, stored as a set on the unit-day (Decision 18).
+flags = [
+    "cold_weather_alert",
+    "conservative_ops",
+    "geomagnetic_warning",
+    "grid_condition",
+    "hot_weather_alert",
+    "max_generation_alert",
+    "min_generation_alert",
+    "mvar_limit",
+    "offsite_power",
+    "system_voltage",
+    "voltage_regulator",
+    "weather_alert",
+    "grid_contingency",
+]
+
+# Fine causes and their families (Decision 17).
+[causes]
+refueling_outage = "refueling"
+coastdown = "fuel_cycle"
+rod_pattern = "fuel_cycle"
+# Flux shaping, xenon, fuel conditioning and other core management short of a rod pattern change.
+fuel_management = "fuel_cycle"
+scram = "forced"
+forced_outage = "forced"
+maintenance = "maintenance"
+testing = "maintenance"
+steam_generator = "equipment"
+transformer = "equipment"
+# Kept apart from `condenser` so the heat analysis can address it (Decision 17).
+main_condenser_inefficiencies = "equipment"
+condenser = "equipment"
+recirculation_pump = "equipment"
+feedwater = "equipment"
+turbine_generator = "equipment"
+steam_dryer = "equipment"
+core_flow = "equipment"
+reactor_coolant = "equipment"
+fuel_defect = "equipment"
+# Below 100% thermal while at full electrical output, or held under a rated or licensed limit.
+rated_output_limit = "equipment"
+equipment_other = "equipment"
+heat = "environmental"
+marine_life = "environmental"
+weather = "environmental"
+# "Environmental Conditions" says nothing about which; never heat by default (Decision 20).
+environmental_unspecified = "environmental"
+grid_limit = "grid"
+economic_dispatch = "grid"
+defueled = "unattributed"
+permanent_shutdown = "unattributed"
+outage_unspecified = "unattributed"
+
+# The most used tags, spelled out. Rules catch their variants.
+[keys]
+"refueling outage" = "cause:refueling_outage"
+"coastdown to refueling outage" = "cause:coastdown"
+"100% electrical capability" = "cause:rated_output_limit"
+"increasing power" = "transition"
+"defueled" = "cause:defueled"
+"hot weather alert" = "flag:hot_weather_alert"
+"maintenance outage" = "cause:maintenance"
+"high system voltage action" = "flag:system_voltage"
+"refueling outage - defueled" = "cause:refueling_outage"
+"cold weather alert" = "flag:cold_weather_alert"
+"minimum generation alert" = "flag:min_generation_alert"
+"conservative operations" = "flag:conservative_ops"
+"reduced power for maintenance" = "cause:maintenance"
+"forced outage" = "cause:forced_outage"
+"exiting refueling outage" = "cause:refueling_outage"
+"reactor defueled for permanent shutdown" = "cause:permanent_shutdown"
+"reduced power for rod pattern adjustment" = "cause:rod_pattern"
+"holding power" = "transition"
+"conservative operations alert" = "flag:conservative_ops"
+"limited in power (steam dryer monitoring)" = "cause:steam_dryer"
+"rcs t hot temperature limited" = "cause:reactor_coolant"
+"transformer limitation" = "cause:transformer"
+"reduced power for planned maintenance" = "cause:maintenance"
+"entering refueling outage" = "cause:refueling_outage"
+"startup in progress" = "transition"
+"maximum generation alert" = "flag:max_generation_alert"
+"voltage regulator in manual" = "flag:voltage_regulator"
+"increasing power to 100%" = "transition"
+"plant restart" = "transition"
+"maximum operating power" = "cause:rated_output_limit"
+"reduced power due to environmental conditions" = "cause:environmental_unspecified"
+"steam generator limitations" = "cause:steam_generator"
+"main condenser inefficiencies" = "cause:main_condenser_inefficiencies"
+"permanently shutdown" = "cause:permanent_shutdown"
+"load following" = "cause:economic_dispatch"
+"chemistry hold" = "transition"
+"flow limited" = "cause:core_flow"
+"scram time testing" = "cause:testing"
+"switch yard work - high reactor trip risk, line 383 oos ( 1 of 4 offsite sources)" = "flag:offsite_power"
+
+# Tried in order on every tag no key matches; the first match wins. Causes come first, most specific
+# to least, so a tag that names its cause keeps it. Flags, transitions and EN references follow.
+[[rules]]
+pattern = 'coast ?down|coasting|end of (cycle|core life|life)|\beoc\b|\beocl\b|end-of-cycle|extend (the )?(fuel|core|cycle) life|fuel conservation'
+label = "cause:coastdown"
+
+[[rules]]
+pattern = 'permanent(ly)? (plant )?(shut ?down|cessation|ceased|defueled)|decommission'
+label = "cause:permanent_shutdown"
+
+[[rules]]
+pattern = '\bscram|\b(reactor|rx|unit|plant|turbine|generator) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|tripped'
+label = "cause:scram"
+
+[[rules]]
+pattern = '\bforced'
+label = "cause:forced_outage"
+
+[[rules]]
+pattern = 'containment (tensioning|repair|delamination|tendon)|cont\. tensioning'
+label = "cause:forced_outage"
+
+[[rules]]
+pattern = 'refuel|\brfo\b|core (re)?load|core offload|fuel (re)?load|fuel offload|\breload|loading fuel|offload fuel|fuel (movement|shuffle|handling)'
+label = "cause:refueling_outage"
+
+[[rules]]
+pattern = 'rod (pattern|sequence|line|swap|adjust|exchange)|control rod|sequence exchange|\brpa\b|\brsx\b'
+label = "cause:rod_pattern"
+
+[[rules]]
+pattern = 'fuel (management|conditioning|preconditioning)|\bpci(omr)?\b|xenon|flux (map|shap|tilt)|axial (flux|offset|power)|power distribution|load line'
+label = "cause:fuel_management"
+
+[[rules]]
+pattern = 'steam gen|\bs/g|\bsg\b|\bsgs\b|tube plug|blowdown'
+label = "cause:steam_generator"
+
+[[rules]]
+pattern = 'nsss limit|uprate|licensed (thermal )?power|electrical (capab|capac|output|generation|power|limit)|full electrical|maximum (operating )?power|\bmop\b|rated (electrical|thermal|power)|generator capability|capability curve|administrative (power )?limit|limited by turbine|turbine limited|mwe limit due to turbine|max(imum)? (allowable|allowed) power|max power allowed|maximum operating limit|equivalent electrical|elec?t?ical capab'
+label = "cause:rated_output_limit"
+
+[[rules]]
+pattern = 'fuel (defect|leak|failure|integrity|clad)|leaking fuel|failed fuel|fuel pin'
+label = "cause:fuel_defect"
+
+[[rules]]
+pattern = 'mainten|\bmaint\b|repair|replac|\bwork on|\boverhaul|cleaning|clean(ing)? (of )?(the )?(condenser|waterbox|water box|screens|intake)'
+label = "cause:maintenance"
+
+[[rules]]
+pattern = '\btest|surveillance|calibrat|\bepu\b|\bstp\b|power suppression|\bpst\b|\bmsiv\b.*(stroke|closure)|valve stroke'
+label = "cause:testing"
+
+[[rules]]
+pattern = 'contingenc'
+label = "flag:grid_contingency"
+
+[[rules]]
+pattern = 'grid (condition|status|alert|emergency|warning|watch)|(yellow|orange|red) (grid|condition|status|alert)|grid (is )?(yellow|orange|red)|condition yellow|hands off'
+label = "flag:grid_condition"
+
+[[rules]]
+pattern = 'distribution system|grid (generation )?restriction|grid (request|operator|limit|instab|stability|constraint|reliab|security|congestion|requirement)|per (the )?grid|requested by (the )?grid|transmission (limit|constraint|restriction)|dispa?t?cher|\biso\b|\bpjm\b|ercot|\bmiso\b|caiso|nyiso|iso-ne|\btva\b|\bbpa\b|system operator|load (shed|limit)|per (the )?(system|dispatcher)|\bmwe\b.{0,40}\bmvars?\b|\bmvars?\b.{0,40}\bmwe\b'
+label = "cause:grid_limit"
+
+[[rules]]
+pattern = '\bmvars?\b|reactive|\bvars?\b'
+label = "flag:mvar_limit"
+
+[[rules]]
+pattern = 'transformer|xfmr|\bxfmrs?\b'
+label = "cause:transformer"
+
+[[rules]]
+pattern = 'condenser (ineffic|back ?pressure|vacuum|performance|pressure)|back ?pressure|vacuum'
+label = "cause:main_condenser_inefficiencies"
+
+[[rules]]
+pattern = 't[- ]?hot|t[- ]?ave?g?\b|\brcs\b|reactor coolant|\brcps?\b|\bop ?delta ?t|overpower delta'
+label = "cause:reactor_coolant"
+
+[[rules]]
+pattern = 'jellyfish|\bfish|grass|algae|seaweed|sea weed|kelp|mussel|\bclams?\b|shrimp|marine|hydrilla|\bshad\b|alewive|\bsalps?\b|biofoul|smelt|eelgrass|leaves|debris'
+label = "cause:marine_life"
+
+[[rules]]
+pattern = 'feed ?water|feed ?pump|\bfwh?\b|heater|\brfp\b|\bmfp\b|\bmfwp\b|feed reg'
+label = "cause:feedwater"
+
+[[rules]]
+pattern = '\b(intake|discharge|inlet|outlet|circ(ulating)? water|cooling (water|tower|pond|lake|canal)|river|lake|canal|ocean|bay|ultimate heat sink|uhs|npdes|service water|condensate|condenser|ambient|air|water|seawater|sea water|plume|mixing zone)\b.{0,40}temp|thermal (discharge|plume)|discharge (permit|limit)|npdes|\b(river|discharge|canal|lake) delta ?t|high temp|temperature limit|(reduc|derat|limit|due to).{0,30}hot weather|hot weather.{0,30}(reduc|derat|limit)|heat sink'
+label = "cause:heat"
+
+[[rules]]
+pattern = 'environmental|ambient|atmospheric'
+label = "cause:environmental_unspecified"
+
+[[rules]]
+pattern = 'recirc|single loop|\bslo\b'
+label = "cause:recirculation_pump"
+
+[[rules]]
+pattern = 'steam dryer|\bdryer|moisture carryover'
+label = "cause:steam_dryer"
+
+[[rules]]
+pattern = 'core flow|flow (limit|window|control)|jet pump|\bmcpr\b|\bmaplhgr\b|thermal limit|limited by flow|\bmax(imum)? flow\b'
+label = "cause:core_flow"
+
+[[rules]]
+pattern = 'condenser|condensate|circ(ulating)? water|\bcw pump|waterbox|water box|cooling tower|draft tower|tower performance|sodium intrusion|hotwell'
+label = "cause:condenser"
+
+[[rules]]
+pattern = 'voltage regulator|\bavr\b'
+label = "flag:voltage_regulator"
+
+[[rules]]
+pattern = 'turbine|generator|\bmsr\b|moisture separator|reheater|vibration|stator|exciter|\bmain gen|governor|control valve|\bcv\b|\bebop\b|isophase|hydrogen|\behc\b'
+label = "cause:turbine_generator"
+
+[[rules]]
+pattern = 'economic|dispatch|load follow|system load|low (system )?demand|load reduction|reduced load|excess (generation|hydro)|hydro|\bspp\b|market|load drop|flexible operation|flex ops'
+label = "cause:economic_dispatch"
+
+[[rules]]
+pattern = 'geomagnetic|solar (storm|flare|magnetic)|\bgmd\b'
+label = "flag:geomagnetic_warning"
+
+[[rules]]
+pattern = '(tornado|hurricane|tropical|storm|wind|flood|winter|ice|snow|thunderstorm|severe weather|fire)\b.{0,25}\b(watch|warning|alert|advisory)|no issues related to'
+label = "flag:weather_alert"
+
+[[rules]]
+pattern = 'storm|hurricane|tornado|flood|\bsnow|\bice\b|icing|frazil|high winds?|lightning|wildfire|fire\b|smoke|drought|low (river|lake|water) level'
+label = "cause:weather"
+
+[[rules]]
+pattern = 'pump|valve|leak|breaker|\bbus\b|instrument|calorimetric|heat balance|\bni\b|nuclear instrumentation|relay|switchyard|\bfans?\b|motor|cable|\bmsiv|\bmsr\b|\bhpci\b|\brcic\b|\bdiesel|\bedg\b|steam leak|\bhx\b|heat exchanger|piping|pipe|\bmssv|flow (measurement|meter)|\bufm\b|\blefm\b|steam flow|service water|equipment'
+label = "cause:equipment_other"
+
+[[rules]]
+pattern = '\bmwe\b|\bmw\b|megawatt'
+label = "cause:grid_limit"
+
+[[rules]]
+pattern = 'max(imum)?\.? (emergency )?gen(eration)?|power supply (alert|warning)|capacity (alert|advisory|emergency)|emergency generation|\beea\b|energy emergency|max gen'
+label = "flag:max_generation_alert"
+
+[[rules]]
+pattern = 'min(imum)?\.? gen(eration)?|min gen'
+label = "flag:min_generation_alert"
+
+[[rules]]
+pattern = 'hot weather|heat (advisory|alert|wave|emergency)|excessive heat|high temperature alert'
+label = "flag:hot_weather_alert"
+
+[[rules]]
+pattern = 'cold weather|winter (storm|weather)|severe cold|cold snap|freeze (alert|warning)|extreme cold'
+label = "flag:cold_weather_alert"
+
+[[rules]]
+pattern = 'conservative'
+label = "flag:conservative_ops"
+
+[[rules]]
+pattern = 'voltage'
+label = "flag:system_voltage"
+
+[[rules]]
+pattern = '\bkv\b|\d ?kv|line.{0,20}\boos\b|offsite|off-site|feeder|switchyard|transmission|line work'
+label = "flag:offsite_power"
+
+[[rules]]
+pattern = 'increas|ascen|start ?up|start-up|restart|starting|heating|hot standby|connected to the grid|return(ing|ed)? to|holding|\bhold\b|raising power|escalat|ramp|synch|sync(ed)? to|not synced|on ?line|off ?line|mode [1-6]|heat ?up|cool ?down|critical|chemistry|power reduction in progress|reducing power|shutting down|shutdown in progress|in progress'
+label = "transition"
+
+[[rules]]
+pattern = '\ben ?(#|no\.?|number) ?\d|\ben\d|\ben ?#|\bevent (#|no\.?|number)? ?\d|\bevent report|\ben \d'
+label = "xref"
+
+[[rules]]
+pattern = 'defuel'
+label = "cause:defueled"
+
+[[rules]]
+pattern = 'outage|shut ?down|shutdown'
+label = "cause:outage_unspecified"

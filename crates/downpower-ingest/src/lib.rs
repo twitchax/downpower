@@ -6,6 +6,7 @@ pub mod fetch;
 pub mod nrc;
 pub mod raw;
 pub mod status;
+pub mod tags;
 pub mod units;
 
 /// The house result alias.

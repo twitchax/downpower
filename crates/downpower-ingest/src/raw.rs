@@ -2,6 +2,7 @@
 //! zstd-compressed and named by the sha256 of its bytes, and every fetch is a line in an append-only
 //! JSONL manifest. The database is rebuilt from this, so nothing here is ever rewritten.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -211,6 +212,21 @@ impl RawStore {
             .map(|(index, line)| serde_json::from_str(line).with_context(|| format!("{} line {}", path.display(), index + 1)))
             .collect()
     }
+
+    /// The newest record for each date of `series`, oldest date first: what a rebuild reads.
+    ///
+    /// # Errors
+    ///
+    /// When the manifest cannot be read (see [`RawStore::records`]).
+    pub fn latest(&self, series: Series) -> Res<BTreeMap<NaiveDate, Record>> {
+        let mut latest = BTreeMap::new();
+        for record in self.records()? {
+            if record.series == series {
+                latest.insert(record.date, record);
+            }
+        }
+        Ok(latest)
+    }
 }
 
 #[cfg(test)]
@@ -288,6 +304,26 @@ mod unit {
         store.append(&missing).unwrap();
 
         assert_eq!(RawStore::open(tmp.path()).unwrap().records().unwrap(), vec![stored, missing]);
+    }
+
+    #[test]
+    fn latest_keeps_the_newest_capture_of_each_date_in_one_series() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = RawStore::open(tmp.path()).unwrap();
+        let held = record("1999-01-02", Some(Hash::of(b"numbers only")));
+        let settled = record("1999-01-02", Some(Hash::of(b"with reasons")));
+        let first = record("1999-01-01", None);
+        let event = Record {
+            series: Series::EventNotifications,
+            ..record("1999-01-03", None)
+        };
+        for record in [&held, &first, &event, &settled] {
+            store.append(record).unwrap();
+        }
+
+        let latest = store.latest(Series::PowerStatus).unwrap();
+
+        assert_eq!(latest.into_values().collect::<Vec<_>>(), vec![first, settled]);
     }
 
     #[test]

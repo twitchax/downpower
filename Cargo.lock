@@ -1439,6 +1439,7 @@ dependencies = [
  "csv",
  "hex",
  "pretty_assertions",
+ "regex",
  "reqwest",
  "scraper",
  "serde",
@@ -1446,6 +1447,7 @@ dependencies = [
  "sha2 0.11.1",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "zstd",
 ]
@@ -7389,6 +7391,15 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "downpower-ingest",
+]
 
 [[package]]
 name = "xxhash-rust"

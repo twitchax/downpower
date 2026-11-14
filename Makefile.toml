@@ -97,7 +97,7 @@ args = ["nextest", "run", "--workspace", "--run-ignored", "ignored-only", "--no-
 clear = true
 dependencies = ["tools"]
 command = "cargo"
-args = ["llvm-cov", "nextest", "--workspace", "--lcov", "--output-path", "coverage.lcov"]
+args = ["llvm-cov", "nextest", "--workspace", "--exclude", "xtask", "--lcov", "--output-path", "coverage.lcov"]
 
 # ── Gates ────────────────────────────────────────────────────────────────────
 
