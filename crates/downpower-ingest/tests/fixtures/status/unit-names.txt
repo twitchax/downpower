@@ -1,0 +1,110 @@
+Arkansas Nuclear 1
+Arkansas Nuclear 2
+Beaver Valley 1
+Beaver Valley 2
+Braidwood 1
+Braidwood 2
+Browns Ferry 1
+Browns Ferry 2
+Browns Ferry 3
+Brunswick 1
+Brunswick 2
+Byron 1
+Byron 2
+Callaway
+Calvert Cliffs 1
+Calvert Cliffs 2
+Catawba 1
+Catawba 2
+Clinton
+Columbia Generating Station
+Comanche Peak 1
+Comanche Peak 2
+Cooper
+Crystal River 3
+D.C. Cook 1
+D.C. Cook 2
+Davis-Besse
+Diablo Canyon 1
+Diablo Canyon 2
+Dresden 2
+Dresden 3
+Duane Arnold
+Farley 1
+Farley 2
+Fermi 2
+FitzPatrick
+Fort Calhoun
+Ginna
+Grand Gulf 1
+Harris 1
+Hatch 1
+Hatch 2
+Hope Creek 1
+Indian Point 2
+Indian Point 3
+Kewaunee
+La Salle 1
+La Salle 2
+LaSalle 1
+LaSalle 2
+Limerick 1
+Limerick 2
+McGuire 1
+McGuire 2
+Millstone 2
+Millstone 3
+Monticello
+Nine Mile Point 1
+Nine Mile Point 2
+North Anna 1
+North Anna 2
+Oconee 1
+Oconee 2
+Oconee 3
+Oyster Creek
+Palisades
+Palo Verde 1
+Palo Verde 2
+Palo Verde 3
+Peach Bottom 2
+Peach Bottom 3
+Perry 1
+Pilgrim 1
+Point Beach 1
+Point Beach 2
+Prairie Island 1
+Prairie Island 2
+Quad Cities 1
+Quad Cities 2
+River Bend 1
+River Bend Station 1
+Robinson 2
+Saint Lucie 1
+Saint Lucie 2
+Salem 1
+Salem 2
+San Onofre 2
+San Onofre 3
+Seabrook 1
+Sequoyah 1
+Sequoyah 2
+South Texas 1
+South Texas 2
+Summer
+Surry 1
+Surry 2
+Susquehanna 1
+Susquehanna 2
+Three Mile Island 1
+Turkey Point 3
+Turkey Point 4
+Vermont Yankee
+Vogtle 1
+Vogtle 2
+Vogtle 3
+Vogtle 4
+Waterford 3
+Watts Bar 1
+Watts Bar 2
+Wolf Creek 1

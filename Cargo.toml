@@ -47,6 +47,8 @@ clap = { version = "4", features = ["derive"] }
 # The status-page parser: html5ever underneath, so entities and malformed markup parse the way a
 # browser would.
 scraper = { version = "0.29", default-features = false }
+# The committed catalog tables (catalog/*.csv), embedded in the binary.
+csv = "1"
 
 # cargo-leptos: builds the server (`bin-package`, SSR) and the wasm hydrate bundle
 # (`lib-package`) into target/site.
