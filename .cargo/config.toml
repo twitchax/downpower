@@ -1,2 +1,4 @@
 [alias]
-xtask = "run --package xtask --"
+# Release: the xtask commands parse the whole raw store, about 8 minutes in a dev build and 1 in
+# release.
+xtask = "run --release --package xtask --"

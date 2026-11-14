@@ -142,8 +142,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - `flag` is context only: grid and weather alerts, conservative ops. Flags are stored as a set on
       `unit_day`. In the July 2025 sample they mostly sit on full-power rows; for example, Hot Weather
       Alert is on 38 of 43.
-    - `transition` covers Increasing Power, Startup in Progress and Holding Power. A transition takes
-      the unit's most recent cause within 14 days, or Unattributed if there is none.
+    - `transition` covers Increasing Power, Startup in Progress, Holding Power and Defueled. A
+      transition continues the unit's last attributed cause when that day is at most 14 days back,
+      and is Unattributed otherwise (revised 2026-11-14). Inherited days count as attributed, so a
+      run of transitions (weeks of "DEFUELED" after one refueling tag) carries the cause through,
+      and the evidence names the day the cause was observed. A newly observed cause restarts the
+      chain, and a day without a cause neither extends nor breaks it.
     - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land, and until
       then counts as Unattributed with the EN number kept.
     - Matching (revised 2026-11-13): normalize (lowercase, collapse whitespace), split the reason

@@ -6,7 +6,8 @@ use chrono::NaiveDate;
 
 use crate::tags::{Cause, Family, Label, Tags};
 
-/// How far back a transition looks for the cause it continues (Decision 18).
+/// The longest gap, in calendar days, a transition bridges back to the unit's last attributed day
+/// (Decision 18).
 pub const INHERIT_DAYS: i64 = 14;
 
 /// What one reason says, tag by tag.
@@ -52,7 +53,8 @@ pub fn observe<'a>(tags: &'a Tags, reason: &str) -> Observed<'a> {
 pub enum Method {
     /// The highest-precedence cause on the day (Decision 19).
     PrecedenceV1,
-    /// A transition that took the unit's most recent cause within [`INHERIT_DAYS`].
+    /// A transition that continued the unit's last attributed cause, at most [`INHERIT_DAYS`] back.
+    /// Inherited days extend the chain, so a run of transitions carries one cause through.
     Inherit14d,
     /// Only EN references, not yet resolved through the Event Notifications (PRD-0003).
     XrefUnresolved,
@@ -78,7 +80,7 @@ impl Method {
 pub enum Evidence {
     /// The tag that named the cause.
     Tag(String),
-    /// The day whose observed cause a transition took.
+    /// The day whose observed cause a transition took, which starts the chain the transition is on.
     InheritedFrom(NaiveDate),
     /// The EN references, numbered where the tag carried one.
     Xrefs(Vec<Option<u32>>),
@@ -118,15 +120,16 @@ const fn precedence_v1(family: Family) -> u8 {
 }
 
 /// Attributes one unit's days, which must be in date order. Days missing from the slice still
-/// count toward the inheritance window, since it is measured in calendar days.
+/// count toward the inheritance gap, since it is measured in calendar days.
 #[must_use]
 pub fn attribute<'a>(days: &[(NaiveDate, Observed<'a>)]) -> Vec<Attributed<'a>> {
-    let mut last: Option<(NaiveDate, &'a Cause)> = None;
+    // The last attributed day, the day its cause was observed, and the cause.
+    let mut last: Option<(NaiveDate, NaiveDate, &'a Cause)> = None;
     days.iter()
         .map(|(date, observed)| {
             // Ties keep the cause named first, since `min_by_key` returns the first minimum.
             if let Some((cause, tag)) = observed.causes.iter().min_by_key(|(cause, _)| precedence_v1(cause.family)) {
-                last = Some((*date, cause));
+                last = Some((*date, *date, cause));
                 return Attributed {
                     cause: Some(cause),
                     method: Method::PrecedenceV1,
@@ -134,12 +137,15 @@ pub fn attribute<'a>(days: &[(NaiveDate, Observed<'a>)]) -> Vec<Attributed<'a>> 
                 };
             }
             if observed.transition {
-                return match last.filter(|(from, _)| (*date - *from).num_days() <= INHERIT_DAYS) {
-                    Some((from, cause)) => Attributed {
-                        cause: Some(cause),
-                        method: Method::Inherit14d,
-                        evidence: Evidence::InheritedFrom(from),
-                    },
+                return match last.filter(|(previous, ..)| (*date - *previous).num_days() <= INHERIT_DAYS) {
+                    Some((_, origin, cause)) => {
+                        last = Some((*date, origin, cause));
+                        Attributed {
+                            cause: Some(cause),
+                            method: Method::Inherit14d,
+                            evidence: Evidence::InheritedFrom(origin),
+                        }
+                    }
                     None => Attributed {
                         cause: None,
                         method: Method::Inherit14d,

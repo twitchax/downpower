@@ -2,17 +2,18 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use chrono::NaiveDate;
+use chrono::{Days, NaiveDate};
 use pretty_assertions::assert_eq;
 
 use downpower_ingest::attribution::{self, Attributed, Evidence, Method, Observed};
 use downpower_ingest::tags::{Family, Tags};
 
+/// Day `n` counted from July 1, 2025 (day 1), so day 32 is August 1.
 fn day(n: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2025, 7, n).unwrap()
+    NaiveDate::from_ymd_opt(2025, 7, 1).unwrap() + Days::new(u64::from(n) - 1)
 }
 
-/// One unit's days, each `(day of July 2025, reason)`.
+/// One unit's days, each `(day, reason)`.
 fn attribute<'a>(tags: &'a Tags, days: &[(u32, &str)]) -> Vec<Attributed<'a>> {
     let observed: Vec<(NaiveDate, Observed<'a>)> = days.iter().map(|&(n, reason)| (day(n), attribution::observe(tags, reason))).collect();
     attribution::attribute(&observed)
@@ -57,10 +58,10 @@ fn uat_attribution_precedence_v1_picks_the_highest_family_and_names_its_tag() {
 }
 
 #[test]
-fn uat_attribution_inherit_14d_carries_the_last_observed_cause_for_14_days() {
+fn uat_attribution_inherit_14d_bridges_at_most_14_days_back_to_an_attributed_day() {
     let tags = Tags::catalog().unwrap();
 
-    let attributed = attribute(&tags, &[(1, "Refueling Outage"), (3, "Startup in Progress"), (15, "Increasing Power"), (16, "Holding Power")]);
+    let attributed = attribute(&tags, &[(1, "Refueling Outage"), (3, "Startup in Progress"), (17, "Increasing Power"), (32, "Holding Power")]);
 
     assert_eq!(
         attributed.iter().map(summary).collect::<Vec<_>>(),
@@ -75,13 +76,35 @@ fn uat_attribution_inherit_14d_carries_the_last_observed_cause_for_14_days() {
 }
 
 #[test]
-fn uat_attribution_defueled_continues_the_outage_it_is_part_of() {
+fn uat_attribution_inherit_14d_chains_through_a_run_of_transitions() {
+    let tags = Tags::catalog().unwrap();
+    let mut days = vec![(1, "REFUELING OUTAGE")];
+    days.extend((2..=31).map(|n| (n, "DEFUELED")));
+
+    let attributed = attribute(&tags, &days);
+
+    for value in &attributed[1..] {
+        assert_eq!(summary(value), ("refueling_outage".to_owned(), "inherit_14d", Evidence::InheritedFrom(day(1))));
+    }
+}
+
+#[test]
+fn uat_attribution_a_newly_observed_cause_restarts_the_chain() {
     let tags = Tags::catalog().unwrap();
 
-    let attributed = attribute(&tags, &[(1, "REFUELING OUTAGE"), (5, "DEFUELED"), (25, "DEFUELED")]);
+    let attributed = attribute(&tags, &[(1, "Refueling Outage"), (2, "Increasing Power"), (3, "Forced Outage"), (4, "Startup in Progress")]);
 
-    assert_eq!(summary(&attributed[1]), ("refueling_outage".to_owned(), "inherit_14d", Evidence::InheritedFrom(day(1))));
-    assert_eq!(summary(&attributed[2]), ("-".to_owned(), "inherit_14d", Evidence::None));
+    assert_eq!(summary(&attributed[3]), ("forced_outage".to_owned(), "inherit_14d", Evidence::InheritedFrom(day(3))));
+}
+
+#[test]
+fn uat_attribution_days_without_a_cause_neither_extend_nor_break_the_chain() {
+    let tags = Tags::catalog().unwrap();
+
+    let attributed = attribute(&tags, &[(1, "Refueling Outage"), (8, ""), (15, "Increasing Power"), (16, ""), (30, "Holding Power")]);
+
+    assert_eq!(summary(&attributed[2]), ("refueling_outage".to_owned(), "inherit_14d", Evidence::InheritedFrom(day(1))));
+    assert_eq!(summary(&attributed[4]), ("-".to_owned(), "inherit_14d", Evidence::None));
 }
 
 #[test]
