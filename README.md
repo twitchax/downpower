@@ -15,9 +15,11 @@ Why US nuclear reactors lose output
 Usage: downpower [COMMAND]
 
 Commands:
-  serve  Serve the site (the default)
-  fetch  Fetch NRC pages (skipping the pages an earlier run settled) or EIA's nuclear outage file into the raw store
-  help   Print this message or the help of the given subcommand(s)
+  serve     Serve the site (the default)
+  fetch     Fetch NRC pages (skipping the pages an earlier run settled) or EIA's nuclear outage file into the raw store
+  backfill  Fetch every series through today, then rebuild the ledger, failing on any unit or tag the catalog doesn't know. A first run takes about a day
+  rebuild   Rebuild the ledger from the raw store, failing on any unit or tag the catalog doesn't know. The store must be free: stop `serve` first
+  help      Print this message or the help of the given subcommand(s)
 ```
 
 `cargo make dev` serves the app with live reload; `cargo make build-site` builds the release
@@ -36,9 +38,27 @@ pass takes about 14 hours, and the events pass about 10.
 capacity per generator from 2007) in the same raw store, in one request.
 
 `downpower serve` builds the ledger (one row per in-service unit-day) from the raw store into
-SurrealDB when the stored build is missing or was made by another parser or catalog. It rebuilds in
-the background, about 30 seconds for the whole archive, and keeps serving the previous build until
-the new one is done.
+SurrealDB when the stored build is missing, was made by another parser or catalog, or predates
+records the raw store has gained since. It rebuilds in the background, about 30 seconds for the
+whole archive, and keeps serving the previous build until the new one is done. Unknown tags and
+unit names are quarantined there; `downpower rebuild` and `downpower backfill` fail on them instead.
+
+### Shipping the raw store to Fly
+
+The backfill runs on the home box, and the Fly volume gets only the raw store: the deployed server
+builds its own ledger from it.
+
+```bash
+downpower backfill                       # fetch everything, then rebuild and fail on anything unknown
+tar -C data -cf raw.tar raw              # the blobs are zstd already
+fly ssh sftp shell -a twitchax-downpower # then, at the prompt: put raw.tar /data/raw.tar
+fly ssh console -a twitchax-downpower -C "sh -c 'tar -xf /data/raw.tar -C /data && rm /data/raw.tar && chown -R 10001:10001 /data/raw'"
+fly machine restart -a twitchax-downpower
+```
+
+On restart, `serve` sees a raw store larger than its last build and rebuilds in the background. The
+tar replaces `/data/raw/manifest.jsonl`, so this is for the first ship: after that, the daily job
+keeps the volume's raw store current itself.
 
 ## Install
 

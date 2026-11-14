@@ -9,38 +9,17 @@ use chrono::NaiveDate;
 use pretty_assertions::assert_eq;
 
 use downpower_ingest::ledger::{self, Source, UnitDay, Unknowns};
-use downpower_ingest::raw::{self, Hash, RawStore, Record, Series};
+use downpower_ingest::raw::{Hash, RawStore, Series};
 use downpower_ingest::units::Units;
-use downpower_server::tests::block_on;
+use downpower_server::tests::{block_on, fixture as file, put, raw_store};
 use downpower_server::{db, ledger as stored};
-
-const STATUS: &[u8] = include_bytes!("../../downpower-ingest/tests/fixtures/status/2025-07-15.html");
-const NUC_STATUS: &[u8] = include_bytes!("../../downpower-ingest/tests/fixtures/eia/nuc_status.txt");
 
 fn day(text: &str) -> NaiveDate {
     text.parse().unwrap()
 }
 
-fn record(store: &RawStore, series: Series, date: &str, bytes: Option<&[u8]>) -> Record {
-    let at = "2026-11-14T00:00:00Z".parse().unwrap();
-    Record {
-        source: raw::Source::Nrc,
-        series,
-        date: day(date),
-        url: String::new(),
-        status: if bytes.is_some() { 200 } else { 404 },
-        captured_at: at,
-        fetched_at: at,
-        sha256: bytes.map(|bytes| store.put(bytes).unwrap()),
-        len: bytes.map(|bytes| bytes.len() as u64),
-    }
-}
-
 fn fixture(data_dir: &Path) {
-    let store = RawStore::open(data_dir).unwrap();
-    store.append(&record(&store, Series::PowerStatus, "2025-07-15", Some(STATUS))).unwrap();
-    store.append(&record(&store, Series::PowerStatus, "2025-07-16", None)).unwrap();
-    store.append(&record(&store, Series::NucStatus, "2026-11-14", Some(NUC_STATUS))).unwrap();
+    raw_store(data_dir, None);
 }
 
 /// Every row of `table`, unit by unit.
@@ -64,12 +43,14 @@ fn uat_rebuild_deterministic_raw_puts_are_idempotent_and_content_addressed() {
     let tmp = tempfile::tempdir().unwrap();
     let store = RawStore::open(tmp.path()).unwrap();
 
-    let first = store.put(STATUS).unwrap();
-    let second = store.put(STATUS).unwrap();
+    let status = file("status/2025-07-15.html");
+
+    let first = store.put(&status).unwrap();
+    let second = store.put(&status).unwrap();
 
     assert_eq!(first, second);
-    assert_eq!(first, Hash::of(STATUS));
-    assert_eq!(store.get(&first).unwrap(), STATUS);
+    assert_eq!(first, Hash::of(&status));
+    assert_eq!(store.get(&first).unwrap(), status);
     let blobs = walk(&tmp.path().join("raw/blobs"));
     assert_eq!(blobs, [format!("{}/{}.zst", &first.as_str()[..2], first.as_str())]);
 }
@@ -160,7 +141,7 @@ fn ledger_a_failed_rebuild_leaves_the_previous_build_current() {
         let store = db::open(tmp.path()).await.unwrap();
         let good = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
         let raw = RawStore::open(tmp.path()).unwrap();
-        raw.append(&record(&raw, Series::PowerStatus, "2025-07-17", Some(b"<html>not a status page</html>"))).unwrap();
+        put(&raw, Series::PowerStatus, "2025-07-17", Some(b"<html>not a status page</html>"));
 
         let error = stored::rebuild(&store, tmp.path(), Unknowns::Quarantine).await.unwrap_err();
 
@@ -189,5 +170,24 @@ fn ledger_ensure_current_rebuilds_only_for_another_version() {
         let rebuilt = stored::current(&store).await.unwrap().unwrap();
         assert_eq!(rebuilt.version, ledger::derived_version());
         assert_ne!(rebuilt.table, built.table);
+    });
+}
+
+#[test]
+fn ledger_ensure_current_rebuilds_when_the_raw_store_grows() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
+        let before = stored::current(&store).await.unwrap().unwrap();
+
+        put(&raw, Series::PowerStatus, "2025-07-17", Some(&file("status/2025-07-15.html")));
+        stored::ensure_current(&store, tmp.path()).await.unwrap().unwrap().await.unwrap();
+        let after = stored::current(&store).await.unwrap().unwrap();
+
+        assert_eq!((before.raw_records, after.raw_records), (3, 4));
+        assert!(after.summary.days > before.summary.days);
+        assert!(stored::ensure_current(&store, tmp.path()).await.unwrap().is_none());
     });
 }

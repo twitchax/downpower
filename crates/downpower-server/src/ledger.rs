@@ -36,6 +36,9 @@ pub struct Build {
     /// The table holding its rows.
     pub table: String,
     pub built_at: DateTime<Utc>,
+    /// The raw store's manifest records when the build started: a store that has grown since
+    /// holds pages the build hasn't read.
+    pub raw_records: u64,
     pub summary: Summary,
 }
 
@@ -133,6 +136,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     tracing::info!(%table, "rebuilding the ledger");
 
     let raw = RawStore::open(data_dir)?;
+    let raw_records = raw.records()?.len() as u64;
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<Keyed>>(IN_FLIGHT);
     let builder = tokio::task::spawn_blocking(move || {
         let catalog = Catalog::embedded()?;
@@ -164,6 +168,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
         version: ledger::derived_version(),
         table,
         built_at: Utc::now(),
+        raw_records,
         summary,
     };
     let unit_records: Vec<UnitRecord> = units.all().iter().map(UnitRecord::from).collect();
@@ -179,17 +184,19 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     Ok(build)
 }
 
-/// Rebuilds in the background when `ledger:current` was built by another version, so a deploy that
-/// changes the parser or the catalog serves the old build until the new one is done. Unknown tags
-/// and units are quarantined (Decision 21).
+/// Rebuilds in the background when `ledger:current` was built by another version or from fewer raw
+/// records than the store now holds, so a deploy that changes the parser or the catalog, or a raw
+/// store shipped to the volume, serves the old build until the new one is done. Unknown tags and
+/// units are quarantined (Decision 21).
 ///
 /// # Errors
 ///
-/// When `ledger:current` can't be read. A failed rebuild is logged.
+/// When `ledger:current` or the raw manifest can't be read. A failed rebuild is logged.
 pub async fn ensure_current(store: &Store, data_dir: &Path) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
     let version = ledger::derived_version();
-    if current(store).await?.is_some_and(|build| build.version == version) {
-        tracing::info!(%version, "the ledger is current");
+    let raw_records = RawStore::open(data_dir)?.records()?.len() as u64;
+    if current(store).await?.is_some_and(|build| build.version == version && build.raw_records >= raw_records) {
+        tracing::info!(%version, raw_records, "the ledger is current");
         return Ok(None);
     }
     let (store, data_dir) = (store.clone(), data_dir.to_owned());

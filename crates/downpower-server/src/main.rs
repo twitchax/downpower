@@ -37,6 +37,16 @@ async fn run() -> anyhow::Result<()> {
             tracing::info!(summary.stored, summary.missing, summary.skipped, "fetch done");
             Ok(())
         }
+        Command::Backfill(pace) => {
+            let build = cli::backfill(&pace, &data_dir).await?;
+            tracing::info!(table = %build.table, summary = ?build.summary, "backfill done");
+            Ok(())
+        }
+        Command::Rebuild => {
+            let build = cli::rebuild(&data_dir).await?;
+            tracing::info!(table = %build.table, summary = ?build.summary, "rebuild done");
+            Ok(())
+        }
     }
 }
 
