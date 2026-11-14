@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context as _, anyhow, bail, ensure};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::Res;
 
@@ -16,19 +16,7 @@ pub(crate) const TAGS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "
 /// Tags accepted on purpose as Unattributed, one per line under a `tag` header.
 pub(crate) const UNCLASSIFIED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../catalog/unclassified.tsv"));
 
-/// The eight families, which are the barcode's colors (Decision 17).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Family {
-    Refueling,
-    FuelCycle,
-    Forced,
-    Maintenance,
-    Equipment,
-    Environmental,
-    Grid,
-    Unattributed,
-}
+pub use downpower_core::Family;
 
 /// A fine cause, which keeps a cause addressable inside its family (Decision 17).
 #[derive(Debug, Clone, PartialEq, Eq)]

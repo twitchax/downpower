@@ -16,12 +16,16 @@ downpower-app = { workspace = true, features = ["ssr"] }
 leptos = { workspace = true, features = ["ssr"] }
 leptos_axum.workspace = true
 axum.workspace = true
+tower-http.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 surrealdb.workspace = true
+downpower-core.workspace = true
 downpower-ingest.workspace = true
+sha2.workspace = true
+hex.workspace = true
 clap.workspace = true
 chrono.workspace = true
 serde.workspace = true
@@ -29,6 +33,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 zip.workspace = true
+reqwest.workspace = true
 pretty_assertions.workspace = true
 tower.workspace = true
 tempfile.workspace = true

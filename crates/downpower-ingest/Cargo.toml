@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+downpower-core.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["time"] }

@@ -11,7 +11,9 @@ defer to `~/CLAUDE.md`.**
 A Leptos app (SSR + hydration on axum, built by cargo-leptos), split three ways:
 `crates/downpower-app` (components, pages and the shell; `ssr` / `hydrate` features),
 `crates/downpower-frontend` (the wasm entry point), and `crates/downpower-server` (the
-axum binary). Styling is the `instrument-design-language` tokens in `style/_tokens.scss`, with
+axum binary). Beside them, `crates/downpower-ingest` turns sources into the ledger (no database,
+no browser), and `crates/downpower-core` holds what the server and the browser share: the cause
+families, the barcode buffer's format and the monthly series. Styling is the `instrument-design-language` tokens in `style/_tokens.scss`, with
 Lucide icons from `icondata_lu`, **without the background grid**. **No component library.**
 
 The store is embedded SurrealDB 4 (`kv-surrealkv`) behind `crates/downpower-server/src/db.rs`,

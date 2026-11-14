@@ -1479,12 +1479,32 @@ dependencies = [
 name = "downpower-app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "downpower-core",
  "icondata_core",
  "icondata_lu",
+ "js-sys",
  "leptos",
  "leptos_meta",
  "leptos_router",
  "pretty_assertions",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "downpower-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1505,6 +1525,7 @@ dependencies = [
  "axum",
  "chrono",
  "csv",
+ "downpower-core",
  "hex",
  "pretty_assertions",
  "regex",
@@ -1530,16 +1551,21 @@ dependencies = [
  "chrono",
  "clap",
  "downpower-app",
+ "downpower-core",
  "downpower-ingest",
+ "hex",
  "leptos",
  "leptos_axum",
  "pretty_assertions",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "surrealdb",
  "tempfile",
  "tokio",
  "tower",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "zip",

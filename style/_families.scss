@@ -1,0 +1,26 @@
+// The eight cause families' colors (docs/DESIGN.md Decision 17), for the barcode and the stacked
+// area. The design language's chart tokens stop at three series, so these are the dataviz skill's
+// reference hues, assigned so that every pair of neighbors in `Family::STACK` (crates/downpower-core)
+// clears its checks on this language's chart surfaces, --bg-0 and --bg-1: worst adjacent
+// colorblind ΔE 9.1 light / 8.4 dark (target 8), normal vision 19.6 / 19.3 (floor 15). Light-mode
+// aqua, yellow and magenta sit under 3:1 on the canvas, so every chart carries a legend, a tooltip
+// and a table view. Unattributed is a cool gray rather than a hue, since it names no cause: 9.4 /
+// 10.4 from Forced red under protanopia, its stack neighbor. Change a value only with the
+// validator run against both surfaces.
+:root {
+  --family-refueling: light-dark(#2a78d6, #3987e5);
+  --family-fuel-cycle: light-dark(#1baf7a, #199e70);
+  --family-maintenance: light-dark(#eda100, #c98500);
+  --family-equipment: light-dark(#e87ba4, #d55181);
+  --family-environmental: light-dark(#008300, #008300);
+  --family-grid: light-dark(#6250d6, #9085e9);
+  --family-forced: light-dark(#e34948, #e66767);
+  --family-unattributed: light-dark(#7b7f84, #5f6368);
+}
+
+$families: refueling, fuel-cycle, maintenance, equipment, environmental, grid, forced, unattributed;
+
+@each $family in $families {
+  .family-#{$family} { background: var(--family-#{$family}); }
+  path.family-#{$family} { fill: var(--family-#{$family}); }
+}

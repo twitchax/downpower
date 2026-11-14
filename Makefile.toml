@@ -81,23 +81,27 @@ args = ["clippy", "--package", "downpower-frontend", "--target", "wasm32-unknown
 
 # ── Test ─────────────────────────────────────────────────────────────────────
 
+# Every test build excludes `downpower-frontend`. It has no tests, and building it alongside the
+# server unifies `hydrate` into the app crate the server links, and a Leptos server with `hydrate`
+# on panics rendering any page with a browser-only resource. cargo-leptos and the Dockerfile build
+# the server alone, as these tasks must.
 [tasks.test]
 dependencies = ["install-nextest"]
 command = "cargo"
-args = ["nextest", "run", "--workspace"]
+args = ["nextest", "run", "--workspace", "--exclude", "downpower-frontend"]
 
 [tasks.test-ignored]
 # Slow or infra-bound suites are `#[ignore = "reason"]`; this runs exactly those.
 dependencies = ["install-nextest"]
 command = "cargo"
-args = ["nextest", "run", "--workspace", "--run-ignored", "ignored-only", "--no-tests", "pass"]
+args = ["nextest", "run", "--workspace", "--exclude", "downpower-frontend", "--run-ignored", "ignored-only", "--no-tests", "pass"]
 
 [tasks.codecov]
 # `clear = true` replaces cargo-make's built-in `codecov` task (a legacy uploader script).
 clear = true
 dependencies = ["tools"]
 command = "cargo"
-args = ["llvm-cov", "nextest", "--workspace", "--exclude", "xtask", "--lcov", "--output-path", "coverage.lcov"]
+args = ["llvm-cov", "nextest", "--workspace", "--exclude", "xtask", "--exclude", "downpower-frontend", "--lcov", "--output-path", "coverage.lcov"]
 
 # ── Gates ────────────────────────────────────────────────────────────────────
 

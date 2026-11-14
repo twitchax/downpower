@@ -7,6 +7,7 @@
 use chrono::NaiveDate;
 use pretty_assertions::assert_eq;
 
+use downpower_core::barcode::{Cell, Layer};
 use downpower_ingest::attribution::{Evidence, Method};
 use downpower_ingest::eia::NucStatus;
 use downpower_ingest::ledger::{self, Builder, Catalog, ObservedCause, Source, UnitDay, Unknowns};
@@ -169,6 +170,34 @@ fn ledger_inheritance_carries_across_days() {
         (days[0].cause.as_deref(), days[0].method, &days[0].evidence),
         (Some("refueling_outage"), Method::Inherit14d, &Evidence::InheritedFrom(day("2025-07-01")))
     );
+}
+
+#[test]
+fn ledger_dates_are_counted_by_what_the_ledger_has_for_them() {
+    let catalog = catalog();
+    let mut builder = catalog.builder(Unknowns::Fail);
+
+    builder.day(day("2025-07-05"), Some(&page(vec![row("Diablo Canyon 2", 100, "")]))).unwrap();
+    builder.day(day("2025-07-06"), Some(&page(vec![held("Diablo Canyon 2", 100)]))).unwrap();
+    builder.day(day("2025-07-07"), Some(&StatusPage::NoData)).unwrap();
+    builder.day(day("1990-01-01"), None).unwrap();
+
+    let dates = builder.finish().dates;
+    assert_eq!((dates.reasons, dates.held, dates.eia, dates.missing), (1, 1, 1, 1), "07-07 is EIA's, and 1990 has nothing");
+}
+
+#[test]
+fn ledger_the_observed_barcode_layer_keeps_only_causes_the_day_names() {
+    let catalog = catalog();
+    let mut builder = catalog.builder(Unknowns::Fail);
+
+    let named = builder.day(day("2025-07-01"), Some(&page(vec![row("Diablo Canyon 2", 0, "Refueling Outage")]))).unwrap();
+    let inherited = builder.day(day("2025-07-03"), Some(&page(vec![row("Diablo Canyon 2", 30, "Increasing Power")]))).unwrap();
+
+    assert_eq!(named[0].cell(Layer::Observed), Cell::new(Family::Refueling, 0));
+    assert_eq!(named[0].cell(Layer::Attributed), Cell::new(Family::Refueling, 0));
+    assert_eq!(inherited[0].cell(Layer::Attributed), Cell::new(Family::Refueling, 30));
+    assert_eq!(inherited[0].cell(Layer::Observed), Cell::new(Family::Unattributed, 30));
 }
 
 #[test]

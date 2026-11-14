@@ -2,6 +2,7 @@
 // `instrument-design-language` skill's tokens.css (re-copy it to pick up changes); every color,
 // size and duration below is one of its tokens.
 @use "tokens";
+@use "families";
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -12,9 +13,10 @@ body {
   font-size: var(--text-md);
   line-height: var(--leading);
   color: var(--text-1);
+  background: var(--bg-0);
 }
 
-main { padding: var(--s-8); display: grid; gap: var(--s-6); max-width: 960px; }
+main { padding: var(--s-8); display: grid; gap: var(--s-4); max-width: 1280px; }
 h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .panel { background: var(--bg-1); padding: var(--s-4); display: grid; gap: var(--s-3); }
 .muted { color: var(--text-2); margin: 0; }
@@ -41,3 +43,104 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .btn.primary { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 
 .icon { width: 14px; height: 14px; flex: none; }
+.btn[aria-pressed="true"] { background: var(--bg-2); border-color: var(--text-3); color: var(--text-1); }
+
+.label { font-size: var(--text-xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+
+.intro { display: grid; gap: var(--s-2); max-width: 72ch; }
+
+// One row of filters above the charts; the legend below it filters too.
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4); }
+.date { display: inline-flex; align-items: center; gap: var(--s-2); }
+.date input {
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  font: var(--text-sm) var(--font);
+  color-scheme: inherit;
+}
+.date input:focus-visible { outline: 1px solid var(--accent-sky); outline-offset: 1px; }
+
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-4); }
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  font: var(--text-xs) var(--font);
+  cursor: pointer;
+}
+.legend-item:focus-visible { outline: 1px solid var(--accent-sky); outline-offset: 2px; }
+.legend-item[aria-pressed="false"] { color: var(--text-3); }
+.legend-item[aria-pressed="false"] .swatch { opacity: 0.25; }
+.swatch { width: 10px; height: 10px; flex: none; }
+
+// The barcode: the canvas paints itself; the tooltip and axis are HTML over and under it.
+.barcode { margin: 0; display: grid; gap: var(--s-1); }
+.plot { position: relative; min-height: 120px; }
+.plot canvas { display: block; width: 100%; cursor: crosshair; }
+.plot canvas:focus-visible { outline: 1px solid var(--accent-sky); outline-offset: 2px; }
+.plot-status { position: absolute; inset: 0 auto auto 0; margin: 0; }
+.tooltip {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  max-width: 320px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+.tooltip .value { display: flex; align-items: center; gap: var(--s-2); }
+.tooltip .key { width: 12px; height: 2px; flex: none; }
+.tooltip .reason { color: var(--text-2); }
+.axis { position: relative; height: 18px; }
+.tick {
+  position: absolute;
+  top: 0;
+  padding-left: var(--s-1);
+  border-left: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+.swatches { display: none; }
+[data-paint="track"] { background: var(--bg-2); }
+[data-paint="hidden"] { background: var(--text-3); }
+
+// The stacked area: paths in a stretched viewBox, every label in HTML beside it.
+.area { margin: 0; display: grid; gap: var(--s-2); }
+.area-plot { position: relative; height: 240px; margin-top: var(--s-4); }
+.area-plot svg { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.band { stroke: var(--bg-0); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.gridline { fill: none; stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.crosshair { stroke: var(--text-3); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+// The scale sits inside the plot, each label just above its gridline, so the stacked area spans the
+// same width as the barcode and their years line up.
+.y-axis { position: absolute; inset: 0; pointer-events: none; }
+.y-tick { position: absolute; left: 0; transform: translateY(-100%); color: var(--text-3); font-size: var(--text-xs); line-height: 16px; }
+.totals { border-collapse: collapse; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.totals th, .totals td { padding: var(--s-1) var(--s-4) var(--s-1) 0; text-align: right; border-bottom: 1px solid var(--line); }
+.totals th[scope="row"], .totals thead th:first-child { text-align: left; font-weight: 400; }
+.totals .row-label { display: inline-flex; align-items: center; gap: var(--s-2); }
+.totals caption { text-align: left; padding-bottom: var(--s-2); }
+.totals tr.hidden { color: var(--text-3); }
+
+.nav { display: flex; gap: var(--s-4); font-size: var(--text-sm); }
+.nav a { color: var(--text-3); text-decoration: none; }
+.nav a:hover, .nav a:focus-visible { color: var(--accent-mid); }
+
+// /status: the update loop's runs, a marker and a sentence each.
+.runs { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.runs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-2); }
+.runs .state { color: var(--pass); }
+.runs li.failed .state { color: var(--fault); }
+.runs .errors { flex-basis: 100%; padding-left: var(--s-3); border-left: 1px solid var(--fault); color: var(--text-2); }

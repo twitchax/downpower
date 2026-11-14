@@ -1,13 +1,14 @@
 [workspace]
 members = [
     "crates/downpower-app",
+    "crates/downpower-core",
     "crates/downpower-frontend",
     "crates/downpower-ingest",
     "crates/downpower-server",
     "xtask",
 ]
 # xtask runs only through `cargo xtask` (.cargo/config.toml).
-default-members = ["crates/downpower-app", "crates/downpower-frontend", "crates/downpower-ingest", "crates/downpower-server"]
+default-members = ["crates/downpower-app", "crates/downpower-core", "crates/downpower-frontend", "crates/downpower-ingest", "crates/downpower-server"]
 resolver = "3"
 
 # Shared metadata: crates inherit it with `field.workspace = true`.
@@ -20,6 +21,7 @@ repository = "https://github.com/twitchax/downpower"
 
 [workspace.dependencies]
 downpower-app = { path = "crates/downpower-app" }
+downpower-core = { path = "crates/downpower-core" }
 downpower-ingest = { path = "crates/downpower-ingest" }
 # Lockstep family: leptos, leptos_meta, leptos_router and leptos_axum release together and must share
 # one series, and axum follows the series leptos_axum is built on. The generator resolves them as a set.
@@ -39,6 +41,7 @@ wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 pretty_assertions = "1"
 tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["compression-gzip"] }
 # Embedded only: no network protocols or TLS, just the SurrealKV engine on the data dir.
 surrealdb = { version = "4", default-features = false, features = ["kv-surrealkv"] }
 tempfile = "3"

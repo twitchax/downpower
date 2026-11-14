@@ -5,14 +5,18 @@
 //! old table a unit at a time: one `DELETE` of a million rows peaks at 2.1 GB, and a `REMOVE TABLE`
 //! at 900 MB, against about 250 MB for the chunks (PRD-0002.log.md, T-008).
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context as _, bail, ensure};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use surrealdb::types::SerdeWrapper;
+use sha2::{Digest as _, Sha256};
+use surrealdb::types::{Bytes, SerdeWrapper};
 
+use downpower_core::barcode::{self, Barcode, Layer, Packer};
+use downpower_core::series::Monthly;
 use downpower_ingest::ledger::{self, Catalog, Summary, UnitDay, Unknowns};
 use downpower_ingest::raw::RawStore;
 use downpower_ingest::units::{Unit, Units};
@@ -78,6 +82,66 @@ impl From<&Unit> for UnitRecord {
     }
 }
 
+/// A build's barcode in one layer, as the `barcode` table stores it under `[table, layer]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Packed {
+    /// The encoded [`Barcode`].
+    pub bytes: Bytes,
+    /// The first 16 hex digits of the bytes' sha256: unchanged data keeps its tag across rebuilds.
+    pub etag: String,
+}
+
+impl Packed {
+    fn new(barcode: &Barcode) -> Self {
+        let bytes = barcode.encode();
+        let etag = hex::encode(&Sha256::digest(&bytes)[..8]);
+        Self { bytes: bytes.into(), etag }
+    }
+}
+
+/// Per layer, a barcode packer and the monthly lost energy, with each unit's barcode row. Rows run
+/// in docket order, as the buffer's format promises (Decision 23).
+struct Packers {
+    rows: HashMap<String, usize>,
+    layers: Vec<(Layer, Packer, Monthly)>,
+}
+
+impl Packers {
+    fn new(units: &Units) -> Self {
+        let mut units: Vec<barcode::Unit> = units
+            .all()
+            .iter()
+            .map(|unit| barcode::Unit {
+                docket: unit.docket.as_str().to_owned(),
+                name: unit.name.clone(),
+            })
+            .collect();
+        units.sort_by(|a, b| a.docket.cmp(&b.docket));
+        let rows = units.iter().enumerate().map(|(row, unit)| (unit.docket.clone(), row)).collect();
+        let layers = Layer::ALL.into_iter().map(|layer| (layer, Packer::new(units.clone()), Monthly::default())).collect();
+        Self { rows, layers }
+    }
+
+    fn push(&mut self, day: &UnitDay) -> anyhow::Result<()> {
+        let row = *self.rows.get(&day.docket).with_context(|| format!("no barcode row for {}", day.docket))?;
+        for (layer, packer, monthly) in &mut self.layers {
+            let cell = day.cell(*layer);
+            packer.set(row, day.date, cell)?;
+            // Every row's month counts, at zero too, so the series spans what the barcode does.
+            monthly.add(day.date, cell.family, day.lost_kwh.unwrap_or(0))?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> anyhow::Result<Vec<(Layer, Option<Packed>, Monthly)>> {
+        let mut views = Vec::new();
+        for (layer, packer, monthly) in self.layers {
+            views.push((layer, packer.finish()?.as_ref().map(Packed::new), monthly));
+        }
+        Ok(views)
+    }
+}
+
 /// Defines the tables every build shares; Surreal refuses to read a table that was never defined.
 ///
 /// # Errors
@@ -85,7 +149,7 @@ impl From<&Unit> for UnitRecord {
 /// When the definitions fail.
 pub async fn define(store: &Store) -> anyhow::Result<()> {
     store
-        .query("DEFINE TABLE IF NOT EXISTS ledger SCHEMALESS; DEFINE TABLE IF NOT EXISTS unit SCHEMALESS;")
+        .query("DEFINE TABLE IF NOT EXISTS ledger SCHEMALESS; DEFINE TABLE IF NOT EXISTS unit SCHEMALESS; DEFINE TABLE IF NOT EXISTS barcode SCHEMALESS; DEFINE TABLE IF NOT EXISTS lost SCHEMALESS;")
         .await
         .and_then(surrealdb::IndexedResults::check)
         .context("defining the ledger tables")?;
@@ -146,10 +210,14 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     let raw = RawStore::open(data_dir)?;
     let raw_digest = raw.digest()?;
     let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<Keyed>>(IN_FLIGHT);
+    let mut packers = Packers::new(&units);
     let builder = tokio::task::spawn_blocking(move || {
         let catalog = Catalog::embedded()?;
         let mut batch = Vec::with_capacity(BATCH);
         let summary = ledger::build(&raw, &catalog, unknowns, |days| {
+            for day in &days {
+                packers.push(day)?;
+            }
             batch.extend(days.into_iter().map(|day| Keyed { id: (day.docket.clone(), day.date), day }));
             if batch.len() >= BATCH {
                 sender.blocking_send(std::mem::replace(&mut batch, Vec::with_capacity(BATCH))).context("the ledger writer stopped")?;
@@ -159,7 +227,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
         if !batch.is_empty() {
             sender.blocking_send(batch).context("the ledger writer stopped")?;
         }
-        anyhow::Ok(summary)
+        anyhow::Ok((summary, packers.finish()?))
     });
     let insert = format!("INSERT INTO {table} $rows RETURN NONE");
     while let Some(batch) = receiver.recv().await {
@@ -170,7 +238,28 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
             .and_then(surrealdb::IndexedResults::check)
             .with_context(|| format!("writing to {table}"))?;
     }
-    let summary = builder.await.context("the ledger builder panicked")??;
+    let (summary, views) = builder.await.context("the ledger builder panicked")??;
+    // Under the new table's name, so they swap in with it.
+    for (layer, packed, monthly) in views {
+        if let Some(packed) = packed {
+            store
+                .query("UPSERT barcode:[$table, $layer] CONTENT $packed RETURN NONE")
+                .bind(("table", table.clone()))
+                .bind(("layer", layer.slug()))
+                .bind(("packed", SerdeWrapper(packed)))
+                .await
+                .and_then(surrealdb::IndexedResults::check)
+                .with_context(|| format!("storing the {} barcode", layer.slug()))?;
+        }
+        store
+            .query("UPSERT lost:[$table, $layer] CONTENT $monthly RETURN NONE")
+            .bind(("table", table.clone()))
+            .bind(("layer", layer.slug()))
+            .bind(("monthly", SerdeWrapper(monthly)))
+            .await
+            .and_then(surrealdb::IndexedResults::check)
+            .with_context(|| format!("storing the {} monthly series", layer.slug()))?;
+    }
 
     let build = Build {
         version: ledger::derived_version(),
@@ -238,6 +327,12 @@ async fn drop_tables(store: &Store, units: &Units, keep: Option<&str>) -> anyhow
                 .with_context(|| format!("clearing {table}"))?;
         }
         store
+            .query("DELETE barcode:[$table, NONE]..=[$table, ..] RETURN NONE; DELETE lost:[$table, NONE]..=[$table, ..] RETURN NONE;")
+            .bind(("table", table.to_owned()))
+            .await
+            .and_then(surrealdb::IndexedResults::check)
+            .with_context(|| format!("deleting the views of {table}"))?;
+        store
             .query(format!("REMOVE TABLE {table}"))
             .await
             .and_then(surrealdb::IndexedResults::check)
@@ -262,4 +357,56 @@ pub async fn unit_days(store: &Store, table: &str, docket: &str) -> anyhow::Resu
         .take(0)
         .with_context(|| format!("reading {docket} from {table}"))?;
     Ok(rows.into_iter().map(|row| row.0).collect())
+}
+
+/// `table`'s barcode in `layer`, if it has one.
+///
+/// # Errors
+///
+/// When the query fails or the record doesn't parse.
+pub async fn barcode(store: &Store, table: &str, layer: Layer) -> anyhow::Result<Option<Packed>> {
+    let packed: Option<SerdeWrapper<Packed>> = store
+        .query("SELECT bytes, etag FROM ONLY barcode:[$table, $layer]")
+        .bind(("table", table.to_owned()))
+        .bind(("layer", layer.slug()))
+        .await
+        .with_context(|| format!("reading the {} barcode of {table}", layer.slug()))?
+        .take(0)
+        .with_context(|| format!("reading the {} barcode of {table}", layer.slug()))?;
+    Ok(packed.map(|packed| packed.0))
+}
+
+/// One unit-day from `table`.
+///
+/// # Errors
+///
+/// When `table` isn't a build table or the query fails.
+pub async fn unit_day(store: &Store, table: &str, docket: &str, date: NaiveDate) -> anyhow::Result<Option<UnitDay>> {
+    let table = checked(table)?;
+    let row: Option<SerdeWrapper<UnitDay>> = store
+        .query(format!("SELECT * OMIT id FROM ONLY {table}:[$docket, $date]"))
+        .bind(("docket", docket.to_owned()))
+        .bind(("date", date.to_string()))
+        .await
+        .with_context(|| format!("reading {docket} on {date} from {table}"))?
+        .take(0)
+        .with_context(|| format!("reading {docket} on {date} from {table}"))?;
+    Ok(row.map(|row| row.0))
+}
+
+/// `table`'s monthly lost energy in `layer`, if it has one.
+///
+/// # Errors
+///
+/// When the query fails or the record doesn't parse.
+pub async fn monthly(store: &Store, table: &str, layer: Layer) -> anyhow::Result<Option<Monthly>> {
+    let monthly: Option<SerdeWrapper<Monthly>> = store
+        .query("SELECT first, lost_kwh FROM ONLY lost:[$table, $layer]")
+        .bind(("table", table.to_owned()))
+        .bind(("layer", layer.slug()))
+        .await
+        .with_context(|| format!("reading the {} monthly series of {table}", layer.slug()))?
+        .take(0)
+        .with_context(|| format!("reading the {} monthly series of {table}", layer.slug()))?;
+    Ok(monthly.map(|monthly| monthly.0))
 }

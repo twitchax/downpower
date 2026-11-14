@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::{Context as _, bail, ensure};
 use chrono::NaiveDate;
+use downpower_core::barcode::{Cell, Layer};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -20,9 +21,10 @@ use crate::tags::{Family, Tags};
 use crate::units::{Unit, Units};
 use crate::{Res, Void};
 
-/// Bumped whenever parsing, observing, attributing or the row shape changes, so the deployed
-/// server rebuilds (Decision 15). The catalog files are hashed in beside it.
-pub const LEDGER_VERSION: u32 = 2;
+/// Bumped whenever parsing, observing, attributing, the row shape or what a build stores beside its
+/// rows changes, so the deployed server rebuilds (Decision 15). The catalog files are hashed in
+/// beside it. 3: builds pack the barcode buffers.
+pub const LEDGER_VERSION: u32 = 3;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]
@@ -116,6 +118,19 @@ pub struct UnitDay {
 }
 
 impl UnitDay {
+    /// The row's barcode cell in `layer`. The observed layer keeps only a cause the day's own reason
+    /// names (`precedence_v1`); an inherited, cross-referenced, pending or quarantined day is
+    /// Unattributed there.
+    #[must_use]
+    pub fn cell(&self, layer: Layer) -> Cell {
+        let family = match layer {
+            Layer::Attributed => self.family,
+            Layer::Observed if self.method == Method::PrecedenceV1 => self.family,
+            Layer::Observed => Family::Unattributed,
+        };
+        Cell::new(family, self.power)
+    }
+
     /// A row with numbers and no reason to observe.
     fn numbers(unit: &Unit, date: NaiveDate, power: u8, source: Source, eia_power: Option<u8>, method: Method) -> Self {
         Self {
@@ -183,6 +198,21 @@ pub struct Summary {
     /// The lost energy across every row, and the rows below 100% with no capacity to weigh them.
     pub lost_kwh: u64,
     pub without_capacity: u64,
+    /// Every date the build covers, by what the ledger has for it.
+    pub dates: Coverage,
+}
+
+/// Dates by source (Decisions 11 and 12): what `/status` reports the ledger rests on.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Coverage {
+    /// An NRC page with its reason text.
+    pub reasons: u64,
+    /// An NRC page inside its 28-day hold: numbers only.
+    pub held: u64,
+    /// No NRC page, and EIA's numbers fill in.
+    pub eia: u64,
+    /// Neither: the date has no rows.
+    pub missing: u64,
 }
 
 /// Builds the ledger one day at a time, in date order.
@@ -246,6 +276,13 @@ impl<'a> Builder<'a> {
             }
         }
         days.sort_by(|a, b| a.docket.cmp(&b.docket));
+        let dates = &mut self.summary.dates;
+        match page {
+            Some(StatusPage::Report(rows)) if rows.iter().any(|row| row.detail.is_some()) => dates.reasons += 1,
+            Some(StatusPage::Report(rows)) if !rows.is_empty() => dates.held += 1,
+            _ if !days.is_empty() => dates.eia += 1,
+            _ => dates.missing += 1,
+        }
         if !days.is_empty() {
             self.summary.days += days.len() as u64;
             self.summary.first.get_or_insert(date);

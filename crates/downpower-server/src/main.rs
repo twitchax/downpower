@@ -69,5 +69,5 @@ async fn serve(data_dir: &std::path::Path) -> anyhow::Result<()> {
     let addr = options.site_addr;
     let listener = TcpListener::bind(addr).await.with_context(|| format!("binding {addr}"))?;
     tracing::info!(%addr, "listening");
-    axum::serve(listener, downpower_server::router(options)).await.context("serving")
+    axum::serve(listener, downpower_server::router(options, store)).await.context("serving")
 }

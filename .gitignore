@@ -7,3 +7,6 @@ playwright-report/
 test-results/
 # The local data dir (DOWNPOWER_DATA_DIR default): the embedded store and the raw NRC page cache.
 /data/
+
+# Playwright MCP snapshots and screenshots.
+.playwright-mcp/

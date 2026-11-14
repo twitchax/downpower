@@ -217,6 +217,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       endpoint.
     - Chart state lives in the URL query, parsed into one typed struct per view.
     - Load the `dataviz` skill before building the first chart.
+    - Built (PRD-0002 T-013 to T-015): the buffer format is `downpower_core::barcode`, and a rebuild
+      packs it and the monthly series (`downpower_core::series`) per layer beside the rows, so no
+      view ever reads them. The design language's chart tokens stop at three series, so the eight
+      family colors are the dataviz skill's reference hues in `style/_families.scss`, ordered so
+      every neighbor in `Family::STACK` passes its validator on `--bg-0` and `--bg-1`, with
+      Unattributed a cool gray. Every view shares one `ViewState` (`?from&to&layer&families`).
 24. **The hero view is the fleet barcode,** with the stacked area of lost MWh by cause beneath it as
     its summary. Both share one filter state. It may be revisited.
 25. **Findings are markdown files in git, `findings/NNNN-slug.md`.**

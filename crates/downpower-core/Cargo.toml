@@ -1,0 +1,21 @@
+[package]
+name = "downpower-core"
+description = "What the server and the browser share: the cause families and the barcode buffer's format."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Built for the browser too, so nothing here may need a server or an OS.
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
