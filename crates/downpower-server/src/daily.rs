@@ -1,6 +1,6 @@
 //! The update loop (DESIGN.md Decisions 7 and 12). On start, and every six hours after, it fetches
-//! what the NRC and EIA have published since, rebuilds the ledger when the raw store's content has
-//! changed, and records the run for `/status`. One task does all of it, so two rebuilds never
+//! what the NRC and EIA have published since, brings the ledger up to date when the raw store's
+//! content has changed, and records the run for `/status`. One task does all of it, so two rebuilds never
 //! overlap. With fetching off, it runs once, to rebuild at start.
 
 use std::ffi::OsStr;
@@ -73,7 +73,7 @@ pub struct Run {
     pub events: Option<Summary>,
     /// The last day a `NUC_STATUS` fetched this run covers.
     pub nuc_status: Option<NaiveDate>,
-    /// The table a rebuild made current.
+    /// The table a rebuild made current or an update wrote into.
     pub rebuilt: Option<String>,
     /// What went wrong. A failed fetch still lets the rebuild run over what the store holds.
     pub errors: Vec<String>,
@@ -144,6 +144,7 @@ async fn fetch(data_dir: &Path, sources: &Sources, today: NaiveDate, run: &mut R
 
 fn add(total: &mut Summary, more: Summary) {
     total.stored += more.stored;
+    total.unchanged += more.unchanged;
     total.missing += more.missing;
     total.skipped += more.skipped;
 }

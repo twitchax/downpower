@@ -3,7 +3,7 @@
 //! bodies. A 403 stops the run, since it would mean the NRC's bot block is back, and that calls for
 //! a person rather than a retry. A rerun resumes by skipping the pages an earlier run settled.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
@@ -14,7 +14,7 @@ use tokio::time::{Instant, sleep, sleep_until};
 
 use crate::Res;
 use crate::nrc::{self, Report};
-use crate::raw::{RawStore, Record, Series, Source};
+use crate::raw::{Hash, RawStore, Record, Series, Source};
 
 /// The User-Agent the NRC email names: `downpower/0.1 (+https://github.com/twitchax/downpower)`.
 pub const USER_AGENT: &str = concat!(
@@ -75,6 +75,10 @@ impl Config {
 pub struct Summary {
     /// Pages stored.
     pub stored: usize,
+    /// Pages fetched again that matched the newest stored copy, the CDN's beacon aside: recorded
+    /// against that copy's blob, so the raw digest doesn't move.
+    #[serde(default)]
+    pub unchanged: usize,
     /// Dates with no page (a 404).
     pub missing: usize,
     /// Dates an earlier run settled.
@@ -85,6 +89,7 @@ pub struct Summary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Outcome {
     Stored,
+    Unchanged,
     Missing,
 }
 
@@ -139,36 +144,40 @@ impl Fetcher {
     /// when the raw store cannot be read or written.
     pub async fn run(&mut self, report: Report, from: NaiveDate, to: NaiveDate) -> Res<Summary> {
         let series = Series::from(report);
-        let settled: HashSet<NaiveDate> = self
-            .store
-            .records()?
-            .into_iter()
-            .filter(|record| record.series == series && nrc::settles(record))
-            .map(|record| record.date)
-            .collect();
+        let records = self.store.records()?;
+        let settled: HashSet<NaiveDate> = records.iter().filter(|record| record.series == series && nrc::settles(record)).map(|record| record.date).collect();
+        // The newest stored body per date, which a refetch is compared against.
+        let mut newest: HashMap<NaiveDate, (Hash, Option<u64>)> = HashMap::new();
+        for record in records.into_iter().filter(|record| record.series == series) {
+            match record.sha256 {
+                Some(hash) => newest.insert(record.date, (hash, record.len)),
+                None => newest.remove(&record.date),
+            };
+        }
         let mut summary = Summary::default();
         for date in report.dates(from, to) {
             if settled.contains(&date) {
                 summary.skipped += 1;
                 continue;
             }
-            match self.fetch(report, date).await? {
+            match self.fetch(report, date, newest.get(&date)).await? {
                 Outcome::Stored => summary.stored += 1,
+                Outcome::Unchanged => summary.unchanged += 1,
                 Outcome::Missing => summary.missing += 1,
             }
-            if (summary.stored + summary.missing) % 100 == 0 {
+            if (summary.stored + summary.unchanged + summary.missing).is_multiple_of(100) {
                 tracing::info!(?report, %date, summary.stored, summary.missing, summary.skipped, "progress");
             }
         }
         Ok(summary)
     }
 
-    async fn fetch(&mut self, report: Report, date: NaiveDate) -> Res<Outcome> {
+    async fn fetch(&mut self, report: Report, date: NaiveDate, newest: Option<&(Hash, Option<u64>)>) -> Res<Outcome> {
         let url = format!("{}{}", self.config.base_url, report.path(date));
         let mut backoff = self.config.backoff;
         for attempt in 1..=self.config.attempts {
             self.pacer.wait().await;
-            match self.attempt(report, date, &url).await? {
+            match self.attempt(report, date, &url, newest).await? {
                 Attempt::Done(outcome) => return Ok(outcome),
                 Attempt::Retry(retry_after) if attempt < self.config.attempts => {
                     let wait = retry_after.map_or(backoff, |asked| asked.max(backoff));
@@ -182,7 +191,7 @@ impl Fetcher {
         bail!("{url} failed {} times in a row, so the run stops here", self.config.attempts)
     }
 
-    async fn attempt(&self, report: Report, date: NaiveDate, url: &str) -> Res<Attempt> {
+    async fn attempt(&self, report: Report, date: NaiveDate, url: &str, newest: Option<&(Hash, Option<u64>)>) -> Res<Attempt> {
         let fetched_at = Utc::now();
         let response = match self.client.get(url).send().await {
             Ok(response) => response,
@@ -216,6 +225,15 @@ impl Fetcher {
                         return Ok(Attempt::Retry(None));
                     }
                 };
+                // The fetch is always recorded, so the page can settle; an unchanged report points
+                // at the blob it matches rather than storing the CDN's new beacon.
+                if let Some((hash, len)) = newest
+                    && nrc::same_page(&self.store.get(hash)?, &body)
+                {
+                    self.store.append(&record(Some(hash.clone()), *len))?;
+                    tracing::info!(?report, %date, "unchanged");
+                    return Ok(Attempt::Done(Outcome::Unchanged));
+                }
                 let hash = self.store.put(&body)?;
                 self.store.append(&record(Some(hash), u64::try_from(body.len()).ok()))?;
                 tracing::info!(?report, %date, len = body.len(), "stored");

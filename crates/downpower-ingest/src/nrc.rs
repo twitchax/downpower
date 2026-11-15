@@ -92,6 +92,35 @@ pub fn settles(record: &Record) -> bool {
     Report::try_from(record.series).is_ok_and(|report| matches!(record.status, 200 | 404) && record.date.checked_add_days(report.hold()).is_some_and(|due| record.captured_at.date_naive() >= due))
 }
 
+/// `body` without the scripts Akamai's mPulse beacon puts on every nrc.gov page (they name
+/// `BOOMR`). They carry a request id, a timestamp and the client's port, so two fetches of an
+/// unchanged report differ only there (PRD-0002.log.md, T-016).
+#[must_use]
+pub fn without_beacon(body: &[u8]) -> Vec<u8> {
+    const OPEN: &[u8] = b"<script";
+    const CLOSE: &[u8] = b"</script>";
+    let find = |from: usize, needle: &[u8]| body.get(from..).and_then(|rest| rest.windows(needle.len()).position(|window| window == needle)).map(|at| from + at);
+    let mut kept = Vec::with_capacity(body.len());
+    let mut at = 0;
+    while let Some(open) = find(at, OPEN) {
+        let Some(close) = find(open, CLOSE).map(|close| close + CLOSE.len()) else { break };
+        kept.extend_from_slice(&body[at..open]);
+        let script = &body[open..close];
+        if !script.windows(5).any(|window| window == b"BOOMR") {
+            kept.extend_from_slice(script);
+        }
+        at = close;
+    }
+    kept.extend_from_slice(&body[at..]);
+    kept
+}
+
+/// Whether two fetched bodies carry the same page, the CDN's beacon aside.
+#[must_use]
+pub fn same_page(a: &[u8], b: &[u8]) -> bool {
+    a == b || without_beacon(a) == without_beacon(b)
+}
+
 #[cfg(test)]
 mod unit {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -100,6 +129,21 @@ mod unit {
 
     use super::*;
     use crate::raw::{Hash, Source};
+
+    fn page(rid: &str, power: &str) -> Vec<u8> {
+        format!(
+            "<html><script>(window.BOOMR_mq=window.BOOMR_mq||[]).push([\"addVar\"]);</script><table><td>{power}</td></table><script>var a={{\"ak.rid\":\"{rid}\"}};BOOMR.plugins.AK={{}};</script><script>keep()</script></html>"
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn the_cdn_beacon_is_not_part_of_the_page() {
+        assert_eq!(without_beacon(&page("18382c55", "100")), b"<html><table><td>100</td></table><script>keep()</script></html>");
+        assert!(same_page(&page("18382c55", "100"), &page("3bb6d054", "100")));
+        assert!(!same_page(&page("18382c55", "100"), &page("18382c55", "97")));
+        assert_eq!(without_beacon(b"<script>unclosed BOOMR"), b"<script>unclosed BOOMR", "a script with no end is kept as is");
+    }
 
     fn day(text: &str) -> NaiveDate {
         text.parse().unwrap()

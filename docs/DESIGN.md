@@ -119,6 +119,10 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - A `derived_version` stamp triggers a background rebuild from raw whenever the parser or the tag
       table changes. Each build is its own table, and the previous one keeps serving until the new
       one is complete (revised 2026-11-14).
+    - New raw content under the same `derived_version` updates the current table in place (revised
+      2026-11-15): the ledger is built again, but only the unit-months whose rows hash differently
+      are rewritten, so a day's new pages cost seconds of writes rather than a million rows. An
+      update is checked against a full rebuild of the same raw store in the tests.
     - The backfill runs on the home box. The raw files ship to the volume, and the database is
       rebuilt there by the deployed code.
     - Backup: Fly's daily volume snapshots plus the home-box copy.
@@ -267,8 +271,10 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
   the server runs as uid 10001. `docker/entrypoint.sh` starts as root, chowns whatever under `/data`
   isn't 10001's, and drops to 10001 with `setpriv` (util-linux, in `debian:stable-slim`).
   `docker/smoke.sh` checks it over a root-owned Docker volume, in CI and as `cargo make docker-smoke`.
-- **Gotcha: one machine.** `fly deploy` makes two machines by default, and each would get its own
-  volume and its own update loop fetching from nrc.gov. Every deploy passes `--ha=false`.
+- **One machine.** Two would mean two volumes and two update loops fetching from nrc.gov. Fly gives
+  a process group with a mounted volume one machine on its first deploy (`--ha` adds spares only
+  to groups without volumes), and later deploys keep the count; `fly scale count 1` pins it.
+  fly.toml has no count of its own.
 - **Gotcha: SurrealKV sizes its memory from the host.**
   - With the defaults, the smoke run on a 256 GB box logged a 4 GiB max memtable and a ~122 GiB block
     cache. On the 1 GB Fly VM that is an OOM waiting for the first bulk ingest.
@@ -279,11 +285,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
   both NRC series (2.3 GB uncompressed), each `NUC_STATUS` copy adds about 6 MB, and a ledger
   build takes 282 MB, two of them while a rebuild swaps. Ten back-to-back rebuilds left the
   database between 532 and 782 MB, as compaction reclaims each dropped table.
-- **A rebuild on Fly takes 11 to 20 minutes** (680 s and then 1,206 s on 2026-11-14, against 31 s
-  on two dedicated cores), because a shared vCPU is throttled once its burst is spent. Peak RSS was
-  235 to 360 MB. The old
-  build serves until the swap, so a slow rebuild delays fresh data and nothing else; a dedicated
-  CPU or an incremental rebuild is the fix if that delay starts to matter.
+- **Rebuild cost on the shared vCPU.** Fly throttles a shared vCPU to a small share of a core once its
+  burst is spent, so CPU-seconds are what count. Measured pinned to one core (2026-11-15): a full
+  rebuild takes 73 s (it took 104 s, and 11 to 20 minutes on Fly, before the parser stopped
+  building a DOM for whole pages), and the daily in-place update takes 13 s. Peak RSS is 235 to
+  360 MB. A full rebuild happens only when a deploy changes the parser or the catalog, and the old
+  build serves until it lands.
 - **Outward steps, each needing Aaron's go-ahead:**
   - `gh repo create`, approved 2026-11-12. The auto-mode classifier refuses it even after approval,
     so Aaron runs it himself.

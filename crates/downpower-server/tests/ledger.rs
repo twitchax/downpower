@@ -206,3 +206,56 @@ fn ledger_a_current_record_in_an_older_shape_is_rebuilt_over() {
         assert_eq!(stored::current(&store).await.unwrap(), rebuilt);
     });
 }
+
+/// Everything a build serves: its rows, both barcodes' tags and both monthly series.
+async fn served(store: &db::Store, table: &str) -> (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>) {
+    let mut etags = Vec::new();
+    let mut series = Vec::new();
+    for layer in downpower_core::barcode::Layer::ALL {
+        etags.push(stored::barcode(store, table, layer).await.unwrap().unwrap().etag);
+        series.push(stored::monthly(store, table, layer).await.unwrap().unwrap());
+    }
+    (rows(store, table).await, etags, series)
+}
+
+/// What a full rebuild serves over a fresh store holding the fixture plus `pages`.
+async fn rebuilt_from_scratch(pages: &[(&str, Option<&[u8]>)]) -> (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>) {
+    let tmp = tempfile::tempdir().unwrap();
+    let raw = raw_store(tmp.path(), None);
+    for (date, page) in pages {
+        put(&raw, Series::PowerStatus, date, *page);
+    }
+    let store = db::open(tmp.path()).await.unwrap();
+    let build = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+    served(&store, &build.table).await
+}
+
+#[test]
+fn ledger_new_content_updates_the_current_table_to_what_a_full_rebuild_gives() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let first = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        // A page for 07-16, where the store had a 404: new rows in July.
+        let page = file("status/2025-07-15.html");
+        put(&raw, Series::PowerStatus, "2025-07-16", Some(&page));
+        let updated = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        assert_eq!(updated.table, first.table, "updated in place");
+        assert_ne!(updated.raw_digest, first.raw_digest);
+        let expected = rebuilt_from_scratch(&[("2025-07-16", Some(&page))]).await;
+        assert_eq!(served(&store, &updated.table).await, expected);
+        assert_eq!(build_tables(&store).await, std::slice::from_ref(&first.table));
+
+        // Both pages gone: every unit EIA doesn't report loses its July, which the update deletes.
+        put(&raw, Series::PowerStatus, "2025-07-15", None);
+        put(&raw, Series::PowerStatus, "2025-07-16", None);
+        let emptied = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        let expected = rebuilt_from_scratch(&[("2025-07-16", Some(&page)), ("2025-07-15", None), ("2025-07-16", None)]).await;
+        let (rows_now, ..) = served(&store, &emptied.table).await;
+        assert!((rows_now.len() as u64) < first.summary.days, "{} rows", rows_now.len());
+        assert_eq!(served(&store, &emptied.table).await, expected);
+        assert_eq!(emptied.summary, stored::current(&store).await.unwrap().unwrap().summary);
+    });
+}

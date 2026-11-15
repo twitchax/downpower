@@ -64,7 +64,7 @@ pub fn derived_version() -> String {
 }
 
 /// Where a unit-day's power comes from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
     /// The NRC status page, which wins wherever it exists.
@@ -74,14 +74,14 @@ pub enum Source {
 }
 
 /// A cause the observed layer found, with the tag that named it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ObservedCause {
     pub cause: String,
     pub tag: String,
 }
 
 /// One in-service unit-day: the numbers, the observed layer and the attributed layer (Decision 20).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UnitDay {
     pub docket: String,
     pub date: NaiveDate,

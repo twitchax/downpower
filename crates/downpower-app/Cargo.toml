@@ -43,6 +43,7 @@ ssr = ["leptos/ssr", "leptos_meta/ssr", "leptos_router/ssr"]
 
 [dev-dependencies]
 anyhow.workspace = true
+serde_json.workspace = true
 pretty_assertions.workspace = true
 
 [lints]

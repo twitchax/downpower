@@ -115,7 +115,7 @@ pub fn parse(page: &[u8]) -> Res<StatusPage> {
     let text = std::str::from_utf8(page).context("a status page is not UTF-8")?;
     // Pages from 2025 on put a lone NUL in a blank reason cell. html5ever drops it, as the HTML
     // spec says a parser must inside a table cell.
-    let html = Html::parse_document(text);
+    let html = Html::parse_document(main(text));
     let selectors = Selectors::new()?;
 
     let mut blocks = html.select(&selectors.content);
@@ -137,6 +137,16 @@ pub fn parse(page: &[u8]) -> Res<StatusPage> {
         parse_region(region, table, &selectors, &mut rows).with_context(|| format!("region {region}"))?;
     }
     Ok(StatusPage::Report(rows))
+}
+
+/// The page's `<main>` element, or the whole page when it has none. The report sits inside it, and
+/// it is under a quarter of the page: the head, navigation and footer scripts are the rest, and
+/// building their DOM was most of a rebuild's parsing time (PRD-0002.log.md, T-016).
+fn main(text: &str) -> &str {
+    match (text.find("<main"), text.rfind("</main>")) {
+        (Some(start), Some(end)) if start < end => &text[start..end + "</main>".len()],
+        _ => text,
+    }
 }
 
 fn parse_region(region: u8, table: ElementRef<'_>, selectors: &Selectors, rows: &mut Vec<Row>) -> Res<()> {
@@ -208,6 +218,13 @@ mod unit {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn parsing_starts_at_main_and_falls_back_to_the_page() {
+        assert_eq!(main("<head>nav</head><main id=x>report</main><footer>"), "<main id=x>report</main>");
+        assert_eq!(main("<body>no main here</body>"), "<body>no main here</body>");
+        assert_eq!(main("</main> backwards <main"), "</main> backwards <main");
+    }
 
     /// A region table: its div id, its header, and its rows.
     type Table<'a> = (&'a str, &'a [&'a str], &'a [&'a [&'a str]]);

@@ -50,7 +50,7 @@ pub fn observe<'a>(tags: &'a Tags, reason: &str) -> Observed<'a> {
 }
 
 /// The inference that produced an attributed cause, or why there is none.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Method {
     /// The highest-precedence cause on the day (Decision 19).
     #[serde(rename = "precedence_v1")]
@@ -93,7 +93,7 @@ impl Method {
 }
 
 /// What an attributed cause rests on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Evidence {
     /// The tag that named the cause.

@@ -56,18 +56,19 @@ builds its own ledger from it.
 downpower backfill                       # fetch everything, then rebuild and fail on anything unknown
 tar -C data -cf raw.tar raw              # the blobs are zstd already
 fly volumes create downpower_data -a twitchax-downpower -r sjc -s 5
-fly deploy --ha=false -e DOWNPOWER_FETCH=off  # the first boot fetches nothing, so the tar lands alone
+fly deploy -e DOWNPOWER_FETCH=off       # the first boot fetches nothing, so the tar lands alone
 fly ips allocate-v6 -a twitchax-downpower && fly ips allocate-v4 --shared -a twitchax-downpower
 fly ssh sftp put -a twitchax-downpower raw.tar /data/raw.tar
 fly ssh console -a twitchax-downpower -C "sh -c 'tar -xf /data/raw.tar -C /data && rm /data/raw.tar'"
-fly deploy --ha=false                    # fetching on, as fly.toml sets it
+fly deploy                               # fetching on, as fly.toml sets it
 ```
 
 A deploy of a prebuilt image (`--image`) doesn't allocate the app's public addresses, hence the
 `ips` line; a shared IPv4 and an IPv6 cost nothing.
 
-Every deploy passes `--ha=false`: a second machine would get its own volume and its own update loop.
-The image's entrypoint hands whatever `fly ssh` wrote as root to the server's user at boot. On the
+The app runs on one machine: Fly gives a process group with a mounted volume a single machine on
+its first deploy, and later deploys keep the count (`fly scale count 1` if anything ever changes
+it). Two machines would mean two volumes and two update loops. The image's entrypoint hands whatever `fly ssh` wrote as root to the server's user at boot. On the
 second deploy, `serve` sees raw content its last build didn't read and rebuilds in the background.
 The tar replaces `/data/raw/manifest.jsonl`, so this is for the first ship: after that, the update
 loop keeps the volume's raw store current itself.

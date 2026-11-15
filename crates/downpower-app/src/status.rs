@@ -58,6 +58,9 @@ pub struct Run {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub struct Fetched {
     pub stored: u64,
+    /// Refetched and found unchanged; runs before 2026-11-15 don't have it.
+    #[serde(default)]
+    pub unchanged: u64,
     pub missing: u64,
     pub skipped: u64,
 }
@@ -94,7 +97,12 @@ fn share(part: u64, whole: u64, digits: usize) -> String {
 fn fetched(label: &str, fetched: Option<Fetched>) -> String {
     fetched.map_or_else(
         || format!("{label}: not fetched"),
-        |fetched| format!("{label}: {} stored, {} missing, {} settled", fetched.stored, fetched.missing, fetched.skipped),
+        |fetched| {
+            format!(
+                "{label}: {} stored, {} unchanged, {} missing, {} settled",
+                fetched.stored, fetched.unchanged, fetched.missing, fetched.skipped
+            )
+        },
     )
 }
 
@@ -244,6 +252,13 @@ mod tests {
         assert_eq!(share(12, 714_972, 3), "0.002%");
         assert_eq!(share(1, 0, 1), "0.0%");
         assert_eq!(fetched("status pages", None), "status pages: not fetched");
+        let run: Fetched = serde_json::from_str(r#"{"stored":1,"missing":0,"skipped":61}"#).unwrap_or(Fetched {
+            stored: 0,
+            unchanged: 9,
+            missing: 0,
+            skipped: 0,
+        });
+        assert_eq!(fetched("status pages", Some(run)), "status pages: 1 stored, 0 unchanged, 0 missing, 61 settled", "an older run parses");
         assert_eq!((thousands(0), thousands(999), thousands(1_016_840)), ("0".to_owned(), "999".to_owned(), "1,016,840".to_owned()));
     }
 }

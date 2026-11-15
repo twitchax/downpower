@@ -4,6 +4,7 @@
 
 pub mod attribution;
 pub mod capacity;
+pub mod chunks;
 pub mod eia;
 pub mod fetch;
 pub mod ledger;

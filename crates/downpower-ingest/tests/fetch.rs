@@ -86,7 +86,15 @@ async fn uat_fetch_polite_paces_retries_and_resumes() {
         .await
         .unwrap();
 
-    assert_eq!(summary, Summary { stored: 3, missing: 1, skipped: 0 });
+    assert_eq!(
+        summary,
+        Summary {
+            stored: 3,
+            unchanged: 0,
+            missing: 1,
+            skipped: 0
+        }
+    );
     let hits = log.lock().unwrap().clone();
     let paths: Vec<_> = hits.iter().map(|(_, path, _)| &path[path.len() - 10..]).collect();
     assert_eq!(paths, ["19990101ps", "19990102ps", "19990102ps", "19990103ps", "19990104ps", "19990104ps"]);
@@ -117,8 +125,74 @@ async fn uat_fetch_polite_paces_retries_and_resumes() {
         .await
         .unwrap();
 
-    assert_eq!(rerun, Summary { stored: 0, missing: 0, skipped: 4 });
+    assert_eq!(
+        rerun,
+        Summary {
+            stored: 0,
+            unchanged: 0,
+            missing: 0,
+            skipped: 4
+        }
+    );
     assert_eq!(log.lock().unwrap().len(), hits.len());
+}
+
+/// Each fetch of a date carries a fresh CDN beacon, the way nrc.gov's do; 2099-01-02's report
+/// itself changes on the third fetch.
+fn beaconed(path: &str, nth: usize) -> Response {
+    let date = &path[path.len() - 10..path.len() - 2];
+    let power = if date == "20990102" && nth >= 3 { 97 } else { 100 };
+    format!("<!DOCTYPE html><html><script>BOOMR.plugins.AK={{\"ak.rid\":\"{date}-{nth}\"}};</script><body><td>{power}</td></body></html>").into_response()
+}
+
+#[tokio::test]
+async fn fetch_a_refetch_that_differs_only_in_the_cdn_beacon_keeps_the_stored_copy() {
+    let (base, _log) = fake(beaconed).await;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    // Dates still inside their 28-day hold (here, far in the future) never settle, so every run
+    // fetches them again.
+    let run = || async {
+        Fetcher::new(config(base.clone()), store.clone())
+            .unwrap()
+            .run(Report::PowerStatus, day("2099-01-01"), day("2099-01-02"))
+            .await
+            .unwrap()
+    };
+    let today = |store: &RawStore| (store.digest().unwrap(), store.records().unwrap().len());
+
+    assert_eq!(
+        run().await,
+        Summary {
+            stored: 2,
+            unchanged: 0,
+            missing: 0,
+            skipped: 0
+        }
+    );
+    let (digest, _) = today(&store);
+    assert_eq!(
+        run().await,
+        Summary {
+            stored: 0,
+            unchanged: 2,
+            missing: 0,
+            skipped: 0
+        }
+    );
+    assert_eq!(today(&store), (digest.clone(), 4), "every fetch is recorded, and the digest holds");
+
+    // A change to the report itself is stored and moves the digest.
+    assert_eq!(
+        run().await,
+        Summary {
+            stored: 1,
+            unchanged: 1,
+            missing: 0,
+            skipped: 0
+        }
+    );
+    assert_ne!(today(&store).0, digest);
 }
 
 #[tokio::test]
