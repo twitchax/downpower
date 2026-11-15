@@ -118,7 +118,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - Surreal holds everything derived, analysis outputs included.
     - A `derived_version` stamp triggers a background rebuild from raw whenever the parser or the tag
       table changes. Each build is its own table, and the previous one keeps serving until the new
-      one is complete (revised 2026-11-14).
+      one is complete (revised 2026-11-14), even when the deploy changed the shape of the build
+      record that names it (2026-11-15).
     - New raw content under the same `derived_version` updates the current table in place (revised
       2026-11-15): the ledger is built again, but only the unit-months whose rows hash differently
       are rewritten, so a day's new pages cost seconds of writes rather than a million rows. An

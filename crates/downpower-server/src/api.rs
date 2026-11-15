@@ -1,6 +1,7 @@
 //! The data the views fetch: the barcode buffer and the monthly lost energy per layer, one unit-day
 //! for the barcode's hover, and what `/status` shows.
-//! Both read the build `ledger:current` names, so a rebuild swaps them in with the table.
+//! Both read the table `ledger:current` names, so a rebuild swaps them in with the table, and a
+//! deploy that changes the record's shape keeps serving the old table until its rebuild lands.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -40,7 +41,8 @@ pub fn router(store: Store) -> Router {
         .with_state(api)
 }
 
-/// A 503 while no build is current: the first rebuild after a deploy takes about a minute.
+/// A 503 while no build has ever landed: only a fresh volume's first rebuild leaves the site
+/// without a table to read.
 fn building() -> Response {
     (StatusCode::SERVICE_UNAVAILABLE, [(header::RETRY_AFTER, "30")], "the ledger is building").into_response()
 }
@@ -57,8 +59,8 @@ async fn barcode(State(api): State<Api>, Path(layer): Path<String>, headers: Hea
     let Some(layer) = Layer::from_slug(&layer) else {
         return (StatusCode::NOT_FOUND, "no such layer").into_response();
     };
-    let table = match ledger::current(&api.store).await {
-        Ok(Some(build)) => build.table,
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
         Ok(None) => return building(),
         Err(error) => return failed(&error),
     };
@@ -104,8 +106,8 @@ async fn unit_day(State(api): State<Api>, Path((docket, date)): Path<(String, St
     let Ok(date) = date.parse::<NaiveDate>() else {
         return (StatusCode::BAD_REQUEST, "a date is YYYY-MM-DD").into_response();
     };
-    let table = match ledger::current(&api.store).await {
-        Ok(Some(build)) => build.table,
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
         Ok(None) => return building(),
         Err(error) => return failed(&error),
     };
@@ -121,8 +123,8 @@ async fn lost(State(api): State<Api>, Path(layer): Path<String>) -> Response {
     let Some(layer) = Layer::from_slug(&layer) else {
         return (StatusCode::NOT_FOUND, "no such layer").into_response();
     };
-    let table = match ledger::current(&api.store).await {
-        Ok(Some(build)) => build.table,
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
         Ok(None) => return building(),
         Err(error) => return failed(&error),
     };

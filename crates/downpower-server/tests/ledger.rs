@@ -207,6 +207,26 @@ fn ledger_a_current_record_in_an_older_shape_is_rebuilt_over() {
     });
 }
 
+#[test]
+fn ledger_a_current_record_in_an_older_shape_keeps_its_table_serving_until_a_rebuild_lands() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let store = db::open(tmp.path()).await.unwrap();
+        let good = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+        // A deploy whose `Build` no longer reads the record the last binary wrote.
+        store.query("UPDATE ledger:current UNSET summary").await.unwrap().check().unwrap();
+        let raw = RawStore::open(tmp.path()).unwrap();
+        put(&raw, Series::PowerStatus, "2025-07-17", Some(b"<html>not a status page</html>"));
+
+        stored::rebuild(&store, tmp.path(), Unknowns::Quarantine).await.unwrap_err();
+
+        assert_eq!(stored::current(&store).await.unwrap(), None);
+        assert_eq!(stored::serving(&store).await.unwrap(), Some(good.table.clone()));
+        assert_ne!(rows(&store, &good.table).await, [], "the serving table outlives the failed rebuild");
+    });
+}
+
 /// Everything a build serves: its rows, both barcodes' tags and both monthly series.
 async fn served(store: &db::Store, table: &str) -> (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>) {
     let mut etags = Vec::new();

@@ -121,6 +121,22 @@ fn uat_barcode_buffer_moves_its_etag_when_the_data_moves() {
 }
 
 #[test]
+fn api_serves_the_current_table_while_its_record_is_in_an_older_shape() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+        store.query("UPDATE ledger:current UNSET summary").await.unwrap().check().unwrap();
+        let router = router(options(), store);
+
+        assert_eq!(get(&router, "/api/barcode/attributed", &[]).await.status(), StatusCode::OK);
+        assert_eq!(get(&router, "/api/lost/attributed", &[]).await.status(), StatusCode::OK);
+        assert_eq!(get(&router, "/api/unit-day/05000323/2025-07-15", &[]).await.status(), StatusCode::OK);
+    });
+}
+
+#[test]
 fn api_unit_day_is_one_row_or_a_404() {
     block_on(async {
         let tmp = tempfile::tempdir().unwrap();

@@ -40,12 +40,14 @@ pass takes about 14 hours, and the events pass about 10.
 capacity per generator from 2007) in the same raw store, in one request.
 
 `downpower serve` builds the ledger (one row per in-service unit-day) from the raw store into
-SurrealDB when the stored build is missing, was made by another parser or catalog, or was built
-from other raw content. With `DOWNPOWER_FETCH=daily` (as on Fly), it also fetches every six hours:
-the newest status page, the one that has just passed its 28-day hold, recent Event Notification
-pages, and a weekly `NUC_STATUS`. It rebuilds in the background, about 30 seconds for the
-whole archive, and keeps serving the previous build until the new one is done. Unknown tags and
-unit names are quarantined there; `downpower rebuild` and `downpower backfill` fail on them instead.
+SurrealDB when the stored build is missing or was made by another parser or catalog, and updates
+it in place, rewriting only the unit-months that changed, when the raw store holds new content.
+With `DOWNPOWER_FETCH=daily` (as on Fly), it also fetches every six hours: the newest status page,
+the one that has just passed its 28-day hold, recent Event Notification pages, and a weekly
+`NUC_STATUS`. A rebuild runs in the background (73 CPU-seconds for the whole archive, over 20
+minutes on Fly's throttled shared vCPU), and the site keeps serving the previous build until the
+new one is done. Unknown tags and unit names are quarantined there; `downpower rebuild` and
+`downpower backfill` fail on them instead.
 
 ### Shipping the raw store to Fly
 

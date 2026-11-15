@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
-# Multi-stage build. cargo-chef caches the server's dependency layer; cargo-leptos then builds the
-# server and the hashed wasm/js/css site in one step.
+# Multi-stage build. cargo-chef caches the dependency layers of the server and the wasm frontend;
+# cargo-leptos then builds the server and the hashed wasm/js/css site in one step.
 
 FROM rust:1-bookworm AS chef
 # Prebuilt tools through cargo-binstall: building them from source costs minutes per cold build.
@@ -19,8 +19,14 @@ FROM chef AS builder
 # build share it and the cooked layer is reused.
 COPY rust-toolchain.toml .
 RUN rustup toolchain install
+# leptos and leptos_config read it at compile time and cargo-leptos sets it, so the cook must too.
+ENV LEPTOS_OUTPUT_NAME=downpower
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+# Cook exactly the two builds `cargo leptos build --release` runs, or their dependencies build
+# twice: the server's binary alone (a workspace-wide cook unifies the frontend's features into the
+# crates both share), then the frontend for wasm, under its profile, in cargo-leptos's target dir.
+RUN cargo chef cook --release --recipe-path recipe.json --package downpower-server --bin downpower
+RUN cargo chef cook --profile wasm-release --target wasm32-unknown-unknown --target-dir /app/target/front --recipe-path recipe.json --package downpower-frontend
 COPY . .
 RUN cargo leptos build --release
 

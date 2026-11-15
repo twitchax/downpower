@@ -187,6 +187,22 @@ pub async fn current(store: &Store) -> anyhow::Result<Option<Build>> {
     }
 }
 
+/// The table the site reads, whatever shape the rest of `ledger:current` is in. A deploy that
+/// changes [`Build`] makes [`current`] read none until its rebuild lands, and the views keep
+/// reading the old table meanwhile.
+///
+/// # Errors
+///
+/// When the query fails.
+pub async fn serving(store: &Store) -> anyhow::Result<Option<String>> {
+    store
+        .query("SELECT VALUE `table` FROM ONLY ledger:current")
+        .await
+        .context("reading ledger:current")?
+        .take(0)
+        .context("reading ledger:current's table")
+}
+
 /// What the writer does with rows.
 enum Write {
     /// Rows for a fresh table.
@@ -375,7 +391,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     let units = Units::catalog()?;
     let table = format!("{TABLE_PREFIX}{}", Utc::now().timestamp_micros());
     // A build that died part way left its table behind; the current one keeps serving.
-    let serving = current(store).await?.map(|build| build.table);
+    let serving = serving(store).await?;
     drop_tables(store, &units, serving.as_deref()).await?;
     store
         .query(format!("DEFINE TABLE {table} SCHEMALESS"))
