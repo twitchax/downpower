@@ -1,5 +1,5 @@
 //! A unit's rows a month at a time, each month hashed, so a rebuild whose inputs moved only a little
-//! rewrites only the months that changed (PRD-0002.log.md, T-016). Writing every row of every build
+//! rewrites only the months that changed (PRD-0002.log.md, T-019). Writing every row of every build
 //! was most of a rebuild's time on Fly's throttled CPU.
 
 use std::collections::BTreeMap;

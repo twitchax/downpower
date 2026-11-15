@@ -141,7 +141,7 @@ pub fn parse(page: &[u8]) -> Res<StatusPage> {
 
 /// The page's `<main>` element, or the whole page when it has none. The report sits inside it, and
 /// it is under a quarter of the page: the head, navigation and footer scripts are the rest, and
-/// building their DOM was most of a rebuild's parsing time (PRD-0002.log.md, T-016).
+/// building their DOM was most of a rebuild's parsing time (PRD-0002.log.md, T-019).
 fn main(text: &str) -> &str {
     match (text.find("<main"), text.rfind("</main>")) {
         (Some(start), Some(end)) if start < end => &text[start..end + "</main>".len()],

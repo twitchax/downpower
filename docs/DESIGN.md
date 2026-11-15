@@ -77,7 +77,7 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - A page is settled once it has been fetched far enough past its date: 28 days for a status page
       (the reason column fills in), 2 days for an EN page. The fetcher resumes by skipping settled
       pages.
-    - **A 403 stops the run and alerts.** If the block returns, the fallback is the original plan: for
+    - **A 403 stops the run,** which shows as a failed run on `/status` (nothing pages anyone). If the block returns, the fallback is the original plan: for
       each report date, the newest Wayback capture taken 28 or more days after it.
     - About 10,200 status pages (roughly 14 hours) and 7,000 EN pages (roughly 10 hours), run once
       from the home box.
@@ -92,7 +92,7 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - The raw store keeps the NDJSON file inside the zip, about 6 MB as a blob.
 12. **Recent reason text comes from re-fetching.** The daily job fetches the newest status page
     (numbers only) and the page that has just passed its 28-day hold (reasons). Until a day passes
-    the hold, its cause reads "reason text not yet available".
+    the hold, its readout says "reason not yet published".
     - The job runs at start and every six hours (revised 2026-11-14). Each run also fetches any day
       in the hold the store lacks, catches up on unsettled pages up to 60 days past the hold, takes
       the last week of Event Notification pages, and fetches `NUC_STATUS` once the stored copy is

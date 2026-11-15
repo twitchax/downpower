@@ -94,7 +94,9 @@ The reason classifier's tables live in `catalog/`. After a fetch, `cargo xtask r
 each key and rule in `catalog/tags.toml` catches, and `cargo xtask unclassified` rewrites the list of
 tags accepted as Unattributed. CI fails when a tag in the snapshot is unknown. `cargo xtask summary`
 builds the ledger as a rebuild does and prints lost output by family, method and cause, and
-`cargo xtask eia` compares the stored status pages with the newest stored `NUC_STATUS`.
+`cargo xtask eia` compares the stored status pages with the newest stored `NUC_STATUS`, and
+`cargo xtask crosscheck <dir>` compares the 1999–2016 status pages with the CSVs in a local clone
+of `mike-welch/NRC_Power_Reactor_Status_Reports` (a checker only: that repo has no license).
 `cargo xtask capacity <dir>` rewrites `catalog/capacity.csv` (net summer capacity for 1999 to 2006)
 from the EIA-860 zips in `<dir>`: `eia860a1999.zip` and `eia860a2000.zip` from
 `https://www.eia.gov/electricity/data/eia860/eia860a/`, and `eia8602001.zip` to `eia8602006.zip`

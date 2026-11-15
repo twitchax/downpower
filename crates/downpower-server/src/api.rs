@@ -23,11 +23,11 @@ use crate::daily::{self, Run};
 use crate::db::Store;
 use crate::ledger::{self, Build, Packed};
 
-/// The store, and the barcodes last served, keyed by layer with the table they came from.
+/// The store, and the barcode last served per layer, reused while the stored tag matches it.
 #[derive(Clone)]
 struct Api {
     store: Store,
-    barcodes: Arc<Mutex<HashMap<Layer, (String, Packed)>>>,
+    barcodes: Arc<Mutex<HashMap<Layer, Packed>>>,
 }
 
 /// The `/api` routes over `store`.
@@ -54,7 +54,8 @@ fn failed(error: &anyhow::Error) -> Response {
 
 /// The barcode buffer for a layer, as `application/octet-stream`. Its weak `ETag` is a hash of the
 /// bytes, so a browser revalidates for a 304 until the data changes. Weak, because the compression
-/// layer may change the bytes on the wire.
+/// layer may change the bytes on the wire. The buffer is cached by that tag, read from the store
+/// on every request, so neither a rebuild nor an in-place update leaves a stale one behind.
 async fn barcode(State(api): State<Api>, Path(layer): Path<String>, headers: HeaderMap) -> Response {
     let Some(layer) = Layer::from_slug(&layer) else {
         return (StatusCode::NOT_FOUND, "no such layer").into_response();
@@ -64,41 +65,47 @@ async fn barcode(State(api): State<Api>, Path(layer): Path<String>, headers: Hea
         Ok(None) => return building(),
         Err(error) => return failed(&error),
     };
-    let cached = api
-        .barcodes
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(&layer)
-        .filter(|(of, _)| *of == table)
-        .map(|(_, packed)| packed.clone());
+    let tag = match ledger::barcode_etag(&api.store, &table, layer).await {
+        Ok(Some(tag)) => tag,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    let revalidated = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|tags| tags.split(',').any(|candidate| candidate.trim().trim_start_matches("W/").trim_matches('"') == tag));
+    if revalidated {
+        return match weak(&tag) {
+            Ok(etag) => (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response(),
+            Err(error) => failed(&error),
+        };
+    }
+
+    let cached = api.barcodes.lock().unwrap_or_else(PoisonError::into_inner).get(&layer).filter(|packed| packed.etag == tag).cloned();
     let packed = match cached {
         Some(packed) => packed,
         None => match ledger::barcode(&api.store, &table, layer).await {
             Ok(Some(packed)) => {
-                api.barcodes.lock().unwrap_or_else(PoisonError::into_inner).insert(layer, (table, packed.clone()));
+                api.barcodes.lock().unwrap_or_else(PoisonError::into_inner).insert(layer, packed.clone());
                 packed
             }
             Ok(None) => return building(),
             Err(error) => return failed(&error),
         },
     };
-
-    let etag = format!("W/\"{}\"", packed.etag);
-    let matches = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|tags| tags.split(',').any(|tag| tag.trim().trim_start_matches("W/") == etag.trim_start_matches("W/")));
-    let Ok(etag) = HeaderValue::from_str(&etag) else {
-        return failed(&anyhow::anyhow!("an ETag that isn't a header value: {etag}"));
-    };
-    if matches {
-        return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+    match weak(&packed.etag) {
+        Ok(etag) => (
+            [(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream")), (header::ETAG, etag)],
+            Body::from(packed.bytes.into_inner()),
+        )
+            .into_response(),
+        Err(error) => failed(&error),
     }
-    (
-        [(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream")), (header::ETAG, etag)],
-        Body::from(packed.bytes.into_inner()),
-    )
-        .into_response()
+}
+
+/// `tag` as a weak `ETag` header value.
+fn weak(tag: &str) -> anyhow::Result<HeaderValue> {
+    HeaderValue::from_str(&format!("W/\"{tag}\"")).map_err(|_| anyhow::anyhow!("an ETag that isn't a header value: {tag}"))
 }
 
 /// One unit-day from the current build, as JSON: 404 when the unit has no row that day.
@@ -138,20 +145,23 @@ async fn lost(State(api): State<Api>, Path(layer): Path<String>) -> Response {
 /// Runs `/status` lists.
 const RUNS: u32 = 20;
 
-/// What `/status` shows: the current build, with its summary, and the newest runs.
+/// What `/status` shows: the current build, with its summary, the table the views read, and the
+/// newest runs. After a deploy that changed the build record, `build` is null until the rebuild
+/// lands while `serving` still names the table the site reads.
 #[derive(Serialize)]
 struct Status {
     build: Option<Build>,
+    serving: Option<String>,
     runs: Vec<Run>,
 }
 
 async fn status(State(api): State<Api>) -> Response {
-    let build = match ledger::current(&api.store).await {
-        Ok(build) => build,
+    let (build, serving) = match tokio::try_join!(ledger::current(&api.store), ledger::serving(&api.store)) {
+        Ok(read) => read,
         Err(error) => return failed(&error),
     };
     match daily::runs(&api.store, RUNS).await {
-        Ok(runs) => Json(Status { build, runs }).into_response(),
+        Ok(runs) => Json(Status { build, serving, runs }).into_response(),
         Err(error) => failed(&error),
     }
 }

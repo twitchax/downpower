@@ -22,7 +22,7 @@ pub const DB_DIR: &str = "downpower.db";
 
 /// `SurrealKV`'s block cache and memtable caps. Uncapped, both scale with the host: the cache takes
 /// half its memory less 1 GiB (about 30 GiB on the home box) and the memtable up to 1 GiB. At
-/// 64 MiB each, a million-row rebuild peaks near 200 MB of RSS (PRD-0002.log.md, T-008).
+/// 64 MiB each, a million-row rebuild peaks at 292 MB of RSS on two CPUs (PRD-0002.log.md, T-008).
 const BLOCK_CACHE: u64 = 64 << 20;
 const MEMTABLE: u64 = 64 << 20;
 

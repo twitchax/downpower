@@ -550,6 +550,23 @@ pub async fn barcode(store: &Store, table: &str, layer: Layer) -> anyhow::Result
     Ok(packed.map(|packed| packed.0))
 }
 
+/// The tag of `table`'s barcode in `layer`, if it has one. It is small enough to read on every
+/// request, so a cache keyed by it can't outlive an update that rewrites the barcode in place.
+///
+/// # Errors
+///
+/// When the query fails.
+pub async fn barcode_etag(store: &Store, table: &str, layer: Layer) -> anyhow::Result<Option<String>> {
+    store
+        .query("SELECT VALUE etag FROM ONLY barcode:[$table, $layer]")
+        .bind(("table", table.to_owned()))
+        .bind(("layer", layer.slug()))
+        .await
+        .with_context(|| format!("reading the {} barcode's tag of {table}", layer.slug()))?
+        .take(0)
+        .with_context(|| format!("reading the {} barcode's tag of {table}", layer.slug()))
+}
+
 /// One unit-day from `table`.
 ///
 /// # Errors

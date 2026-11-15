@@ -12,6 +12,10 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Status {
     pub build: Option<Build>,
+    /// The table the views read; set while `build` is null only when a rebuild is replacing a
+    /// build record an older binary wrote.
+    #[serde(default)]
+    pub serving: Option<String>,
     pub runs: Vec<Run>,
 }
 
@@ -130,7 +134,7 @@ pub fn StatusPage() -> impl IntoView {
             None => view! { <p class="meta">"loading…"</p> }.into_any(),
             Some(Err(error)) => view! { <p class="meta">{error}</p> }.into_any(),
             Some(Ok(status)) => view! {
-                <Ledger current=status.build />
+                <Ledger current=status.build serving=status.serving />
                 <Runs runs=status.runs />
             }
             .into_any(),
@@ -138,11 +142,21 @@ pub fn StatusPage() -> impl IntoView {
     }
 }
 
+/// What the ledger panel says without a build it can read: a deploy that changed the build record
+/// still serves the previous build while the new one runs.
+fn pending(serving: bool) -> &'static str {
+    if serving {
+        "Rebuilding after a deploy: the site serves the previous build until the new one is done."
+    } else {
+        "No build yet: the first one is running."
+    }
+}
+
 /// The current build: coverage, agreement and quarantine.
 #[component]
-fn Ledger(current: Option<Build>) -> impl IntoView {
+fn Ledger(current: Option<Build>, serving: Option<String>) -> impl IntoView {
     let Some(build) = current else {
-        return view! { <section class="panel"><p class="muted">"No build yet: the first one takes a few minutes after a deploy."</p></section> }.into_any();
+        return view! { <section class="panel"><p class="muted">{pending(serving.is_some())}</p></section> }.into_any();
     };
     let summary = build.summary;
     let dates = summary.dates;
@@ -244,6 +258,18 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn without_a_readable_build_the_panel_says_whether_the_site_still_serves() {
+        assert!(pending(true).starts_with("Rebuilding after a deploy"));
+        assert!(pending(false).starts_with("No build yet"));
+        let status: Status = serde_json::from_str(r#"{"build":null,"runs":[]}"#).unwrap_or(Status {
+            build: None,
+            serving: Some("unparsed".to_owned()),
+            runs: Vec::new(),
+        });
+        assert_eq!(status.serving, None, "a server without `serving` still parses");
+    }
 
     #[test]
     fn timestamps_and_shares_read_plainly() {

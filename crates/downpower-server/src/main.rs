@@ -34,7 +34,7 @@ async fn run() -> anyhow::Result<()> {
         Command::Serve => serve(&data_dir).await,
         Command::Fetch(args) => {
             let summary = cli::fetch(&args, &data_dir).await?;
-            tracing::info!(summary.stored, summary.missing, summary.skipped, "fetch done");
+            tracing::info!(summary.stored, summary.unchanged, summary.missing, summary.skipped, "fetch done");
             Ok(())
         }
         Command::Backfill(pace) => {

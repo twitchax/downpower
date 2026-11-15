@@ -62,9 +62,14 @@ fn method(method: &str) -> &'static str {
     }
 }
 
-/// Where a row's label comes from: its cause, if any, and the method in words.
+/// Where a row's label comes from: its cause, if any, and the method in words. A transition with
+/// no cause in reach keeps `inherit_14d` but inherited nothing.
 fn provenance(row: &Detail) -> String {
-    [row.cause.as_ref().map(|cause| cause.replace('_', " ")), Some(method(&row.method).to_owned())]
+    let how = match (row.method.as_str(), &row.cause) {
+        ("inherit_14d", None) => "a transition, with no cause in the 14 days before",
+        (other, _) => method(other),
+    };
+    [row.cause.as_ref().map(|cause| cause.replace('_', " ")), Some(how.to_owned())]
         .into_iter()
         .flatten()
         .filter(|part| !part.is_empty())
@@ -342,6 +347,8 @@ mod tests {
         };
         assert_eq!(provenance(&row(Some("reactor_trip"), "precedence_v1")), "reactor trip · named on the day");
         assert_eq!(provenance(&row(None, "no_cause")), "no cause given");
+        assert_eq!(provenance(&row(Some("refueling"), "inherit_14d")), "refueling · inherited from an earlier day");
+        assert_eq!(provenance(&row(None, "inherit_14d")), "a transition, with no cause in the 14 days before");
     }
 
     #[test]

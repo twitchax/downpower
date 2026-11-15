@@ -121,6 +121,31 @@ fn uat_barcode_buffer_moves_its_etag_when_the_data_moves() {
 }
 
 #[test]
+fn api_barcode_follows_an_in_place_update() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let built = ledger::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        let router = router(options(), store.clone());
+        let before = get(&router, "/api/barcode/attributed", &[]).await.headers()[ETAG].clone();
+
+        // A status page for 07-16 is new content under the same version: the table updates in place.
+        let page = downpower_server::tests::fixture("status/2025-07-15.html");
+        let raw = downpower_ingest::raw::RawStore::open(tmp.path()).unwrap();
+        downpower_server::tests::put(&raw, downpower_ingest::raw::Series::PowerStatus, "2025-07-16", Some(&page));
+        let updated = ledger::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        assert_eq!(updated.table, built.table, "an update, not a rebuild");
+
+        let after = get(&router, "/api/barcode/attributed", &[]).await;
+        assert_eq!(after.status(), StatusCode::OK);
+        assert_ne!(after.headers()[ETAG], before);
+        let stale = get(&router, "/api/barcode/attributed", &[(IF_NONE_MATCH.as_str(), before.to_str().unwrap())]).await;
+        assert_eq!(stale.status(), StatusCode::OK, "the old tag no longer revalidates");
+    });
+}
+
+#[test]
 fn api_serves_the_current_table_while_its_record_is_in_an_older_shape() {
     block_on(async {
         let tmp = tempfile::tempdir().unwrap();
@@ -128,11 +153,15 @@ fn api_serves_the_current_table_while_its_record_is_in_an_older_shape() {
         let store = db::open(tmp.path()).await.unwrap();
         ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
         store.query("UPDATE ledger:current UNSET summary").await.unwrap().check().unwrap();
+        let table = ledger::serving(&store).await.unwrap();
         let router = router(options(), store);
 
         assert_eq!(get(&router, "/api/barcode/attributed", &[]).await.status(), StatusCode::OK);
         assert_eq!(get(&router, "/api/lost/attributed", &[]).await.status(), StatusCode::OK);
         assert_eq!(get(&router, "/api/unit-day/05000323/2025-07-15", &[]).await.status(), StatusCode::OK);
+        // `/status` can't show the old record's summary, but says which table still serves.
+        let status: downpower_app::status::Status = serde_json::from_slice(&body(get(&router, "/api/status", &[]).await).await).unwrap();
+        assert_eq!((status.build, status.serving), (None, table));
     });
 }
 
