@@ -206,8 +206,11 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
 ### The stored archive (counted 2026-11-15)
 
 Counted with a throwaway Python parser over the newest 200 of each of the 7,271 stored EN pages.
+`cargo xtask events` (PRD-0003 T-001) reproduces the counts with the real parser.
 
-- **Size:** 20,171 event blocks, 19,725 distinct event numbers. 639 pages read "No events found".
+- **Size:** 20,171 event blocks, 19,725 distinct event numbers, from 35211 to 58530 (3,595 of
+  those 23,320 numbers unused). 639 pages read "No events found", 6 to 23 a year until 2016 and 24
+  to 52 a year since.
   Each event is a `<div class="grid border" id="enNNNNN">` of `<b>Label:</b> value` pairs.
 - **Pages are re-rendered, not archived.** A page shows the NRC's current database when fetched,
   so an old page already carries updates made years later. 404 events appear on more than one
@@ -217,6 +220,11 @@ Counted with a throwaway Python parser over the newest 200 of each of the 7,271 
   492, Hospital 444, Non-Power Reactor 94, Research Reactor 58, General Information 37, ISFSI 29,
   Transportation 14. Research Reactor became Non-Power Reactor, and General Information became
   General Information or Other.
+- **10 CFR sections:** a code line ends in ` -`, with its description on the next line. 4,671
+  events carry none: General Information or Other 1,971 of 2,297, Agreement State 1,725 of 4,203
+  (later ones carry the description `Agreement State` alone), Fuel Cycle 343, Other Nuclear
+  Material 142, and 289 Power Reactor events. 12 of the 120 distinct codes carry spaces or an
+  appendix (`50.72(a) (1) (i)`, `72.75(c )(2)`, `PART 70 APP A (c)`, `70.74 APP. A`).
 - **Two header templates.** Power Reactor and Fuel Cycle use Facility, Region, State, Unit, RX
   Type and Comments, with no license, docket or city. Every other category uses Rep Org, Licensee,
   Region, City, State, County, License #, Agreement and Docket.
@@ -253,7 +261,8 @@ Counted with a throwaway Python parser over the newest 200 of each of the 7,271 
   - 24.8% of events carry at least one marker (4,212 one, 506 two, 167 three or more). Last Update
     Date differs from the notification date on 21.9%.
   - Retractions: 5.7% carry a retraction marker, 7.0% counting retraction wording inside an update.
-    By category: Power Reactor 8.2%, Hospital 10.8%, Agreement State 2.1%.
+    By category: Power Reactor 8.2%, Hospital 10.8%, Agreement State 2.1%. The page's own
+    `!!!!! THIS EVENT HAS BEEN RETRACTED !!!!!` banner is on 1,447 events (7.3%).
   - 1,201 events (6.1%) start with `EN Revision Imported Date: 9/29/2020` and `EN Revision Text:`,
     an NRC re-import around 2020–2023 rather than an update.
   - Over 6,070 markers, the date parses 97.3% of the time and is plausible 96.7% (the failures are

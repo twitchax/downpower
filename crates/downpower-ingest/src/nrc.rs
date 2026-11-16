@@ -18,6 +18,17 @@ pub const FIRST_DAY: NaiveDate = match NaiveDate::from_ymd_opt(1999, 1, 1) {
 
 const COLLECTIONS: &str = "/documents-reports/document-collections/events-reports-associated-with";
 
+/// The page's `<main>` element, or the whole page when it has none. A status report or an event
+/// list sits inside it, and it is under a quarter of the page: the head, navigation and footer
+/// scripts are the rest, and building their DOM was most of a rebuild's parsing time
+/// (PRD-0002.log.md, T-019).
+pub(crate) fn main(text: &str) -> &str {
+    match (text.find("<main"), text.rfind("</main>")) {
+        (Some(start), Some(end)) if start < end => &text[start..end + "</main>".len()],
+        _ => text,
+    }
+}
+
 /// An NRC report series: one page per report date.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Report {
@@ -200,6 +211,13 @@ mod unit {
     fn an_event_page_settles_after_two_days() {
         assert!(!settles(&fetched(Series::EventNotifications, "2026-11-11", 200, "2026-11-12")));
         assert!(settles(&fetched(Series::EventNotifications, "2026-11-10", 200, "2026-11-12")));
+    }
+
+    #[test]
+    fn parsing_starts_at_main_and_falls_back_to_the_page() {
+        assert_eq!(main("<head>nav</head><main id=x>report</main><footer>"), "<main id=x>report</main>");
+        assert_eq!(main("<body>no main here</body>"), "<body>no main here</body>");
+        assert_eq!(main("</main> backwards <main"), "</main> backwards <main");
     }
 
     #[test]

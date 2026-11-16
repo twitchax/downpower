@@ -1,0 +1,225 @@
+//! The Event Notification parser against live NRC pages from every era (PRD-0003 uat-001). The
+//! fixtures are public-domain pages copied byte for byte out of the raw store, chosen so that
+//! together they hold every category, both header templates, retractions, revision imports, a
+//! fuel cycle facility's comments, NUL placeholders and a page with no events.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::collections::BTreeSet;
+
+use chrono::{NaiveDate, NaiveTime};
+use pretty_assertions::assert_eq;
+
+use downpower_ingest::events::{self, Category, EmergencyClass, Event, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo};
+
+macro_rules! fixture {
+    ($date:literal) => {
+        include_bytes!(concat!("fixtures/events/", $date, ".html")).as_slice()
+    };
+}
+
+/// Every fixture and its event numbers, in page order.
+const PAGES: [(&str, &[u8], &[u32]); 8] = [
+    ("1999-01-15", fixture!("1999-01-15"), &[35275, 35267, 35268, 35269, 35270, 35271, 35272, 35273, 35278, 35599]),
+    ("1999-02-02", fixture!("1999-02-02"), &[]),
+    ("2002-10-14", fixture!("2002-10-14"), &[39290, 39282, 39283, 39314]),
+    ("2009-08-24", fixture!("2009-08-24"), &[45459, 45285, 45286, 45287, 45289, 45290, 45293, 45294, 45295]),
+    ("2010-05-26", fixture!("2010-05-26"), &[45957, 46009, 46890]),
+    ("2012-01-09", fixture!("2012-01-09"), &[47580, 47581, 47578]),
+    ("2020-10-20", fixture!("2020-10-20"), &[54959, 54960, 54962, 54964, 54965, 55027]),
+    ("2026-02-11", fixture!("2026-02-11"), &[58149, 58151, 58160]),
+];
+
+fn page(date: &str) -> Vec<Event> {
+    let (_, bytes, _) = PAGES.iter().find(|(day, ..)| *day == date).unwrap();
+    events::parse(bytes).unwrap()
+}
+
+fn event(date: &str, number: u32) -> Event {
+    page(date).into_iter().find(|event| event.number == number).unwrap_or_else(|| panic!("no event {number} on {date}"))
+}
+
+fn stamp(date: &str, time: &str, zone: &str) -> Stamp {
+    Stamp {
+        date: date.parse().unwrap(),
+        time: NaiveTime::parse_from_str(time, "%H:%M").unwrap(),
+        zone: Some(zone.to_owned()),
+    }
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+#[test]
+fn uat_events_parse_every_page_in_page_order() {
+    for (date, bytes, numbers) in PAGES {
+        let events = events::parse(bytes).unwrap();
+
+        assert_eq!(events.iter().map(|event| event.number).collect::<Vec<_>>(), numbers, "{date}");
+        assert!(events.iter().all(|event| !event.text.is_empty() && event.notified.date <= event.updated), "{date}");
+    }
+}
+
+#[test]
+fn uat_events_parse_every_category_under_its_template() {
+    let events: Vec<Event> = PAGES.iter().flat_map(|(_, bytes, _)| events::parse(bytes).unwrap()).collect();
+
+    let categories: BTreeSet<Category> = events.iter().map(|event| event.category).collect();
+    assert_eq!(categories, Category::ALL.into_iter().collect());
+    for event in &events {
+        let reactor = event.category == Category::PowerReactor;
+        let facility = matches!(event.category, Category::PowerReactor | Category::FuelCycleFacility);
+        assert_eq!(matches!(event.site, Site::Facility(_)), facility, "{}", event.number);
+        assert_eq!(!event.units.is_empty(), reactor, "{}", event.number);
+    }
+}
+
+#[test]
+fn uat_events_parse_an_empty_page_as_no_events() {
+    assert_eq!(page("1999-02-02"), []);
+}
+
+#[test]
+fn uat_events_parse_a_1999_fuel_cycle_facility_with_comments() {
+    let event = event("1999-01-15", 35275);
+
+    assert_eq!(
+        Event { text: String::new(), ..event.clone() },
+        Event {
+            number: 35275,
+            category: Category::FuelCycleFacility,
+            retracted: false,
+            site: Site::Facility(Facility {
+                name: "PORTSMOUTH GASEOUS DIFFUSION PLANT".to_owned(),
+                units: vec![],
+                rx_type: Some("URANIUM ENRICHMENT FACILITY".to_owned()),
+                comments: Some("2 DEMOCRACY CENTER\n6903 ROCKLEDGE DRIVE\nBETHESDA, MD 20817    (301)564-3200".to_owned()),
+            }),
+            region: 3,
+            state: Some("OH".to_owned()),
+            notified_by: Some("RICHARD LARSON".to_owned()),
+            ops_officer: Some("STEVE SANDIN".to_owned()),
+            notified: stamp("1999-01-15", "18:08", "ET"),
+            occurred: stamp("1999-01-15", "14:10", "EST"),
+            updated: NaiveDate::from_ymd_opt(1999, 1, 25).unwrap(),
+            class: Some(EmergencyClass::NonEmergency),
+            sections: vec![],
+            persons: strings(&["JIM GAVULA (R3)", "JOHN SURMEIER (NMSS)", "FRANK CONGEL (IRO)"]),
+            units: vec![],
+            title: Some("4-HOUR NRC 91-01 BULLETIN NOTIFICATION INVOLVING ABANDONED EQUIPMENT IN THE X-326 PROCESS BUILDING".to_owned()),
+            text: String::new(),
+        }
+    );
+    assert!(event.text.starts_with(
+        "4-HOUR NRC 91-01 BULLETIN NOTIFICATION INVOLVING ABANDONED EQUIPMENT IN THE X-326 PROCESS BUILDING\n\n\
+         THE FOLLOWING TEXT IS A PORTION OF A FACSIMILE RECEIVED FROM PORTSMOUTH:\n\n\"ON JANUARY 15, 1999,"
+    ));
+}
+
+#[test]
+fn uat_events_parse_a_1999_research_reactor_under_the_licensee_template() {
+    let event = event("1999-01-15", 35267);
+
+    assert_eq!(
+        event.site,
+        Site::Licensee(Licensee {
+            rep_org: Some("NATIONAL INST OF STANDARDS & TECH".to_owned()),
+            name: Some("U. S. DEPT. OF COMMERCE".to_owned()),
+            city: Some("GAITHERSBURG".to_owned()),
+            county: Some("MONTGOMERY".to_owned()),
+            license: Some("TR-5".to_owned()),
+            agreement: false,
+            docket: Some("05000184".to_owned()),
+        })
+    );
+    assert_eq!((event.category, event.region, event.state.as_deref()), (Category::ResearchReactor, 1, Some("MD")));
+    assert_eq!(event.persons, strings(&["GENE KELLY (R1)", "DAVID MATTHEWS/NRR (EO)", "FRANK CONGEL (IRO)", "TED MICHAELS/NRR (PM)"]));
+    assert_eq!(event.title.as_deref(), Some("LOSS OF COMMERCIAL OFFSITE POWER AND AUTOMATIC REACTOR SHUT DOWN"));
+}
+
+#[test]
+fn uat_events_parse_a_2010_scram_with_its_unit_table_and_two_sections() {
+    let event = event("2010-05-26", 45957);
+
+    assert_eq!(
+        event.site,
+        Site::Facility(Facility {
+            name: "VERMONT YANKEE".to_owned(),
+            units: vec![1],
+            rx_type: Some("[1] GE-4".to_owned()),
+            comments: None,
+        })
+    );
+    assert_eq!((event.notified, event.occurred), (stamp("2010-05-26", "17:25", "ET"), stamp("2010-05-26", "15:26", "EDT")));
+    assert_eq!(
+        event.sections,
+        [
+            Section {
+                code: Some("50.72(b)(2)(iv)(B)".to_owned()),
+                description: "RPS ACTUATION - CRITICAL".to_owned(),
+            },
+            Section {
+                code: Some("50.72(b)(3)(iv)(A)".to_owned()),
+                description: "VALID SPECIF SYS ACTUATION".to_owned(),
+            },
+        ]
+    );
+    assert_eq!(
+        event.units,
+        [UnitInfo {
+            unit: 1,
+            scram: Some(Scram::Auto),
+            critical: true,
+            initial_power: 72,
+            initial_mode: Some("Power Operation".to_owned()),
+            current_power: 0,
+            current_mode: Some("Hot Shutdown".to_owned()),
+        }]
+    );
+    assert_eq!(event.title.as_deref(), Some("AUTOMATIC REACTOR SCRAM WHILE INCREASING POWER"));
+}
+
+#[test]
+fn uat_events_parse_a_2020_retraction_and_its_revision_import() {
+    let event = event("2020-10-20", 54960);
+
+    assert!(event.retracted);
+    assert_eq!(
+        event.sections,
+        [Section {
+            code: None,
+            description: "Agreement State".to_owned()
+        }]
+    );
+    assert_eq!(event.title.as_deref(), Some("AGREEMENT STATE REPORT - DAMAGED GAUGE"));
+    assert!(
+        event
+            .text
+            .starts_with("EN Revision Imported Date: 12/8/2020\n\nEN Revision Text: AGREEMENT STATE REPORT - DAMAGED GAUGE\n\n")
+    );
+    let retracted: Vec<u32> = page("2020-10-20").iter().filter(|event| event.retracted).map(|event| event.number).collect();
+    assert_eq!(retracted, [54960]);
+}
+
+#[test]
+fn uat_events_parse_2026_nul_placeholders_as_blank() {
+    for number in [58149, 58151] {
+        let Site::Licensee(licensee) = event("2026-02-11", number).site else {
+            panic!("{number} is not a licensee")
+        };
+
+        assert_eq!(licensee.county, None, "{number}");
+    }
+}
+
+#[test]
+fn uat_events_parse_a_2026_non_power_reactor_in_region_0() {
+    let event = event("2026-02-11", 58160);
+
+    assert_eq!((event.category, event.region), (Category::NonPowerReactor, 0));
+    assert_eq!((event.notified, event.occurred), (stamp("2026-02-10", "16:48", "ET"), stamp("2026-01-21", "14:00", "MST")));
+    let Site::Licensee(licensee) = event.site else { panic!("not a licensee") };
+    assert_eq!((licensee.license.as_deref(), licensee.docket.as_deref(), licensee.agreement), (Some("R-102"), Some("05000252"), true));
+    assert_eq!(event.title.as_deref(), Some("TECHNICAL SPECIFICATION VIOLATION"));
+}

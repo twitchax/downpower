@@ -19,6 +19,7 @@ use downpower_ingest::units::Units;
 
 mod capacity;
 mod crosscheck;
+mod events;
 
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
 const UNCLASSIFIED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/unclassified.tsv");
@@ -68,6 +69,10 @@ enum Command {
         /// The clone's `Data` directory.
         dir: PathBuf,
     },
+    /// Parses every stored Event Notification page and prints the archive's counts: pages, empty
+    /// pages, events by category, repeats across pages, and unused event numbers. Fails if any page
+    /// fails to parse.
+    Events,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -80,6 +85,7 @@ fn main() -> anyhow::Result<()> {
         Command::Eia => eia(&cli.data_dir),
         Command::Capacity { dir } => capacity::run(&dir, Path::new(CAPACITY)),
         Command::Crosscheck { dir } => crosscheck::run(&cli.data_dir, &dir),
+        Command::Events => events::run(&cli.data_dir),
     }
 }
 

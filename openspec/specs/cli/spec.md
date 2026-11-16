@@ -72,7 +72,7 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** `downpower rebuild` exits non-zero naming `unknown unit "Mystery 9"`, or the tag
 
 ### Requirement: xtask data dir
-`cargo xtask` SHALL read the raw store under `--data-dir`, else `DOWNPOWER_DATA_DIR`, else `data`, and `reasons`, `summary` and `eia` SHALL fail with a pointer to `downpower fetch` when no raw store is there. (PRD-0002 T-005 T-006 T-007)
+`cargo xtask` SHALL read the raw store under `--data-dir`, else `DOWNPOWER_DATA_DIR`, else `data`, and `reasons`, `summary`, `eia` and `events` SHALL fail with a pointer to `downpower fetch` when no raw store is there. (PRD-0002 T-005 T-006 T-007, PRD-0003 T-001)
 
 #### Scenario: No raw store
 - **WHEN** `cargo xtask summary` runs where there is no `raw/manifest.jsonl`
@@ -91,6 +91,14 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 #### Scenario: A summary over the archive
 - **WHEN** `cargo xtask summary` runs over a raw store whose units and tags are all known
 - **THEN** it prints the in-service unit-days and each family's unit-days below 100%, unit-years, TWh and share
+
+### Requirement: xtask events
+`cargo xtask events` SHALL parse every stored Event Notification page and print the archive's counts (pages with events, empty pages by year, events repeated across pages, events by category and with no 10 CFR section, unused event numbers), and SHALL fail when any page fails to parse, printing the first 20 failures. (PRD-0003 T-001)
+
+#### Scenario: A page departs from the template
+- **WHEN** `cargo xtask events` runs over a raw store holding an event page with a label the parser doesn't know
+- **THEN** it prints `FAILED <date>:` with the error naming the label
+- **AND** exits non-zero, counting the failed pages
 
 ### Requirement: xtask capacity
 `cargo xtask capacity <dir>` SHALL rewrite `catalog/capacity.csv` from the EIA-860 zips in `<dir>` (`eia860a1999.zip`, `eia860a2000.zip`, `eia8602001.zip` to `eia8602006.zip`), rating each unit-year from its own year's file or else the nearest later one, and SHALL fail when a year's file lists a unit twice. (PRD-0002 T-009)

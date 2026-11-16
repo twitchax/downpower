@@ -6,6 +6,7 @@ pub mod attribution;
 pub mod capacity;
 pub mod chunks;
 pub mod eia;
+pub mod events;
 pub mod fetch;
 pub mod ledger;
 pub mod nrc;
