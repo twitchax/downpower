@@ -201,13 +201,9 @@ fn Readout(shown: Memo<Option<Shown>>, pointer: RwSignal<Option<f64>>, state: Me
                 }
             })
             .collect_view();
-        let left = if fraction > 0.7 {
-            format!("calc({:.2}% - 100% - 12px)", fraction * 100.0)
-        } else {
-            format!("calc({:.2}% + 12px)", fraction * 100.0)
-        };
+        let (left, right) = crate::tooltip::beside(&format!("{:.2}%", fraction * 100.0), fraction > 0.7);
         Some(view! {
-            <div class="tooltip" role="status" style:left=left style:top="8px">
+            <div class="tooltip" role="status" style:left=left style:right=right style:top="8px">
                 <div class="meta">{shown.month(index).format("%B %Y").to_string()} " · " {twh(total)} " TWh in all"</div>
                 {rows}
             </div>

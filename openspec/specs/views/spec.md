@@ -96,6 +96,13 @@ Hovering the stacked area SHALL show a crosshair and a readout of that month: ea
 - **THEN** the table's Refueling total over all months is 3 TWh
 - **AND** a range from 2024-01-15 shows January and February 2024 only
 
+### Requirement: Readouts stay beside the pointer
+A hover readout SHALL sit just right of the pointer, and near the plot's right edge SHALL flip to end just left of it, inside the plot either way. (PRD-0002 T-013 T-014)
+
+#### Scenario: Near the right edge
+- **WHEN** the pointer is 1094px into a 1216px-wide barcode
+- **THEN** the readout's right edge sits at 1082px, 12px left of the pointer, whatever the readout's width
+
 ### Requirement: The reduction's label
 The site SHALL label lost output "Reported power reduction" and never call it heat loss. (PRD-0002 T-014)
 

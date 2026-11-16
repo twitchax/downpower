@@ -269,13 +269,9 @@ fn Tooltip(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>, width
         let full = row.as_ref().map_or(target.cell.bucket == downpower_core::barcode::FULL, |row| row.power >= 100);
         let label = if full { "full power" } else { family.label() };
         // Flip to the pointer's left near the plot's right edge.
-        let left = if f64::from(width.get()) - target.pointer.x < 260.0 {
-            format!("calc({:.0}px - 100% - 12px)", target.pointer.x)
-        } else {
-            format!("{:.0}px", target.pointer.x + 12.0)
-        };
+        let (left, right) = crate::tooltip::beside(&format!("{:.0}px", target.pointer.x), f64::from(width.get()) - target.pointer.x < 260.0);
         Some(view! {
-            <div class="tooltip" role="status" style:left=left style:top=format!("{:.0}px", target.pointer.y + 12.0)>
+            <div class="tooltip" role="status" style:left=left style:right=right style:top=format!("{:.0}px", target.pointer.y + 12.0)>
                 <div class="value">
                     {(!full).then(|| view! { <span class=format!("key family-{}", family.slug())></span> })}
                     <strong>{value}</strong>

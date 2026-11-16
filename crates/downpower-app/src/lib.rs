@@ -15,6 +15,7 @@ pub mod lost;
 pub mod paint;
 pub mod state;
 pub mod status;
+mod tooltip;
 
 use leptos::prelude::*;
 use leptos_meta::{HashedStylesheet, MetaTags, Title, provide_meta_context};
