@@ -13,7 +13,9 @@ use axum::{
     response::Response,
 };
 use pretty_assertions::assert_eq;
+use std::sync::{Arc, Mutex};
 use tower::ServiceExt as _;
+use tracing::instrument::WithSubscriber as _;
 
 use downpower_core::Family;
 use downpower_core::barcode::{Barcode, Cell, Layer};
@@ -163,6 +165,64 @@ fn api_serves_the_current_table_while_its_record_is_in_an_older_shape() {
         let status: downpower_app::status::Status = serde_json::from_slice(&body(get(&router, "/api/status", &[]).await).await).unwrap();
         assert_eq!((status.build, status.serving), (None, table));
     });
+}
+
+/// The log lines written while a future runs under [`Logs::subscriber`].
+#[derive(Clone, Default)]
+struct Logs(Arc<Mutex<Vec<u8>>>);
+
+impl Logs {
+    fn subscriber(&self) -> impl tracing::Subscriber + Send + Sync {
+        tracing_subscriber::fmt().with_writer(self.clone()).with_ansi(false).finish()
+    }
+
+    fn count(&self, needle: &str) -> usize {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).matches(needle).count()
+    }
+}
+
+impl std::io::Write for Logs {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl tracing_subscriber::fmt::MakeWriter<'_> for Logs {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+#[test]
+fn an_older_record_is_reported_by_the_refresh_that_replaces_it_not_by_each_status_read() {
+    const OLDER: &str = "ledger:current is from another version";
+    let logs = Logs::default();
+    let subscriber = logs.subscriber();
+    block_on(
+        async move {
+            let tmp = tempfile::tempdir().unwrap();
+            raw_store(tmp.path(), None);
+            let store = db::open(tmp.path()).await.unwrap();
+            ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+            store.query("UPDATE ledger:current UNSET summary").await.unwrap().check().unwrap();
+            let router = router(options(), store.clone());
+
+            for _ in 0..3 {
+                assert_eq!(get(&router, "/api/status", &[]).await.status(), StatusCode::OK);
+            }
+            assert_eq!(logs.count(OLDER), 0, "reading /status while the rebuild runs logs nothing");
+            assert!(ledger::refresh(&store, tmp.path()).await.unwrap().is_some(), "the refresh rebuilds");
+            assert_eq!(logs.count(OLDER), 1);
+        }
+        .with_subscriber(subscriber),
+    );
 }
 
 #[test]

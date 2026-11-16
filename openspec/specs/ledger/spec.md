@@ -276,7 +276,7 @@ A current-build record the running binary cannot parse SHALL count as no build f
 - **AND** the table the record names still serves and still holds its rows
 
 ### Requirement: Refresh rebuilds, updates or does nothing
-Refreshing the ledger SHALL do nothing when the current build's `derived_version` and raw digest match the binary's and the raw store's; SHALL update the current build in place when only the digest moved and the build stored its unit-month hashes; and SHALL rebuild otherwise. A refresh SHALL quarantine unknowns either way. (PRD-0002 T-008 T-011 T-019)
+Refreshing the ledger SHALL do nothing when the current build's `derived_version` and raw digest match the binary's and the raw store's; SHALL update the current build in place when only the digest moved and the build stored its unit-month hashes; and SHALL rebuild otherwise. A refresh SHALL quarantine unknowns either way, and SHALL log once that it rebuilds over a record in another shape. (PRD-0002 T-008 T-011 T-019 T-020)
 
 #### Scenario: A refetch, then new content
 - **WHEN** a page is recorded again with the same bytes, and later a new page is stored
@@ -286,6 +286,7 @@ Refreshing the ledger SHALL do nothing when the current build's `derived_version
 #### Scenario: Another version
 - **WHEN** the current build's version differs from the binary's
 - **THEN** a refresh rebuilds into a new table, which becomes current
+- **AND** when the record is in an older shape, that refresh logs it once, and reading `/status` meanwhile logs nothing
 
 ### Requirement: In-place updates match a full rebuild
 An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, and removed unit-months), rewriting only the unit-months whose rows changed, and SHALL record the new digest and summary under the same table. (PRD-0002 T-019)

@@ -171,20 +171,19 @@ fn checked(table: &str) -> anyhow::Result<&str> {
 ///
 /// When the query fails.
 pub async fn current(store: &Store) -> anyhow::Result<Option<Build>> {
+    Ok(record(store).await?.ok().flatten())
+}
+
+/// `ledger:current` as a [`Build`], or the error that says it is in another shape. Only a refresh
+/// reports that error: `/status` reads the record on every visit while the rebuild runs.
+async fn record(store: &Store) -> anyhow::Result<Result<Option<Build>, serde_json::Error>> {
     let record: Option<SerdeWrapper<serde_json::Value>> = store
         .query("SELECT * OMIT id FROM ONLY ledger:current")
         .await
         .context("reading ledger:current")?
         .take(0)
         .context("reading ledger:current")?;
-    let Some(SerdeWrapper(record)) = record else { return Ok(None) };
-    match serde_json::from_value(record) {
-        Ok(build) => Ok(Some(build)),
-        Err(error) => {
-            tracing::warn!(%error, "ledger:current is from another version; rebuilding over it");
-            Ok(None)
-        }
-    }
+    Ok(record.map_or(Ok(None), |SerdeWrapper(record)| serde_json::from_value(record).map(Some)))
 }
 
 /// The table the site reads, whatever shape the rest of `ledger:current` is in. A deploy that
@@ -464,7 +463,11 @@ pub async fn update(store: &Store, data_dir: &Path, unknowns: Unknowns, build: B
 pub async fn refresh(store: &Store, data_dir: &Path) -> anyhow::Result<Option<Build>> {
     let version = ledger::derived_version();
     let raw_digest = RawStore::open(data_dir)?.digest()?;
-    match current(store).await? {
+    let current = record(store).await?.unwrap_or_else(|error| {
+        tracing::warn!(%error, "ledger:current is from another version; rebuilding over it");
+        None
+    });
+    match current {
         Some(build) if build.version == version && build.raw_digest == raw_digest => {
             tracing::info!(%version, "the ledger is current");
             Ok(None)
