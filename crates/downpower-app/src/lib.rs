@@ -41,6 +41,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
+                // Without a declared icon, browsers ask for `/favicon.ico` on every visit.
+                <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
                 // JetBrains Mono, the instrument design language's one face (OFL).
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" />

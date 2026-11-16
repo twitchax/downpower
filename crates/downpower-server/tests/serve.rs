@@ -44,6 +44,9 @@ async fn get_ok(client: &reqwest::Client, url: &str, patience: Duration) -> Vec<
 fn e2e_ledger_serve_rebuilds_then_serves_every_view() {
     let tmp = tempfile::tempdir().unwrap();
     raw_store(tmp.path(), None);
+    // cargo-leptos copies `public/` into the site root; the icon is the one file the shell links.
+    std::fs::create_dir_all(tmp.path().join("site")).unwrap();
+    std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/../../public/favicon.svg"), tmp.path().join("site/favicon.svg")).unwrap();
     let port = free_port();
     let _server = Server(
         Command::new(env!("CARGO_BIN_EXE_downpower"))
@@ -75,6 +78,9 @@ fn e2e_ledger_serve_rebuilds_then_serves_every_view() {
         let home = String::from_utf8(get_ok(&client, &format!("{base}/"), Duration::from_secs(5)).await).unwrap();
         assert!(home.contains("<canvas"), "the barcode's canvas");
         assert!(home.contains("Reported power reduction"), "the stacked area");
+        assert!(home.contains(r#"<link rel="icon" type="image/svg+xml" href="/favicon.svg">"#), "the icon link");
+        let icon = get_ok(&client, &format!("{base}/favicon.svg"), Duration::from_secs(5)).await;
+        assert!(icon.starts_with(b"<svg"), "the icon the shell links is served");
 
         let status = String::from_utf8(get_ok(&client, &format!("{base}/status"), Duration::from_secs(5)).await).unwrap();
         assert!(status.contains("<h1>Status</h1>"), "{status}");

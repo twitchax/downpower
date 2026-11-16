@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- A few rows of the fleet barcode: refueling, maintenance, forced and refueling spans on the canvas color. -->
+  <rect width="32" height="32" fill="#090d10"/>
+  <rect x="3" y="5" width="18" height="4" fill="#3987e5"/>
+  <rect x="11" y="11" width="18" height="4" fill="#c98500"/>
+  <rect x="6" y="17" width="9" height="4" fill="#e66767"/>
+  <rect x="14" y="23" width="15" height="4" fill="#3987e5"/>
+</svg>

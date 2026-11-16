@@ -5,12 +5,13 @@ The pages a reader sees: the home page's filters, fleet barcode and stacked area
 
 ## Requirements
 ### Requirement: Pages
-The site SHALL render the home page at `/` and the status page at `/status`, each under a nav linking `downpower` to `/` and `status` to `/status`, and any other path SHALL render `Page not found.` (PRD-0002 T-013 T-015)
+The site SHALL render the home page at `/` and the status page at `/status`, each under a nav linking `downpower` to `/` and `status` to `/status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015)
 
 #### Scenario: Both pages render
 - **WHEN** `downpower serve` is up over the fixture raw store
 - **THEN** `/` carries the barcode's canvas and the stacked area
 - **AND** `/status` carries the heading `Status`
+- **AND** `/` links `/favicon.svg`, which the site serves
 
 ### Requirement: URL state
 The home page's views SHALL share one state kept in the URL query: `from` and `to` (`YYYY-MM-DD`, running to the data's edge when absent), `layer` (`attributed`, the default, or `observed`), and `families`, the slugs shown in color, comma-separated in stack order (all when absent). A parameter at its default SHALL be left out, so the default state has an empty query. (PRD-0002 T-013)
