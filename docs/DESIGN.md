@@ -1,7 +1,8 @@
 # downpower: design notes
 
-**Status:** decisions settled through grilling round 3 (2026-11-12). The first milestone is
-`.prds/PRD-0002.md`. What is still open, and what each open item waits on, is under "Still open".
+**Status:** decisions settled through grilling round 4 (2026-11-16). PRD-0002, the status-report
+ledger, is done. Event Notifications are PRD-0003 (ingest), PRD-0004 (the explorer) and PRD-0005
+(fitness for duty). What is still open, and what each open item waits on, is under "Still open".
 
 ## Intent
 
@@ -75,8 +76,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - Politeness: one request every 5 seconds under `downpower/0.1 (+https://github.com/twitchax/downpower)`,
       the User-Agent the NRC email names, with backoff on 429s and 5xx responses.
     - A page is settled once it has been fetched far enough past its date: 28 days for a status page
-      (the reason column fills in), 2 days for an EN page. The fetcher resumes by skipping settled
-      pages.
+      (the reason column fills in), 2 days for an EN page (28 from PRD-0003, Decision 29). The
+      fetcher resumes by skipping settled pages.
     - **A 403 stops the run,** which shows as a failed run on `/status` (nothing pages anyone). If the block returns, the fallback is the original plan: for
       each report date, the newest Wayback capture taken 28 or more days after it.
     - About 10,200 status pages (roughly 14 hours) and 7,000 EN pages (roughly 10 hours), run once
@@ -96,7 +97,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - The job runs at start and every six hours (revised 2026-11-14). Each run also fetches any day
       in the hold the store lacks, catches up on unsettled pages up to 60 days past the hold, takes
       the last week of Event Notification pages, and fetches `NUC_STATUS` once the stored copy is
-      a week old.
+      a week old. PRD-0003 adds the refetch of report-less days and the EN hold (Decision 29) and
+      the weekly scram dataset (Decision 33).
     - It rebuilds the ledger only when the raw store's content changed, and records each run for
       `/status`. One task fetches and rebuilds, so two rebuilds never overlap.
 13. **The NRC email.** Aaron sent it to the Chief Data Officer on 2026-11-12.
@@ -166,8 +168,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       run of transitions (weeks of "DEFUELED" after one refueling tag) carries the cause through,
       and the evidence names the day the cause was observed. A newly observed cause restarts the
       chain, and a day without a cause neither extends nor breaks it.
-    - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land, and until
-      then counts as Unattributed with the EN number kept.
+    - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land
+      (Decision 32), and until then counts as Unattributed with the EN number kept.
     - Matching (revised 2026-11-13): normalize (lowercase, collapse whitespace), split the reason
       into tags on `;` and line breaks, and look up each tag's exact key. A tag no key matches goes
       through an ordered list of keyword rules, each a committed regex mapped to one entry, and the
@@ -236,11 +238,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       Surreal, because they can't be rebuilt from raw, deserve review, and can be checked in CI: a
       test asserts every finding's state still parses.
     - A "save as finding" button, present only in dev mode, writes the file.
-26. **Sequence.**
+26. **Sequence** (revised 2026-11-16).
     - **PRD-0002:** the status-report ledger as a deployed vertical slice.
-    - **PRD-0003:** Event Notifications. Their raw pages are fetched alongside the status pages
-      (Decision 10), so this means the EN parser, EN reference resolution, the scram cross-check,
-      the FFD view, and the email channel if the NRC list carries full text.
+    - **PRD-0003:** Event Notifications ingest: every category parsed, the 28-day hold, `See EN#`
+      resolution and both scram cross-checks (Decisions 28–33).
+    - **PRD-0004:** the events explorer and the barcode's event markers (Decisions 34 and 35).
+    - **PRD-0005:** fitness for duty and the legalization overlay (Decisions 36–38).
     - **Then the joins, in order:** EIA-860 cooling type and water body, then NOAA hourly weather
       (wet-bulb), then EIA-923 generation, then EIA-923 Schedule 8D, then USGS intake temperature,
       then EIA-930.
@@ -248,18 +251,105 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     announcement earns one. Live 2026-11-14: DNS-only A and AAAA records for the app's shared IPv4
     and dedicated IPv6, so Fly terminates TLS with its own Let's Encrypt certificate.
 
+## Decisions (settled 2026-11-16)
+
+Grilling round 4, on Event Notifications. The facts behind them (the stored archive's categories,
+identity fields, update markers and FFD counts) are in `docs/research/data-sources.md`.
+
+### Event Notifications
+
+28. **Every category is parsed, and every category gets views.**
+    - That is all 19,725 events in the store, not only Power Reactor: Agreement State,
+      Non-Agreement State, Hospital, Fuel Cycle Facility, Part 21, Research and Non-Power
+      Reactor, ISFSI, Transportation, Other Nuclear Material, and General Information (or Other).
+    - Category labels are kept as published. The explorer groups the two renamed pairs.
+    - One `event` row per event number, with a row per unit for reactor events. An event can
+      appear on several pages, and pages are rendered from the NRC's current database when
+      fetched, so the copy from the most recently fetched page wins.
+29. **An EN page settles 28 days after its date** (it was 2), like a status page. 22% of events
+    are edited after publication: 15.5% after day 2, 6.9% after day 28. Each update-loop run also
+    refetches any status date inside its hold whose stored page has no report yet, until one
+    appears, so a late report doesn't wait four weeks for its reasons.
+30. **Updates and retractions.**
+    - The appended `* * * UPDATE … * * *` blocks parse into a timeline (date, time, from, to,
+      text). An "EN Revision Imported" line is a note, not an update.
+    - A retracted event stays listed and marked, but counts toward nothing: no scram, no resolved
+      reference, no FFD count.
+    - The NRC's past versions of a page aren't reconstructed: the appended updates already carry
+      the history, and the backfill fetched each page once.
+31. **Facility identity.**
+    - Reactor events map to dockets through the unit catalog's names (Decision 16) and a new
+      `catalog/facilities.csv`. It covers reactors outside the ledger (shut down before 1999, or
+      under construction), fuel cycle facilities with their ownership history, and research and
+      non-power reactors, all keyed by docket.
+    - An unknown facility name fails the backfill and is quarantined at runtime (Decision 21).
+    - Materials licensees group by (state, license number), shown under the newest name.
+    - Part 21 vendors stay text.
+32. **A `See EN# N` resolves through a rule table** over the event's scram code and 10 CFR
+    sections, method `xref_en_v1`.
+    - A scram code other than `N` gives `scram`, a required shutdown gives its own fine cause, and
+      anything the table doesn't match falls back to Forced/`en_reported`.
+    - The evidence names the event and the deciding field. The resolved cause competes in
+      Decision 19's precedence like any other.
+    - Unresolved references carried 58 TWh, 2.4% of all lost output and half of Unattributed.
+33. **Scrams are checked twice, never rebuilt into a tracker.**
+    - **Internally:** each EN scram against the status reports' drop on that unit, and each
+      status-report scram outage against an EN.
+    - **Against the NRC's scram dataset** (`scram-event-notifications.xlsx`, CC0): stored in the
+      raw store, rechecked weekly, and reconciled by event number over its span (2011 to early
+      2025). A retracted scram the NRC still counts is a known difference.
+    - Both agreement rates go on `/status`, with the detail from a `cargo xtask` command.
+    - Rejected: the NRC's IE01 performance-indicator rates. They are a rate per 7,000 critical
+      hours, last updated 2023.
+34. **The events explorer.**
+    - `/events` lists events newest first. Its filters live in the URL: date range, category,
+      state, facility or unit, 10 CFR section, emergency class, scram, and text.
+    - A chart of counts per month by category follows the same filters.
+    - `/events/{number}` shows the header, the unit table, the text with its update timeline, the
+      NRC link, and, for a reactor event, that unit's barcode strip around the date.
+    - Search uses SurrealDB's full-text index if its memory fits the Fly machine, measured first.
+      Otherwise it scans the text in memory.
+35. **Event markers on the barcode are off by default.** They are turned on from the legend and
+    kept in the URL. A scram has its own shape (shape before color), hovering shows the number
+    and title, and clicking opens `/events/{number}`.
+
+### Fitness for duty
+
+36. **An FFD event is one coded 10 CFR 26.73, 26.719 or 26.417(b)(1),** plus a reviewed list of
+    exceptions in `catalog/`, never matched on the title or on bare keywords.
+    - About 905 events: 899 by code, plus 6 from 1999–2008 coded 73.71.
+    - Substance, role and kind come from ordered phrase rules with tests, as `catalog/tags.toml`
+      works. Bare keywords misfire: `THC` matches typos of "the", and "positive" matches tritium.
+    - The reports are a subset by rule: 26.719(b) covers substances in a protected area,
+      violations by licensed operators, supervisors and FFD staff, and program failures.
+      Rank-and-file positives appear only in the annual 26.717 summaries. The view says so.
+37. **Legalization dates are a hand-curated `catalog/cannabis.csv`.**
+    - Per state: adult use effective, licensed sales since, and medical use effective.
+    - Built from Wikipedia's timeline (CC BY-SA, so the file carries an attribution notice) and
+      cross-checked against NCSL's years.
+    - "Medical" counts comprehensive programs only, each checked against its statute.
+38. **The overlay is national, not state by state.**
+    - Only 6 events name marijuana, and a state sees 1–3 drug-related events a year, so a state's
+      before and after can't separate an effect from noise.
+    - The view shows drug-related FFD events per 100 operating unit-years beside the share of
+      operating units in adult-use states, as two charts on one time axis. The 2008 rule change
+      is marked.
+    - State detail is a table. Construction sites (Vogtle 3 and 4 before commercial operation)
+      are counted apart so they don't inflate the operating rate.
+    - The staggered difference-in-differences of Decision 4 is not part of it.
+39. **No email channel.** The GovDelivery list was never subscribed, and the event pages carry
+    everything it would. The `nrc@twitchax.com` route was deleted on 2026-11-16.
+
 ## Still open
 
-- **The daily Event Notification channel.** The live EN page may be enough by itself. The NRC's
-  "Event Reports" email list gets a test subscription from `nrc@twitchax.com`, a Cloudflare Email
-  Routing address (live 2026-11-12) that forwards to Aaron's inbox.
 - **What the Power column measures.** Waiting on the NRC's reply (Decision 13). Its Data
   Dictionary says only "Power Reactor Operating Capacity for that date (between 0 and 100
   percent)". The evidence points to percent of rated *thermal* power: a 99% unit annotated "100%
   ELECTRICAL CAPABILITY", and `Limited to … 1250 MWe` grid caps appearing below 100%. Decision 22
   doesn't depend on the answer, but the "slope versus cliff" analysis does.
-- **FFD analysis design** (the staggered difference-in-differences estimator, `BREAKS.md`). This
-  comes after PRD-0003.
+- **A causal FFD analysis** (the staggered difference-in-differences estimator of Decision 4).
+  PRD-0005's overlay is descriptive (Decision 38). Whether the data can support more waits on
+  what that view shows.
 
 ## Deploy
 

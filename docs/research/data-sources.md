@@ -41,7 +41,7 @@ None of them carries the reason text. They were surveyed while the 403 stood.
 | NRC RSS: `public-involve/rss?feed=plant-status`, `?feed=event` | Titles only: "Unit - N% power", "EN number - organization". No dates, no reasons, no event text. | No: titles only. |
 | data.gov: "U.S. Nuclear Power Reactor Plant Status", "Event Reports for Operating Reactors" | Distribution URLs point to `PowerReactorStatusForLast365Days.txt` (no reasons) and `event-notification-rpt-lastmonth.txt`. CC0. | Numbers only. The 365-day file is live (see below). |
 | ADAMS API (`adams-api.nrc.gov`, Azure) | Not behind Akamai, but needs a free subscription key (`Ocp-Apim-Subscription-Key`). Document links point to `www.nrc.gov/docs/...`. Only scattered EN printouts were found, not a series. | No. |
-| GovDelivery (`public.govdelivery.com/accounts/USNRC/subscriber/new`) | An "Event Reports" category. Its contents are unknown until something is subscribed. NRC's public bulletin feed (`updates.loc.gov/sitemap/USNRC.rss`) shows only ADAMS notices. The sign-up form carries an MTCaptcha, so a person subscribes. | Maybe. `nrc@twitchax.com` (Cloudflare Email Routing, live 2026-11-12) is the test address. |
+| GovDelivery (`public.govdelivery.com/accounts/USNRC/subscriber/new`) | An "Event Reports" category. Its contents are unknown until something is subscribed. NRC's public bulletin feed (`updates.loc.gov/sitemap/USNRC.rss`) shows only ADAMS notices. The sign-up form carries an MTCaptcha, so a person subscribes. | Dropped 2026-11-16 (DESIGN.md Decision 39): never subscribed, and the `nrc@twitchax.com` route is deleted. |
 
 **Contacts:**
 - Web Team: `nrc.gov/site-help/feedback`.
@@ -153,9 +153,12 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
   - 1999–2024: 6,504 of 6,783 weekdays. The 279 missing (about 11 a year) are federal holidays.
   - 2025: 230 pages, about 92% of business days.
   - 2026: 48 pages.
-- **No full-history bulk file.** `event-notification-rpt-lastmonth.txt` (pipe-delimited, about 74
-  columns, including `Cfr Cd1..4`, `Scram Code 1`, `Initial PWR 1` and `Event Text`) covers one month
-  only; the last capture is from 2019-11, and whether it is still live is unknown.
+- **No full-history bulk file.** `event-notification-rpt-lastmonth.txt` (pipe-delimited, 72
+  columns, including `Cfr Cd1..4`, `Scram Code 1`, `Initial PWR 1` and `Event Text`) is live at
+  `/sites/default/files/doc_library/reading-rm/doc-collections/event-status/event/`, beside
+  `event-notification-rpt-datadictionary.xls`, but stale: last modified 2025-08-05 (checked
+  2026-11-16), holding the 54 events updated in its last month (notified 2024-07-25 to
+  2025-07-30). PRD-0003 uses it as a check on the page parser.
 - **Structure (2024):**
   - Structured fields: category header (Power Reactor, Agreement State, Part 21, …), Event Number,
     Facility, Region, State, Unit, RX Type, Notified By, HQ Ops Officer, Notification Date/Time (ET),
@@ -175,18 +178,106 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
 - **Pages are not append-only.** Updates re-post old ENs, so deduplicate by EN number and key on the
   notification date. CFR text sometimes wraps across lines.
 - **Fitness for duty:**
-  - Match on `10 CFR Section: 26.719 - Fitness For Duty`, **never on the title**. Titles vary
-    ("FITNESS FOR DUTY", "FITNESS-FOR-DUTY REPORT", "… PROGRAMATIC ISSUE"), and some ENs have no title
-    at all.
+  - Match on the 10 CFR section, **never on the title**. Titles vary ("FITNESS FOR DUTY",
+    "FITNESS-FOR-DUTY REPORT", "… PROGRAMATIC ISSUE"), and some ENs have no title at all.
   - Examples: EN 57379 (South Texas), EN 56939 (Limerick), EN 56963 (Sequoyah).
-  - Volume: Q1 2024 had 8 FFD ENs out of 134 unique, which points to roughly **35–45 a year**. That is an
-    extrapolation, not a full-year count.
+  - **About 905 events** in the stored archive (2026-11-15): 899 coded 26.73 (250), 26.719 (646)
+    or 26.417(b)(1) (5), plus 6 from 1999–2008 coded 73.71. Power Reactor 880, Fuel Cycle 19, other
+    categories 6.
+  - Bare keywords misfire: "positive" matches 764 events, 202 not FFD (tritium, leaking sources);
+    `THC` matches 10, all typos of "the"; "alcohol" catches isopropyl alcohol and the ATF;
+    "contraband" catches weapons.
+  - 22 to 44 a year. The code switches cleanly (last 26.73 on 2008-04-10, first 26.719 on
+    2008-06-13), and the yearly average steps from 27.6 (1999–2007) to 35.4 (2009–2025).
+  - Top states: GA 87, IL 71, PA 55, MI 52, NY 43. Vogtle alone has 72, 19 of them in 2018 during
+    the Unit 3 and 4 construction.
+  - Substances: only 426 events (47%) name one. Alcohol 408, marijuana or THC 6, opiates 5, cocaine
+    4, amphetamines 3; generic wording only ("controlled substance") 209; nothing named 270.
+  - Kinds: a person's test or violation 808, an item found in the protected area 74, a programmatic
+    or lab failure 23. Of the 808, supervisors 527 (about 225 of them contractor supervisors),
+    licensed operators 152, unspecified employees 60, contractors 46.
+  - **Why it skews that way:** 10 CFR 26.719(b) makes an event of substances in a protected area,
+    violations by licensed operators, supervisors and FFD program staff, and program integrity
+    failures. Rank-and-file positives reach only the annual 26.717 summaries (PDFs for about
+    CY1990–2016, with no state breakdown).
+  - The 2008 Part 26 rewrite (73 FR 16966) took effect 2008-04-30, and licensees could defer parts
+    to 2009-03-31.
+
+### The stored archive (counted 2026-11-15)
+
+Counted with a throwaway Python parser over the newest 200 of each of the 7,271 stored EN pages.
+
+- **Size:** 20,171 event blocks, 19,725 distinct event numbers. 639 pages read "No events found".
+  Each event is a `<div class="grid border" id="enNNNNN">` of `<b>Label:</b> value` pairs.
+- **Pages are re-rendered, not archived.** A page shows the NRC's current database when fetched,
+  so an old page already carries updates made years later. 404 events appear on more than one
+  page, and 85 of those differ in text.
+- **Categories:** Power Reactor (about 9,835), Agreement State 4,203, General Information or Other
+  2,297, Fuel Cycle Facility 914, Other Nuclear Material 686, Non-Agreement State 622, Part 21
+  492, Hospital 444, Non-Power Reactor 94, Research Reactor 58, General Information 37, ISFSI 29,
+  Transportation 14. Research Reactor became Non-Power Reactor, and General Information became
+  General Information or Other.
+- **Two header templates.** Power Reactor and Fuel Cycle use Facility, Region, State, Unit, RX
+  Type and Comments, with no license, docket or city. Every other category uses Rep Org, Licensee,
+  Region, City, State, County, License #, Agreement and Docket.
+
+  | Category | Events | License # | Docket | Distinct names (raw / normalized) |
+  |---|---|---|---|---|
+  | Agreement State | 4,203 | 93.6% | 0.2% | 3,238 / 2,608 |
+  | General Information or Other | 2,297 | 76.7% | 0.9% | 1,833 / 1,647 |
+  | Fuel Cycle Facility | 914 | none | none | 38 / 26 (Facility) |
+  | Other Nuclear Material | 686 | 84.3% | 3.8% | 482 / 447 |
+  | Non-Agreement State | 622 | 96.8% | 2.1% | 483 / 432 |
+  | Part 21 | 492 | 0.6% | 2.2% | 255 / 195 |
+  | Hospital | 444 | 95.3% | 1.6% | 355 / 336 |
+  | Non-Power Reactor, Research Reactor | 94, 58 | 100% | 100% | 42 / 29, 23 raw |
+
+  State is filled in on 98–100% of every category.
+- **Names are messy.**
+  - Case: 99% upper case through 2019, then title case (45% upper in 2020, 3–5% from 2021).
+    Reactor facility names flip the same way (`VOGTLE`, `Vogtle`).
+  - Rep Org is cut at 35 characters (1,379 values are exactly 35 long); Licensee isn't.
+  - Newer pages use NUL bytes as empty placeholders.
+  - Spellings vary: eight forms of "Mistras Group", three of "QSA Global".
+  - (State, License #) makes 4,760 keys. 667 of them carry more than one normalized name (IL
+    120072206 is "U S ARMY", "US ARMY TACOM" and "DEPARTMENT OF ARMY"), and a short number like
+    `999` is only unique within its state.
+  - Part 21's Licensee is often the affected plant, not the vendor.
+  - Fuel cycle names follow ownership (B&W Nuclear Operating Group, then BWX Technologies;
+    Framatome ANP Richland, then AREVA NP).
+- **Appended updates.**
+  - The canonical marker is `* * * UPDATE ON 09/28/2020 AT 1834 EDT FROM MATTHEW SENISON TO
+    JEFFREY WHITED * * *`. Variants put AT before ON, use `@`, `BY X TO Y` or `FROM X TAKEN BY Y`,
+    lead with the names, use 2-digit years, or use long star runs. FROM is the caller, TO the NRC
+    duty officer, both free text.
+  - 24.8% of events carry at least one marker (4,212 one, 506 two, 167 three or more). Last Update
+    Date differs from the notification date on 21.9%.
+  - Retractions: 5.7% carry a retraction marker, 7.0% counting retraction wording inside an update.
+    By category: Power Reactor 8.2%, Hospital 10.8%, Agreement State 2.1%.
+  - 1,201 events (6.1%) start with `EN Revision Imported Date: 9/29/2020` and `EN Revision Text:`,
+    an NRC re-import around 2020–2023 rather than an update.
+  - Over 6,070 markers, the date parses 97.3% of the time and is plausible 96.7% (the failures are
+    typos like `17/14/05`), the time 94.0%, and from and to 94.4%. The regexes that measured this:
+
+    ```text
+    MARK = (?:\*\s*){3,}\s*(?P<kind>UPDATE|RETRACTION|RETRACTED|CORRECTION)\b(?P<rest>[^\n\r*]*)
+    DATE = \b(\d{1,2})/(\d{1,2})/(\d{4}|\d{2})\b
+    TIME = (?:\b(?:AT|@)\s*|\b)([0-2]\d[0-5]\d)\s*([ECMP][SD]T|[ECMP]T)?\b    # on rest, DATE removed
+    PAIR = \b(?:FROM|BY)\s+(?P<frm>[^*@]+?)\s+(?:TO|TAKEN BY|RECEIVED BY)\s+(?P<to>[^*@]+?)(?=\s+(?:AT|ON|VIA)\b|\s*@|\s*$)
+    ```
+- **Edits after publication:** 22% of events are edited at all, 15.5% after day 2, 6.9% after
+  day 28, 2.2% after day 90 (DESIGN.md Decision 29).
+- **Status-report cross-references:** `See EN#` days carry 58 TWh, 2.4% of all lost output. A rough
+  regex found 1,108 of the 1,488 referenced event numbers in the store; the misses include events
+  from before 1999.
+
 
 ## NRC datasets
 
 - **Scram dataset** (`/cdn/legacy/reactors/operating/dataset/scram-event-notifications.xlsx`):
   - Columns: `Year|Scram #|Plant Name|Docket|Site|PWR/BWR|Auto/Manual|Date|Event_Notification_Number|NRC_retract_flag|Link`.
-  - 726 rows from 2011 to 2025-03, 37–69 a year.
+  - 726 rows from 2011 to 2025-03, 37–69 a year. Last modified 2025-05-13 (checked 2026-11-15),
+    so it isn't kept current. PRD-0003 reconciles our scram events against it by event number.
   - Use it as a cross-check, never as a substitute.
 - **Operating reactors** (`/reading-rm/doc-collections/datasets/reactors-operating.xlsx`; the capture
   is the 2022 update):
@@ -250,6 +341,17 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
   - It shows the afternoon derates the morning snapshot misses, but only for balancing areas with few
     plants.
 - **Spreadsheet gotcha:** EIA xlsx files put several title rows above the real header.
+
+## Cannabis legalization dates (checked 2026-11-15)
+
+For PRD-0005's overlay (DESIGN.md Decision 37).
+
+- **Wikipedia, "Legalization of non-medical cannabis in the United States":** a table per state
+  with "Effective date" and "Licensed sales since" columns. CC BY-SA, so a file built from it
+  carries an attribution notice.
+- **NCSL:** years only, for adult use and for comprehensive medical programs. The cross-check.
+- **RAND OPTIC:** policy dates for 1990–2023, with no stated terms of use. Not used.
+- **APIS** (NIAAA's alcohol policy system) answered 403.
 
 ## Third-party copies
 
