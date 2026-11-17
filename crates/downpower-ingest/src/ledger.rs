@@ -23,8 +23,8 @@ use crate::{Res, Void};
 
 /// Bumped whenever parsing, observing, attributing, the row shape or what a build stores beside its
 /// rows changes, so the deployed server rebuilds (Decision 15). The catalog files are hashed in
-/// beside it. 3: builds pack the barcode buffers.
-pub const LEDGER_VERSION: u32 = 3;
+/// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
+pub const LEDGER_VERSION: u32 = 4;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]

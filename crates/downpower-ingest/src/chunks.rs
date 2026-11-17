@@ -3,7 +3,7 @@
 //! was most of a rebuild's time on Fly's throttled CPU.
 
 use std::collections::BTreeMap;
-use std::hash::{Hash as _, Hasher};
+use std::hash::{Hash, Hasher};
 
 use anyhow::{Context as _, ensure};
 use chrono::{Datelike as _, NaiveDate};
@@ -43,11 +43,11 @@ impl Hasher for Fnv {
     }
 }
 
-/// The hash of `days`, in order.
+/// The hash of `value`: a unit-month's days, in order, or one event.
 #[must_use]
-pub fn hash(days: &[UnitDay]) -> u64 {
+pub fn hash<T: Hash + ?Sized>(value: &T) -> u64 {
     let mut hasher = Fnv(0xcbf2_9ce4_8422_2325);
-    days.hash(&mut hasher);
+    value.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -130,6 +130,39 @@ impl Hashes {
     }
 }
 
+/// Bytes per event entry: the number and the hash.
+const EVENT_ENTRY: usize = 4 + 8;
+
+/// Every event's hash in a build, by number, so an update rewrites only the events that moved.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EventHashes(pub BTreeMap<u32, u64>);
+
+impl EventHashes {
+    /// Packed for storage: per event, its number and its hash, little-endian.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.0.len() * EVENT_ENTRY);
+        for (number, hash) in &self.0 {
+            bytes.extend_from_slice(&number.to_le_bytes());
+            bytes.extend_from_slice(&hash.to_le_bytes());
+        }
+        bytes
+    }
+
+    /// # Errors
+    ///
+    /// When `bytes` isn't a whole number of entries.
+    pub fn decode(bytes: &[u8]) -> Res<Self> {
+        ensure!(bytes.len().is_multiple_of(EVENT_ENTRY), "{} bytes isn't a whole number of event hashes", bytes.len());
+        let mut hashes = BTreeMap::new();
+        for entry in bytes.as_chunks::<EVENT_ENTRY>().0 {
+            let (number, hash) = entry.split_at(4);
+            hashes.insert(u32::from_le_bytes(number.try_into()?), u64::from_le_bytes(hash.try_into()?));
+        }
+        Ok(Self(hashes))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -199,6 +232,16 @@ mod tests {
         assert_eq!(bytes.len(), 2 * ENTRY);
         assert_eq!(Hashes::decode(&bytes)?, hashes);
         assert!(Hashes::decode(&bytes[1..]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn event_hashes_round_trip_through_their_bytes() -> Res<()> {
+        let hashes = EventHashes(BTreeMap::from([(35211, u64::MAX), (58530, 7)]));
+        let bytes = hashes.encode();
+        assert_eq!(bytes.len(), 2 * (4 + 8));
+        assert_eq!(EventHashes::decode(&bytes)?, hashes);
+        assert!(EventHashes::decode(&bytes[1..]).is_err());
         Ok(())
     }
 }

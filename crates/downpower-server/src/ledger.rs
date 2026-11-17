@@ -1,6 +1,7 @@
 //! The ledger in Surreal (DESIGN.md Decision 15). Each build is its own table, `unit_day_<n>`, one
-//! record per unit-day keyed `[docket, date]`, and `ledger:current` names the table the site reads
-//! along with the `derived_version` that built it. A rebuild writes a fresh table while the old one
+//! record per unit-day keyed `[docket, date]`, beside `event_<n>`, one record per Event
+//! Notification keyed by its number. `ledger:current` names the table the site reads along with
+//! the `derived_version` that built it. A rebuild writes a fresh table while the old one
 //! keeps serving, flips `ledger:current` and the `unit` table in one transaction, then deletes the
 //! old table a unit at a time: one `DELETE` of a million rows peaks at 2.1 GB, and a `REMOVE TABLE`
 //! at 900 MB, against about 250 MB for the chunks (PRD-0002.log.md, T-008).
@@ -17,7 +18,8 @@ use surrealdb::types::{Bytes, SerdeWrapper};
 
 use downpower_core::barcode::{self, Barcode, Layer, Packer};
 use downpower_core::series::Monthly;
-use downpower_ingest::chunks::{Chunk, Chunker, Hashes};
+use downpower_ingest::chunks::{self, Chunk, Chunker, EventHashes, Hashes};
+use downpower_ingest::events::{Archive, Event, EventSet};
 use downpower_ingest::ledger::{self, Catalog, Summary, UnitDay, Unknowns};
 use downpower_ingest::raw::RawStore;
 use downpower_ingest::units::{Unit, Units};
@@ -28,10 +30,16 @@ use crate::db::Store;
 /// in the memtable.
 const BATCH: usize = 5_000;
 
+/// Events per `INSERT`: they carry their text, about 1.5 kB each.
+const EVENT_BATCH: usize = 500;
+
 /// Batches the builder may run ahead of the writer.
 const IN_FLIGHT: usize = 2;
 
 const TABLE_PREFIX: &str = "unit_day_";
+
+/// A build's events live in `event_<n>`, beside its `unit_day_<n>`.
+const EVENT_PREFIX: &str = "event_";
 
 /// A finished build, as `ledger:current` records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +53,8 @@ pub struct Build {
     /// since holds pages the build hasn't read.
     pub raw_digest: String,
     pub summary: Summary,
+    /// What the stored event pages held (PRD-0003 T-003).
+    pub events: Archive,
 }
 
 /// A row as stored: the unit-day under its `[docket, date]` id.
@@ -53,6 +63,14 @@ struct Keyed {
     id: (String, NaiveDate),
     #[serde(flatten)]
     day: UnitDay,
+}
+
+/// An event as stored, under its number.
+#[derive(Serialize, Deserialize)]
+struct KeyedEvent {
+    id: u32,
+    #[serde(flatten)]
+    event: Event,
 }
 
 /// A `unit` record, keyed by docket.
@@ -208,6 +226,10 @@ enum Write {
     Insert(Vec<Keyed>),
     /// One unit-month's rows, replacing whatever the table holds for that month; none deletes it.
     Replace { docket: String, month: NaiveDate, rows: Vec<Keyed> },
+    /// Events for a fresh event table.
+    InsertEvents(Vec<KeyedEvent>),
+    /// One event, replacing the stored one; `None` deletes it.
+    ReplaceEvent { number: u32, event: Option<Box<KeyedEvent>> },
 }
 
 /// Takes each finished unit-month: a fresh build writes every one, an update only those whose hash
@@ -272,18 +294,69 @@ impl Sink {
     }
 }
 
+/// Sends `set`'s events to the writer: every one for a fresh table, otherwise only those whose
+/// hash moved since `old`, and a deletion for each one gone. Returns the new hashes and how many
+/// events an update rewrote or deleted.
+fn send_events(set: &EventSet, old: Option<&EventHashes>, sender: &tokio::sync::mpsc::Sender<Write>) -> anyhow::Result<(EventHashes, u64)> {
+    let send = |write: Write| sender.blocking_send(write).context("the ledger writer stopped");
+    let mut hashes = EventHashes::default();
+    let mut batch = Vec::with_capacity(EVENT_BATCH);
+    let mut moved = 0;
+    for (number, event) in &set.events {
+        let hash = chunks::hash(event);
+        hashes.0.insert(*number, hash);
+        let keyed = || KeyedEvent { id: *number, event: event.clone() };
+        match old {
+            None => {
+                batch.push(keyed());
+                if batch.len() >= EVENT_BATCH {
+                    send(Write::InsertEvents(std::mem::replace(&mut batch, Vec::with_capacity(EVENT_BATCH))))?;
+                }
+            }
+            Some(old) if old.0.get(number) != Some(&hash) => {
+                moved += 1;
+                send(Write::ReplaceEvent {
+                    number: *number,
+                    event: Some(Box::new(keyed())),
+                })?;
+            }
+            Some(_) => {}
+        }
+    }
+    if !batch.is_empty() {
+        send(Write::InsertEvents(batch))?;
+    }
+    if let Some(old) = old {
+        for number in old.0.keys().filter(|number| !hashes.0.contains_key(number)) {
+            moved += 1;
+            send(Write::ReplaceEvent { number: *number, event: None })?;
+        }
+    }
+    Ok((hashes, moved))
+}
+
+/// A build's hashes: the unit-months' and the events'.
+struct Old {
+    days: Hashes,
+    events: EventHashes,
+}
+
 /// What a build wrote beside its rows.
 struct Written {
     summary: Summary,
+    events: Archive,
     raw_digest: String,
     months: usize,
     replaced: u64,
+    events_moved: u64,
 }
 
-/// Builds the ledger from the raw store under `data_dir` into `table`: every row when `old` is
-/// `None`, otherwise only the unit-months whose hash differs from `old`. Then stores the views and
-/// the hashes under `table`'s name.
-async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, old: Option<Hashes>) -> anyhow::Result<Written> {
+/// Builds the event set and the ledger from the raw store under `data_dir` into `table` and its
+/// event table: every row and event when `old` is `None`, otherwise only the unit-months and events
+/// whose hash differs from `old`. Then stores the views and the hashes under the tables' names. The
+/// events go first, so the ledger can resolve references against them (T-005).
+async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, old: Option<Old>) -> anyhow::Result<Written> {
+    let event_table = event_table(table)?;
     let units = Units::catalog()?;
     let raw = RawStore::open(data_dir)?;
     let raw_digest = raw.digest()?;
@@ -291,8 +364,11 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
     let mut packers = Packers::new(&units);
     let builder = tokio::task::spawn_blocking(move || {
         let catalog = Catalog::embedded()?;
+        let (old_days, old_events) = old.map_or((None, None), |old| (Some(old.days), Some(old.events)));
+        let set = EventSet::build(&raw, unknowns)?;
+        let (event_hashes, events_moved) = send_events(&set, old_events.as_ref(), &sender)?;
         let mut sink = Sink {
-            old,
+            old: old_days,
             hashes: Hashes::default(),
             batch: Vec::with_capacity(BATCH),
             sender,
@@ -307,12 +383,18 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
         })?;
         chunker.finish().into_iter().try_for_each(|chunk| sink.take(chunk))?;
         let (hashes, replaced) = sink.finish()?;
-        anyhow::Ok((summary, packers.finish()?, hashes, replaced))
+        anyhow::Ok((summary, set.archive, packers.finish()?, hashes, replaced, event_hashes, events_moved))
     });
     let insert = format!("INSERT INTO {table} $rows RETURN NONE");
     let replace = format!("BEGIN; DELETE {table}:[$docket, $from]..[$docket, $to] RETURN NONE; INSERT INTO {table} $rows RETURN NONE; COMMIT;");
+    let insert_events = format!("INSERT INTO {event_table} $rows RETURN NONE");
     while let Some(write) = receiver.recv().await {
         let query = match write {
+            Write::InsertEvents(rows) => store.query(insert_events.as_str()).bind(("rows", SerdeWrapper(rows))),
+            // The number is a u32, so splicing it in is safe.
+            Write::ReplaceEvent { number, event } => store
+                .query(format!("BEGIN; DELETE {event_table}:{number} RETURN NONE; INSERT INTO {event_table} $rows RETURN NONE; COMMIT;"))
+                .bind(("rows", SerdeWrapper(event.map(|event| vec![*event]).unwrap_or_default()))),
             Write::Insert(rows) => store.query(insert.as_str()).bind(("rows", SerdeWrapper(rows))),
             Write::Replace { docket, month, rows } => store
                 .query(replace.as_str())
@@ -323,13 +405,16 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
         };
         query.await.and_then(surrealdb::IndexedResults::check).with_context(|| format!("writing to {table}"))?;
     }
-    let (summary, views, hashes, replaced) = builder.await.context("the ledger builder panicked")??;
+    let (summary, events, views, hashes, replaced, event_hashes, events_moved) = builder.await.context("the ledger builder panicked")??;
     store_views(store, table, views, &hashes).await?;
+    store_bytes(store, &event_table, event_hashes.encode()).await.context("storing the event hashes")?;
     Ok(Written {
         summary,
+        events,
         raw_digest,
         months: hashes.0.len(),
         replaced,
+        events_moved,
     })
 }
 
@@ -356,26 +441,41 @@ async fn store_views(store: &Store, table: &str, views: Vec<(Layer, Option<Packe
             .and_then(surrealdb::IndexedResults::check)
             .with_context(|| format!("storing the {} monthly series", layer.slug()))?;
     }
+    store_bytes(store, table, hashes.encode()).await.context("storing the chunk hashes")
+}
+
+/// Stores a table's hashes in `chunks`, under the table's name.
+async fn store_bytes(store: &Store, table: &str, bytes: Vec<u8>) -> anyhow::Result<()> {
     store
         .query("UPSERT chunks:[$table] CONTENT { bytes: $bytes } RETURN NONE")
         .bind(("table", table.to_owned()))
-        .bind(("bytes", Bytes::from(hashes.encode())))
+        .bind(("bytes", Bytes::from(bytes)))
         .await
         .and_then(surrealdb::IndexedResults::check)
-        .context("storing the chunk hashes")?;
+        .with_context(|| format!("storing the hashes of {table}"))?;
     Ok(())
 }
 
-/// `table`'s chunk hashes, if its build stored them.
-async fn hashes(store: &Store, table: &str) -> anyhow::Result<Option<Hashes>> {
-    let bytes: Option<Bytes> = store
+/// The hashes stored under a table's name, if its build stored them.
+async fn stored_bytes(store: &Store, table: &str) -> anyhow::Result<Option<Bytes>> {
+    store
         .query("SELECT VALUE bytes FROM ONLY chunks:[$table]")
         .bind(("table", table.to_owned()))
         .await
-        .with_context(|| format!("reading the chunk hashes of {table}"))?
+        .with_context(|| format!("reading the hashes of {table}"))?
         .take(0)
-        .with_context(|| format!("reading the chunk hashes of {table}"))?;
-    bytes.map(|bytes| Hashes::decode(&bytes)).transpose()
+        .with_context(|| format!("reading the hashes of {table}"))
+}
+
+/// The unit-month and event hashes of the build in `table`, if it stored both.
+async fn hashes(store: &Store, table: &str) -> anyhow::Result<Option<Old>> {
+    let (Some(days), Some(events)) = (stored_bytes(store, table).await?, stored_bytes(store, &event_table(table)?).await?) else {
+        return Ok(None);
+    };
+    Ok(Some(Old {
+        days: Hashes::decode(&days)?,
+        events: EventHashes::decode(&events)?,
+    }))
 }
 
 /// Builds the ledger from the raw store under `data_dir` into a fresh table, makes it current, and
@@ -389,14 +489,15 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     let started = Instant::now();
     let units = Units::catalog()?;
     let table = format!("{TABLE_PREFIX}{}", Utc::now().timestamp_micros());
-    // A build that died part way left its table behind; the current one keeps serving.
+    let event_table = event_table(&table)?;
+    // A build that died part way left its tables behind; the current one keeps serving.
     let serving = serving(store).await?;
     drop_tables(store, &units, serving.as_deref()).await?;
     store
-        .query(format!("DEFINE TABLE {table} SCHEMALESS"))
+        .query(format!("DEFINE TABLE {table} SCHEMALESS; DEFINE TABLE {event_table} SCHEMALESS;"))
         .await
         .and_then(surrealdb::IndexedResults::check)
-        .with_context(|| format!("defining {table}"))?;
+        .with_context(|| format!("defining {table} and {event_table}"))?;
     tracing::info!(%table, "rebuilding the ledger");
 
     let written = write(store, data_dir, unknowns, &table, None).await?;
@@ -406,6 +507,7 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
         built_at: Utc::now(),
         raw_digest: written.raw_digest,
         summary: written.summary,
+        events: written.events,
     };
     let unit_records: Vec<UnitRecord> = units.all().iter().map(UnitRecord::from).collect();
     store
@@ -416,12 +518,20 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
         .and_then(surrealdb::IndexedResults::check)
         .context("making the new build current")?;
     drop_tables(store, &units, Some(&build.table)).await?;
-    tracing::info!(table = %build.table, days = build.summary.days, months = written.months, elapsed_secs = started.elapsed().as_secs(), "ledger rebuilt");
+    tracing::info!(
+        table = %build.table,
+        days = build.summary.days,
+        months = written.months,
+        events = build.events.events,
+        elapsed_secs = started.elapsed().as_secs(),
+        "ledger rebuilt"
+    );
     Ok(build)
 }
 
-/// Updates `build`'s table in place from the raw store under `data_dir`: the whole ledger is built
-/// again, but only the unit-months whose rows differ from `old` are written. The same derived
+/// Updates `build`'s tables in place from the raw store under `data_dir`: the whole ledger and
+/// event set are built again, but only the unit-months and events that differ from the stored
+/// hashes are written. The same derived
 /// version means the same parser and catalog, so the months a few new pages touch are all that
 /// moves.
 ///
@@ -431,13 +541,14 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
 /// digest, so the next refresh compares against the old hashes and writes them again.
 pub async fn update(store: &Store, data_dir: &Path, unknowns: Unknowns, build: Build) -> anyhow::Result<Build> {
     let started = Instant::now();
-    let old = hashes(store, &build.table).await?.with_context(|| format!("{} has no chunk hashes to update against", build.table))?;
+    let old = hashes(store, &build.table).await?.with_context(|| format!("{} has no hashes to update against", build.table))?;
     tracing::info!(table = %build.table, "updating the ledger");
     let written = write(store, data_dir, unknowns, &build.table, Some(old)).await?;
     let build = Build {
         built_at: Utc::now(),
         raw_digest: written.raw_digest,
         summary: written.summary,
+        events: written.events,
         ..build
     };
     store
@@ -446,7 +557,13 @@ pub async fn update(store: &Store, data_dir: &Path, unknowns: Unknowns, build: B
         .await
         .and_then(surrealdb::IndexedResults::check)
         .context("recording the updated build")?;
-    tracing::info!(table = %build.table, months = written.replaced, elapsed_secs = started.elapsed().as_secs(), "ledger updated");
+    tracing::info!(
+        table = %build.table,
+        months = written.replaced,
+        events = written.events_moved,
+        elapsed_secs = started.elapsed().as_secs(),
+        "ledger updated"
+    );
     Ok(build)
 }
 
@@ -477,6 +594,13 @@ pub async fn refresh(store: &Store, data_dir: &Path) -> anyhow::Result<Option<Bu
     }
 }
 
+/// Checks that `table` is an event table's name, since it is spliced into queries.
+fn checked_events(table: &str) -> anyhow::Result<&str> {
+    let digits = table.strip_prefix(EVENT_PREFIX).unwrap_or_default();
+    ensure!(!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()), "{table:?} is not an event table");
+    Ok(table)
+}
+
 /// The tables in the database.
 async fn tables(store: &Store) -> anyhow::Result<Vec<String>> {
     let info: Option<SerdeWrapper<serde_json::Value>> = store.query("INFO FOR DB").await.context("listing tables")?.take(0).context("listing tables")?;
@@ -487,9 +611,23 @@ async fn tables(store: &Store) -> anyhow::Result<Vec<String>> {
     Ok(tables.keys().cloned().collect())
 }
 
-/// Drops every build table except `keep`, a unit at a time and then the empty table.
+/// Drops every build's tables except `keep`'s: a build table a unit at a time and then the empty
+/// table, an event table at once. A build's 20,000 events are about 35 MB, so its `REMOVE TABLE`
+/// stays small beside the 900 MB a million unit-days takes (PRD-0002.log.md, T-008).
 async fn drop_tables(store: &Store, units: &Units, keep: Option<&str>) -> anyhow::Result<()> {
-    for table in tables(store).await? {
+    let keep_events = keep.map(event_table).transpose()?;
+    let all = tables(store).await?;
+    for event_table in all.iter().filter(|table| table.starts_with(EVENT_PREFIX) && keep_events.as_ref() != Some(*table)) {
+        let event_table = checked_events(event_table)?;
+        store
+            .query(format!("DELETE chunks:[$table] RETURN NONE; REMOVE TABLE {event_table};"))
+            .bind(("table", event_table.to_owned()))
+            .await
+            .and_then(surrealdb::IndexedResults::check)
+            .with_context(|| format!("removing {event_table}"))?;
+        tracing::info!(%event_table, "dropped an old event table");
+    }
+    for table in all {
         if !table.starts_with(TABLE_PREFIX) || keep == Some(table.as_str()) {
             continue;
         }
@@ -517,6 +655,32 @@ async fn drop_tables(store: &Store, units: &Units, keep: Option<&str>) -> anyhow
         tracing::info!(%table, "dropped an old ledger build");
     }
     Ok(())
+}
+
+/// The event table of the build whose rows are in `table`.
+///
+/// # Errors
+///
+/// When `table` isn't a build table.
+pub fn event_table(table: &str) -> anyhow::Result<String> {
+    let suffix = checked(table)?.strip_prefix(TABLE_PREFIX).unwrap_or_default();
+    Ok(format!("{EVENT_PREFIX}{suffix}"))
+}
+
+/// One event from the build whose rows are in `table`.
+///
+/// # Errors
+///
+/// When `table` isn't a build table or the query fails.
+pub async fn event(store: &Store, table: &str, number: u32) -> anyhow::Result<Option<Event>> {
+    let event_table = event_table(table)?;
+    let event: Option<SerdeWrapper<Event>> = store
+        .query(format!("SELECT * OMIT id FROM ONLY {event_table}:{number}"))
+        .await
+        .with_context(|| format!("reading event {number} from {event_table}"))?
+        .take(0)
+        .with_context(|| format!("reading event {number} from {event_table}"))?;
+    Ok(event.map(|event| event.0))
 }
 
 /// One unit's rows in `table`, oldest first.

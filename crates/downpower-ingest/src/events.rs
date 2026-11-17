@@ -6,19 +6,25 @@
 //! template change stops the backfill instead of quietly dropping fields.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::iter::Peekable;
 use std::ops::Range;
 
 use anyhow::{Context as _, anyhow, bail, ensure};
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use regex::{Captures, Regex};
 use scraper::{ElementRef, Html, Node, Selector};
+use serde::{Deserialize, Serialize};
 
+use crate::ledger::Unknowns;
+use crate::raw::{RawStore, Series};
 use crate::{Res, Void, nrc};
 
 /// The NRC's event categories, as the page labels them. Two were renamed: Research Reactor became
 /// Non-Power Reactor, and General Information became General Information or Other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Category {
     PowerReactor,
     FuelCycleFacility,
@@ -76,7 +82,7 @@ impl Category {
 
 /// One event as its page shows it when fetched. Pages are re-rendered from the NRC's database, so
 /// an old page carries every update made since (DESIGN.md Decision 30).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Event {
     pub number: u32,
     pub category: Category,
@@ -116,7 +122,8 @@ pub struct Event {
 }
 
 /// The header block, which takes one of two shapes by category.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Site {
     /// Power Reactor and Fuel Cycle Facility events.
     Facility(Facility),
@@ -125,7 +132,7 @@ pub enum Site {
 }
 
 /// A power reactor site or a fuel cycle facility.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Facility {
     /// The name as written: `VOGTLE` before 2020, `Vogtle` after, and `Vogtle 3/4` for the new units.
     pub name: String,
@@ -138,7 +145,7 @@ pub struct Facility {
 }
 
 /// A materials licensee, a research reactor, a vendor reporting under Part 21, and so on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Licensee {
     /// The reporting organization: an Agreement State's program, or the licensee itself. The NRC
     /// cuts it at 35 characters.
@@ -153,7 +160,7 @@ pub struct Licensee {
 }
 
 /// A date, a 24-hour time and the time zone as the page writes it (`ET`, `CST`, ...).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Stamp {
     pub date: NaiveDate,
     pub time: NaiveTime,
@@ -161,7 +168,8 @@ pub struct Stamp {
 }
 
 /// The emergency classes of 10 CFR 50.72 and the emergency plans, lowest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EmergencyClass {
     NonEmergency,
     UnusualEvent,
@@ -172,7 +180,7 @@ pub enum EmergencyClass {
 
 /// One entry under "10 CFR Section", e.g. `50.72(b)(2)(iv)(B)` and `RPS ACTUATION - CRITICAL`.
 /// Agreement State events carry a description alone (`AGREEMENT STATE`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Section {
     /// The section as written, spaces and all (`50.72(a) (1) (i)`, `PART 70 APP A (c)`).
     pub code: Option<String>,
@@ -180,7 +188,7 @@ pub struct Section {
 }
 
 /// One row of the Power Reactor Unit Info table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UnitInfo {
     pub unit: u8,
     /// `None` when the cell is blank.
@@ -195,7 +203,8 @@ pub struct UnitInfo {
 
 /// The SCRAM Code column. The codes are kept as written: what separates `A` from `A/R` is not
 /// documented, and several `A` events are actuations while shut down.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Scram {
     /// `N`: no scram.
     No,
@@ -212,7 +221,7 @@ pub enum Scram {
 /// One appended block of the event text: a marker line such as
 /// `* * * UPDATE ON 09/28/2020 AT 1834 EDT FROM MATTHEW SENISON TO JEFFREY WHITED * * *` and the
 /// lines after it. Markers are typed by hand, so any of the fields may be missing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Update {
     pub kind: UpdateKind,
     /// The marker line with its stars trimmed.
@@ -230,7 +239,8 @@ pub struct Update {
 }
 
 /// What a marker says it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UpdateKind {
     /// `UPDATE`, `UPDATED`, and typos like `UDATE` and `UPDATEON`.
     Update,
@@ -242,6 +252,71 @@ pub enum UpdateKind {
     Unretraction,
     /// Any other marker: briefings, summaries, `HOO NOTE`s, closeouts.
     Note,
+}
+
+/// Every stored event, each from the copy fetched last (Decision 28), and what the archive held.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct EventSet {
+    pub events: BTreeMap<u32, Event>,
+    pub archive: Archive,
+}
+
+/// What a build found in the stored event pages.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Archive {
+    /// Pages read: the newest capture of each date that has one, failed pages included.
+    pub pages: u64,
+    /// Pages reading "No events found".
+    pub empty: u64,
+    /// Distinct events.
+    pub events: u64,
+    /// Dates whose page failed to parse and was skipped, under [`Unknowns::Quarantine`].
+    pub failed: Vec<NaiveDate>,
+}
+
+impl EventSet {
+    /// Parses the newest capture of every stored event page. An event on several pages comes from
+    /// the page fetched last, and between pages fetched at the same moment, the later date: pages
+    /// are rendered from the NRC's current database, so the newest fetch is the most current.
+    ///
+    /// # Errors
+    ///
+    /// When the raw store can't be read, or, under [`Unknowns::Fail`], a page fails to parse.
+    pub fn build(store: &RawStore, unknowns: Unknowns) -> Res<Self> {
+        let parser = Parser::new()?;
+        let mut archive = Archive::default();
+        // Each event's newest copy, under the fetch time and page date it came from.
+        let mut newest: BTreeMap<u32, ((DateTime<Utc>, NaiveDate), Event)> = BTreeMap::new();
+        for (date, record) in store.latest(Series::EventNotifications)? {
+            let Some(hash) = &record.sha256 else { continue };
+            archive.pages += 1;
+            let events = match parser.parse(&store.get(hash)?).with_context(|| format!("the event page for {date}")) {
+                Ok(events) => events,
+                Err(error) if unknowns == Unknowns::Quarantine => {
+                    tracing::warn!(%date, error = format!("{error:#}"), "skipping an event page that doesn't parse");
+                    archive.failed.push(date);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            archive.empty += u64::from(events.is_empty());
+            let copy = (record.fetched_at, date);
+            for event in events {
+                match newest.entry(event.number) {
+                    Entry::Occupied(mut slot) if slot.get().0 < copy => {
+                        slot.insert((copy, event));
+                    }
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(slot) => {
+                        slot.insert((copy, event));
+                    }
+                }
+            }
+        }
+        let events: BTreeMap<u32, Event> = newest.into_iter().map(|(number, (_, event))| (number, event)).collect();
+        archive.events = events.len() as u64;
+        Ok(Self { events, archive })
+    }
 }
 
 /// Parses one event page with a parser of its own; see [`Parser::parse`].

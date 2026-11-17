@@ -8,6 +8,7 @@ use std::path::Path;
 use chrono::NaiveDate;
 use pretty_assertions::assert_eq;
 
+use downpower_ingest::events::{Event, EventSet, Site};
 use downpower_ingest::ledger::{self, Source, UnitDay, Unknowns};
 use downpower_ingest::raw::{Hash, RawStore, Series};
 use downpower_ingest::units::Units;
@@ -32,8 +33,12 @@ async fn rows(store: &db::Store, table: &str) -> Vec<UnitDay> {
 }
 
 async fn build_tables(store: &db::Store) -> Vec<String> {
+    tables(store, "unit_day_").await
+}
+
+async fn tables(store: &db::Store, prefix: &str) -> Vec<String> {
     let info: Option<surrealdb::types::SerdeWrapper<serde_json::Value>> = store.query("INFO FOR DB").await.unwrap().take(0).unwrap();
-    let mut tables: Vec<String> = info.unwrap().0["tables"].as_object().unwrap().keys().filter(|table| table.starts_with("unit_day_")).cloned().collect();
+    let mut tables: Vec<String> = info.unwrap().0["tables"].as_object().unwrap().keys().filter(|table| table.starts_with(prefix)).cloned().collect();
     tables.sort();
     tables
 }
@@ -277,5 +282,108 @@ fn ledger_new_content_updates_the_current_table_to_what_a_full_rebuild_gives() {
         assert!((rows_now.len() as u64) < first.summary.days, "{} rows", rows_now.len());
         assert_eq!(served(&store, &emptied.table).await, expected);
         assert_eq!(emptied.summary, stored::current(&store).await.unwrap().unwrap().summary);
+    });
+}
+
+/// Every event the build in `table` stores, by number.
+async fn events(store: &db::Store, table: &str) -> Vec<Event> {
+    let event_table = stored::event_table(table).unwrap();
+    let rows: Vec<surrealdb::types::SerdeWrapper<Event>> = store.query(format!("SELECT * OMIT id FROM {event_table} ORDER BY number")).await.unwrap().take(0).unwrap();
+    rows.into_iter().map(|row| row.0).collect()
+}
+
+/// The event set a build over `data_dir`'s raw store should hold.
+fn expected_events(data_dir: &Path) -> EventSet {
+    EventSet::build(&RawStore::open(data_dir).unwrap(), Unknowns::Fail).unwrap()
+}
+
+fn all(set: &EventSet) -> Vec<Event> {
+    set.events.values().cloned().collect()
+}
+
+/// The fixture event page with EN 54960's licensee renamed, as the NRC re-renders an edited event.
+fn edited_event_page() -> Vec<u8> {
+    let page = String::from_utf8(file("events/2020-10-20.html")).unwrap();
+    page.replacen("Hillis-Carnes Engineering Associates, Inc.", "Hillis-Carnes Engineering", 1).into_bytes()
+}
+
+#[test]
+fn ledger_the_rebuild_stores_each_event_once() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let store = db::open(tmp.path()).await.unwrap();
+
+        let build = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+
+        let expected = expected_events(tmp.path());
+        assert_eq!(events(&store, &build.table).await, all(&expected));
+        assert_eq!(build.events, expected.archive);
+        assert_eq!(build.events.events, 6);
+        assert_eq!(stored::event(&store, &build.table, 54960).await.unwrap(), expected.events.get(&54960).cloned());
+        assert_eq!(stored::event(&store, &build.table, 1).await.unwrap(), None);
+    });
+}
+
+#[test]
+fn ledger_the_event_table_swaps_and_drops_with_its_build() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        fixture(tmp.path());
+        let store = db::open(tmp.path()).await.unwrap();
+
+        let first = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+        let second = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+
+        let event_table = stored::event_table(&second.table).unwrap();
+        assert_eq!(event_table, second.table.replace("unit_day_", "event_"));
+        assert_ne!(event_table, stored::event_table(&first.table).unwrap());
+        assert_eq!(tables(&store, "event_").await, [event_table]);
+        assert_eq!(events(&store, &second.table).await.len(), 6);
+    });
+}
+
+#[test]
+fn ledger_new_event_pages_update_the_event_table_in_place() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let first = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        put(&raw, Series::EventNotifications, "2026-02-11", Some(&file("events/2026-02-11.html")));
+        let added = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        assert_eq!(added.table, first.table, "updated in place");
+        assert_eq!(events(&store, &added.table).await, all(&expected_events(tmp.path())));
+        assert_eq!(added.events.events, 9);
+
+        // An edit the NRC made re-renders an event; a page gone takes its events with it.
+        put(&raw, Series::EventNotifications, "2020-10-20", Some(&edited_event_page()));
+        put(&raw, Series::EventNotifications, "2026-02-11", None);
+        let changed = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        assert_eq!(changed.table, first.table, "updated in place");
+        assert_eq!(events(&store, &changed.table).await, all(&expected_events(tmp.path())));
+        assert_eq!(changed.events.events, 6);
+        let edited = stored::event(&store, &changed.table, 54960).await.unwrap().unwrap();
+        assert!(matches!(edited.site, Site::Licensee(licensee) if licensee.name.as_deref() == Some("Hillis-Carnes Engineering")));
+    });
+}
+
+#[test]
+fn ledger_a_broken_event_page_is_counted_by_a_refresh_and_fails_a_rebuild() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        put(&raw, Series::EventNotifications, "2020-10-21", Some(b"<html><main>not an event page</main></html>"));
+        let store = db::open(tmp.path()).await.unwrap();
+
+        let build = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        let error = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap_err();
+
+        assert_eq!(build.events.failed, [day("2020-10-21")]);
+        assert_eq!(events(&store, &build.table).await.len(), 6);
+        assert!(format!("{error:#}").contains("the event page for 2020-10-21"), "{error:#}");
     });
 }

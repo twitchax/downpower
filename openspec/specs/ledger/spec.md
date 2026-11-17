@@ -237,6 +237,18 @@ Every build SHALL record a summary: rows; first and last day; rows from EIA alon
 - **WHEN** a build meets a page with reasons, a held page, a no-data day EIA fills, and a day with nothing
 - **THEN** its dates count 1 each as `reasons`, `held`, `eia` and `missing`
 
+### Requirement: The event set
+Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events, and the dates of pages skipped for failing to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003)
+
+#### Scenario: An event the NRC edited
+- **WHEN** EN 54960 is on a page fetched 2026-11-13 and, edited, on a page fetched 2026-11-14
+- **THEN** the build holds the edited copy, once
+
+#### Scenario: An event page that doesn't parse
+- **WHEN** the stored page for 2020-10-21 isn't an event page
+- **THEN** a refresh counts 2020-10-21 as failed and keeps the other events
+- **AND** `downpower rebuild` fails naming the event page for 2020-10-21
+
 ### Requirement: Observed and attributed layers
 In the attributed layer a unit-day SHALL carry its attributed family, and in the observed layer it SHALL keep that family only when its method is `precedence_v1` and count as Unattributed otherwise. The barcode cells and monthly series `api` serves are built per layer this way. (PRD-0002 T-013 T-014)
 
@@ -260,12 +272,16 @@ Two builds from the same raw store SHALL produce identical rows and identical su
 - **AND** only the second build's table remains
 
 ### Requirement: Full rebuilds swap in when complete
-A full rebuild SHALL write a fresh build table named `unit_day_<microseconds since epoch>`, make it current together with the `unit` table in one transaction only once it is complete, and then drop every other build table. A rebuild that fails SHALL leave the previous build current and serving, and the next rebuild SHALL drop its partial table. (PRD-0002 T-008)
+A full rebuild SHALL write a fresh build table named `unit_day_<microseconds since epoch>` and its event table `event_<same number>`, make them current together with the `unit` table in one transaction only once complete, and then drop every other build's tables. A rebuild that fails SHALL leave the previous build current and serving, and the next rebuild SHALL drop its partial tables. (PRD-0002 T-008, PRD-0003 T-003)
 
 #### Scenario: A page that fails to parse
 - **WHEN** a rebuild meets a stored page for 2025-07-17 that isn't a status page
 - **THEN** it fails naming 2025-07-17
 - **AND** the previous build stays current with its rows, beside the partial table
+
+#### Scenario: Two rebuilds
+- **WHEN** the ledger is rebuilt twice
+- **THEN** only the second build's `event_<n>` remains, numbered as its `unit_day_<n>`
 
 ### Requirement: Serving through a record-shape change
 A current-build record the running binary cannot parse SHALL count as no build for refresh, so the next refresh rebuilds, while the build table it names SHALL keep serving every data route and SHALL NOT be dropped before a new build is current. (PRD-0002 T-011 T-020)
@@ -276,7 +292,7 @@ A current-build record the running binary cannot parse SHALL count as no build f
 - **AND** the table the record names still serves and still holds its rows
 
 ### Requirement: Refresh rebuilds, updates or does nothing
-Refreshing the ledger SHALL do nothing when the current build's `derived_version` and raw digest match the binary's and the raw store's; SHALL update the current build in place when only the digest moved and the build stored its unit-month hashes; and SHALL rebuild otherwise. A refresh SHALL quarantine unknowns either way, and SHALL log once that it rebuilds over a record in another shape. (PRD-0002 T-008 T-011 T-019 T-020)
+Refreshing the ledger SHALL do nothing when the current build's `derived_version` and raw digest match the binary's and the raw store's; SHALL update the current build in place when only the digest moved and the build stored its unit-month and event hashes; and SHALL rebuild otherwise. A refresh SHALL quarantine unknowns either way, and SHALL log once that it rebuilds over a record in another shape. (PRD-0002 T-008 T-011 T-019 T-020, PRD-0003 T-003)
 
 #### Scenario: A refetch, then new content
 - **WHEN** a page is recorded again with the same bytes, and later a new page is stored
@@ -289,12 +305,17 @@ Refreshing the ledger SHALL do nothing when the current build's `derived_version
 - **AND** when the record is in an older shape, that refresh logs it once, and reading `/status` meanwhile logs nothing
 
 ### Requirement: In-place updates match a full rebuild
-An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, and removed unit-months), rewriting only the unit-months whose rows changed, and SHALL record the new digest and summary under the same table. (PRD-0002 T-019)
+An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, events, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003)
 
 #### Scenario: A new page, then pages withdrawn
 - **WHEN** a page for 2025-07-16 arrives, and later both July pages are recorded as 404s
 - **THEN** each refresh updates the same table
 - **AND** after each, the table's rows, barcode tags and monthly series equal a fresh rebuild's
+
+#### Scenario: A new event page, an edit, and a page withdrawn
+- **WHEN** the 2026-02-11 event page arrives, and later the 2020-10-20 page is recaptured with EN 54960 edited and 2026-02-11 is recorded as a 404
+- **THEN** each refresh updates the same event table, which then equals a fresh build's event set
+- **AND** EN 54960 reads as edited, and the three 2026-02-11 events are gone
 
 ### Requirement: An interrupted update repeats
 An update that fails part way SHALL leave the current build's recorded raw digest unchanged, so the next refresh compares against the build's old unit-month hashes and writes those months again. (PRD-0002 T-019)

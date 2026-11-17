@@ -7,10 +7,12 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use pretty_assertions::assert_eq;
 
-use downpower_ingest::events::{self, Category, EmergencyClass, Event, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo, Update};
+use downpower_ingest::events::{self, Archive, Category, EmergencyClass, Event, EventSet, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo, Update};
+use downpower_ingest::ledger::Unknowns;
+use downpower_ingest::raw::{RawStore, Record, Series, Source};
 
 macro_rules! fixture {
     ($date:literal) => {
@@ -303,4 +305,116 @@ fn uat_event_updates_keep_a_revision_import_as_a_note() {
     assert!(event.updates.iter().all(|update| !update.marker.contains("EN Revision")));
     let revised: Vec<u32> = page("2020-10-20").iter().filter(|event| event.revised.is_some()).map(|event| event.number).collect();
     assert!(revised.contains(&54960));
+}
+
+/// Records `bytes` (or a 404 for `None`) as the event page for `date`, fetched at `fetched`.
+fn put(store: &RawStore, date: &str, fetched: &str, bytes: Option<&[u8]>) {
+    let at: DateTime<Utc> = fetched.parse().unwrap();
+    let record = Record {
+        source: Source::Nrc,
+        series: Series::EventNotifications,
+        date: date.parse().unwrap(),
+        url: String::new(),
+        status: if bytes.is_some() { 200 } else { 404 },
+        captured_at: at,
+        fetched_at: at,
+        sha256: bytes.map(|bytes| store.put(bytes).unwrap()),
+        len: bytes.map(|bytes| bytes.len() as u64),
+    };
+    store.append(&record).unwrap();
+}
+
+const EARLIER: &str = "2026-11-13T00:00:00Z";
+const LATER: &str = "2026-11-14T00:00:00Z";
+
+/// The 2020-10-20 page with EN 54960's licensee renamed, as a re-rendered page after an NRC edit.
+fn edited() -> Vec<u8> {
+    let page = String::from_utf8(fixture!("2020-10-20").to_vec()).unwrap();
+    page.replacen("Hillis-Carnes Engineering Associates, Inc.", "Hillis-Carnes Engineering", 1).into_bytes()
+}
+
+fn licensee_of(set: &EventSet, number: u32) -> Option<String> {
+    match &set.events[&number].site {
+        Site::Licensee(licensee) => licensee.name.clone(),
+        Site::Facility(_) => None,
+    }
+}
+
+#[test]
+fn event_set_holds_every_event_once_with_the_archive_counts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    put(&store, "2020-10-20", EARLIER, Some(fixture!("2020-10-20")));
+    put(&store, "2026-02-11", EARLIER, Some(fixture!("2026-02-11")));
+    put(&store, "1999-02-02", EARLIER, Some(fixture!("1999-02-02")));
+    put(&store, "1999-02-03", EARLIER, None);
+
+    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+
+    assert_eq!(set.events.keys().copied().collect::<Vec<_>>(), [54959, 54960, 54962, 54964, 54965, 55027, 58149, 58151, 58160]);
+    assert!(set.events.iter().all(|(number, event)| *number == event.number));
+    assert_eq!(
+        set.archive,
+        Archive {
+            pages: 3,
+            empty: 1,
+            events: 9,
+            failed: vec![],
+        }
+    );
+}
+
+#[test]
+fn event_set_takes_each_event_from_the_page_fetched_last() {
+    for (original, edit, expected) in [(EARLIER, LATER, "Hillis-Carnes Engineering"), (LATER, EARLIER, "Hillis-Carnes Engineering Associates, Inc.")] {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = RawStore::open(tmp.path()).unwrap();
+        put(&store, "2020-10-20", original, Some(fixture!("2020-10-20")));
+        put(&store, "2020-10-21", edit, Some(&edited()));
+
+        let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+
+        assert_eq!(licensee_of(&set, 54960).as_deref(), Some(expected), "original fetched {original}");
+        assert_eq!(set.archive.events, 6);
+    }
+}
+
+#[test]
+fn event_set_breaks_a_tie_in_fetch_time_by_the_later_page() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    put(&store, "2020-10-21", LATER, Some(&edited()));
+    put(&store, "2020-10-20", LATER, Some(fixture!("2020-10-20")));
+
+    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+
+    assert_eq!(licensee_of(&set, 54960).as_deref(), Some("Hillis-Carnes Engineering"));
+}
+
+#[test]
+fn event_set_reads_only_the_newest_capture_of_a_date() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    put(&store, "2020-10-20", EARLIER, Some(&edited()));
+    put(&store, "2020-10-20", LATER, Some(fixture!("2020-10-20")));
+
+    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+
+    assert_eq!(licensee_of(&set, 54960).as_deref(), Some("Hillis-Carnes Engineering Associates, Inc."));
+    assert_eq!(set.archive.pages, 1);
+}
+
+#[test]
+fn event_set_fails_on_a_broken_page_unless_quarantining() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    put(&store, "2020-10-20", EARLIER, Some(fixture!("2020-10-20")));
+    put(&store, "2020-10-22", EARLIER, Some(b"<html><main>not an event page</main></html>"));
+
+    let error = EventSet::build(&store, Unknowns::Fail).unwrap_err();
+    let quarantined = EventSet::build(&store, Unknowns::Quarantine).unwrap();
+
+    assert!(format!("{error:#}").contains("the event page for 2020-10-22"), "{error:#}");
+    assert_eq!(quarantined.archive.failed, [NaiveDate::from_ymd_opt(2020, 10, 22).unwrap()]);
+    assert_eq!((quarantined.archive.pages, quarantined.archive.events), (2, 6));
 }

@@ -67,7 +67,7 @@ pub fn put(store: &RawStore, series: Series, date: &str, bytes: Option<&[u8]>) {
 }
 
 /// A raw store under `data_dir` holding `status` as the 2025-07-15 page (the real one by default),
-/// a 404 for 07-16, and the `NUC_STATUS` fixture.
+/// a 404 for 07-16, the `NUC_STATUS` fixture, and the 2020-10-20 event page (six events).
 ///
 /// # Panics
 ///
@@ -79,5 +79,6 @@ pub fn raw_store(data_dir: &Path, status: Option<&[u8]>) -> RawStore {
     put(&store, Series::PowerStatus, "2025-07-15", Some(&page));
     put(&store, Series::PowerStatus, "2025-07-16", None);
     put(&store, Series::NucStatus, "2026-11-14", Some(&fixture("eia/nuc_status.txt")));
+    put(&store, Series::EventNotifications, "2020-10-20", Some(&fixture("events/2020-10-20.html")));
     store
 }
