@@ -39,7 +39,7 @@ pub enum Source {
 pub enum Series {
     /// The daily Power Reactor Status Report.
     PowerStatus,
-    /// The Event Notification Report, published on business days.
+    /// The Event Notification Report: the events of one day, weekends included.
     EventNotifications,
     /// EIA's `NUC_STATUS` bulk file, every daily series in one body (`eia`).
     NucStatus,

@@ -2,7 +2,7 @@
 //! `/reading-rm/...html` URLs redirect here). See `docs/research/data-sources.md`.
 
 use anyhow::bail;
-use chrono::{Datelike as _, Days, NaiveDate, Weekday};
+use chrono::{Datelike as _, Days, NaiveDate};
 
 use crate::Res;
 use crate::raw::{Record, Series};
@@ -34,7 +34,7 @@ pub(crate) fn main(text: &str) -> &str {
 pub enum Report {
     /// The daily Power Reactor Status Report.
     PowerStatus,
-    /// The Event Notification Report, published on business days.
+    /// The Event Notification Report: the events of one day, weekends included.
     EventNotifications,
 }
 
@@ -70,16 +70,6 @@ impl Report {
         format!("{COLLECTIONS}/{dir}/{}/{}{suffix}", date.year(), date.format("%Y%m%d"))
     }
 
-    /// Whether the NRC publishes a page for `date`. Event Notification pages skip weekends; federal
-    /// holidays still get one (the 2026-11 backfill drew no 404s).
-    #[must_use]
-    pub fn publishes_on(self, date: NaiveDate) -> bool {
-        match self {
-            Self::PowerStatus => true,
-            Self::EventNotifications => !matches!(date.weekday(), Weekday::Sat | Weekday::Sun),
-        }
-    }
-
     /// How long after its date a page may still change. A status page shows only `Unit | Power`
     /// until it is 28 days old, when the reason column fills in.
     #[must_use]
@@ -88,11 +78,6 @@ impl Report {
             Self::PowerStatus => Days::new(28),
             Self::EventNotifications => Days::new(2),
         }
-    }
-
-    /// The dates in `from..=to` that have a page, oldest first.
-    pub fn dates(self, from: NaiveDate, to: NaiveDate) -> impl Iterator<Item = NaiveDate> {
-        from.iter_days().take_while(move |date| *date <= to).filter(move |date| self.publishes_on(*date))
     }
 }
 
@@ -185,17 +170,6 @@ mod unit {
             Report::EventNotifications.path(day("2024-07-02")),
             "/documents-reports/document-collections/events-reports-associated-with/event-notification-reports/2024/20240702en"
         );
-    }
-
-    #[test]
-    fn event_pages_skip_weekends_and_status_pages_do_not() {
-        // 1999-01-01 is a Friday.
-        let status: Vec<_> = Report::PowerStatus.dates(day("1999-01-01"), day("1999-01-04")).collect();
-        let events: Vec<_> = Report::EventNotifications.dates(day("1999-01-01"), day("1999-01-04")).collect();
-
-        assert_eq!(status.len(), 4);
-        assert_eq!(events, vec![day("1999-01-01"), day("1999-01-04")]);
-        assert_eq!(Report::PowerStatus.dates(FIRST_DAY, day("1998-12-31")).count(), 0);
     }
 
     #[test]

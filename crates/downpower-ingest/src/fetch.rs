@@ -155,7 +155,9 @@ impl Fetcher {
             };
         }
         let mut summary = Summary::default();
-        for date in report.dates(from, to) {
+        // Both series have a page every day. Event Notification pages are filed by the day the
+        // event happened, so a weekend page holds the weekend's events (PRD-0003.log.md#t-005).
+        for date in from.iter_days().take_while(|date| *date <= to) {
             if settled.contains(&date) {
                 summary.skipped += 1;
                 continue;

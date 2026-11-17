@@ -64,7 +64,7 @@ pub struct FetchArgs {
 pub enum SeriesArg {
     /// Power Reactor Status Reports, daily.
     Status,
-    /// Event Notification Reports, business days.
+    /// Event Notification Reports, daily.
     Events,
     /// EIA's daily nuclear outage bulk file, in one request; the dates and interval don't apply.
     NucStatus,

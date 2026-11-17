@@ -54,12 +54,11 @@ The fetcher SHALL request NRC pages from `https://www.nrc.gov` at `/documents-re
 - **THEN** the request goes to `.../power-reactor-status-reports/1999/19990105ps`
 
 ### Requirement: Publishing days
-The fetcher SHALL request a status page for every calendar day and an Event Notification page for every weekday, federal holidays included, oldest first. (PRD-0002 T-002)
+The fetcher SHALL request a status page and an Event Notification page for every calendar day, weekends and federal holidays included, oldest first, since an Event Notification page holds the events of its own day. (PRD-0002 T-002, PRD-0003 T-006)
 
 #### Scenario: A weekend
 - **WHEN** both series are fetched from Friday 1999-01-01 to Monday 1999-01-04
-- **THEN** four status pages are requested
-- **AND** Event Notification pages are requested for 1999-01-01 and 1999-01-04 only
+- **THEN** four status pages and four Event Notification pages are requested
 
 ### Requirement: Declared User-Agent and request pacing
 Every request to nrc.gov and eia.gov SHALL carry the User-Agent `downpower/<major>.<minor> (+https://github.com/twitchax/downpower)`, today `downpower/0.1 (+https://github.com/twitchax/downpower)`. One fetcher SHALL start NRC requests at least its interval apart, retries included, and the interval against nrc.gov SHALL never be under 5 seconds (as `cli` enforces). (PRD-0002 T-002 T-007)

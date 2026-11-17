@@ -147,8 +147,12 @@ The data.gov contact (`Adam.Glazer@nrc.gov`) dates from 2010.
 
 ## NRC Event Notification Reports (ENs)
 
-- **Coverage:** daily pages from **1999**, **business days only**. Weekend events land on the next
-  business day's page.
+- **Coverage:** daily pages from **1999**, **weekends included** (corrected 2026-11-17). A page
+  holds the events that happened that day, so a Saturday page holds Saturday's events: the
+  2008-09-20 page holds EN 44506 to 44508. Wayback holds weekday pages only, which is why this
+  section once said business days, and the 2026-11 backfill fetched weekdays only, so the stored
+  archive has 20 events that happened on a Saturday and 17 on a Sunday against about 3,700 for
+  each weekday (PRD-0003.log.md#t-005).
 - **Wayback coverage** (CDX, 2026-11-12):
   - 1999–2024: 6,504 of 6,783 weekdays. The 279 missing (about 11 a year) are federal holidays.
   - 2025: 230 pages, about 92% of business days.

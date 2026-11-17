@@ -137,6 +137,23 @@ async fn uat_fetch_polite_paces_retries_and_resumes() {
     assert_eq!(log.lock().unwrap().len(), hits.len());
 }
 
+#[tokio::test]
+async fn fetch_requests_an_event_page_for_every_day_weekends_included() {
+    let (base, log) = fake(|path, _| page(&path[path.len() - 10..path.len() - 2]).into_response()).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // 1999-01-01 is a Friday.
+    let summary = Fetcher::new(config(base), RawStore::open(tmp.path()).unwrap())
+        .unwrap()
+        .run(Report::EventNotifications, day("1999-01-01"), day("1999-01-04"))
+        .await
+        .unwrap();
+
+    assert_eq!(summary.stored, 4);
+    let paths: Vec<_> = log.lock().unwrap().iter().map(|(_, path, _)| path[path.len() - 10..].to_owned()).collect();
+    assert_eq!(paths, ["19990101en", "19990102en", "19990103en", "19990104en"]);
+}
+
 /// Each fetch of a date carries a fresh CDN beacon, the way nrc.gov's do; 2099-01-02's report
 /// itself changes on the third fetch.
 fn beaconed(path: &str, nth: usize) -> Response {
