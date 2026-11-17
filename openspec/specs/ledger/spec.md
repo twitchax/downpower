@@ -34,7 +34,7 @@ A report block with no region tables that reads `No data available for this date
 - **THEN** it reads as no data
 
 ### Requirement: Units keyed by docket
-Every unit-day SHALL be keyed by NRC docket (`05000xxx`, or `05200xxx` for Part 52 units) through `catalog/units.csv`, which maps each docket to its display name, every spelling the status pages have used (`;`-separated), and one EIA plant and generator. A malformed docket, or a docket, page spelling or generator listed twice, SHALL fail the catalog. (PRD-0002 T-004)
+Every unit-day SHALL be keyed by NRC docket (`05000xxx`, or `05200xxx` for Part 52 units) through `catalog/units.csv`, which maps each docket to its display name, every spelling the status pages have used (`;`-separated), its Event Notification site names and unit number, and one EIA plant and generator. A malformed or non-reactor docket, or a docket, page spelling or generator listed twice, SHALL fail the catalog. (PRD-0002 T-004, PRD-0003 T-004)
 
 #### Scenario: Two spellings of one unit
 - **WHEN** the catalog lists `LaSalle 1;La Salle 1` for docket 05000373 and EIA plant 6026 generator 1
@@ -249,6 +249,55 @@ Every build SHALL hold one event per number found on the newest capture of each 
 - **THEN** a refresh counts 2020-10-21 as failed and keeps the other events
 - **AND** `downpower rebuild` fails naming the event page for 2020-10-21
 
+### Requirement: Reactor and facility identity
+A Power Reactor event's units SHALL map to dockets by site name and unit number through `catalog/units.csv` and `catalog/facilities.csv`, a Fuel Cycle Facility event by state and name, and a Research or Non-Power Reactor event by license number, whatever its Docket field says. Names SHALL match ignoring case and runs of spaces. (PRD-0003 T-004)
+
+#### Scenario: One site, two catalogs
+- **WHEN** an event names `DRESDEN` units 1 and 2
+- **THEN** it maps to 05000010 from `facilities.csv` and 05000237 from `units.csv`, in that order
+
+#### Scenario: One name, two facilities
+- **WHEN** Fuel Cycle events name `GENERAL ELECTRIC CO.` in IL and in CA
+- **THEN** they map to GE Morris (07200001) and GE Vallecitos (07000754)
+
+#### Scenario: A docket printed a digit short
+- **WHEN** a Non-Power Reactor event prints license R-79 under docket `0500123`
+- **THEN** it maps to 05000123, Missouri S&T
+
+### Requirement: Licensee groups
+Every other event SHALL group by its state and its license number's letters and digits in upper case, under the licensee name on the group's highest-numbered event that has one. A Part 21 event, or one with no state or no digit in its license, SHALL stay ungrouped. (PRD-0003 T-004)
+
+#### Scenario: One license, three spellings
+- **WHEN** IL events 10, 30 and 40 carry license `12-0072206`, `120072206` and `12-00722-06`, named `U S ARMY`, `DEPARTMENT OF ARMY` and nothing
+- **THEN** all three form one group shown as `DEPARTMENT OF ARMY`
+- **AND** the same license in IN is another group
+
+#### Scenario: Placeholders
+- **WHEN** an Agreement State event's license reads `General License` or `N/A`
+- **THEN** the event stays ungrouped
+
+### Requirement: Unknown facilities
+Under the fail policy, an event whose reactor site and unit, fuel cycle facility or non-power reactor license the catalogs lack SHALL fail the build, naming the event and the facility. Under quarantine the event SHALL be stored without an identity and the facility counted with its events in the build's `unknown_facilities`. (PRD-0003 T-004)
+
+#### Scenario: A renamed fuel cycle facility
+- **WHEN** EN 54962 names `Framatome Anp Kennewick` in WA
+- **THEN** `downpower rebuild` fails with `event 54962: unknown Fuel Cycle Facility "Framatome Anp Kennewick" in WA`
+- **AND** a refresh stores EN 54962 without an identity and counts that facility once
+
+### Requirement: The facilities catalog
+`catalog/facilities.csv` SHALL list each facility once by docket, with a kind (`power_reactor` with a reactor docket, EN site names and unit; `fuel_cycle` with EN names; `non_power_reactor` with a reactor docket and license), a two-letter state and a source. A row missing what its kind needs, or a site and unit, state and name, or license listed twice across both catalogs, SHALL fail the catalog. (PRD-0003 T-004)
+
+#### Scenario: A site claimed twice
+- **WHEN** `facilities.csv` lists `PALO VERDE` unit 1, which `units.csv` already lists
+- **THEN** the catalog fails naming `Reactor "PALO VERDE" unit 1`
+
+### Requirement: Event units
+Every build SHALL store, beside each event, its identity, and for each unit of a mapped reactor event one `event_unit_<n>` row keyed `[number, unit]` with the unit's docket, the day the event happened, the unit's scram code and whether the event is retracted. (PRD-0003 T-004)
+
+#### Scenario: Two units scrammed in one event
+- **WHEN** EN 45285 lists Quad Cities units 1 and 2
+- **THEN** the build holds its rows `[45285, 1]` with docket 05000254 and `[45285, 2]` with 05000265
+
 ### Requirement: Observed and attributed layers
 In the attributed layer a unit-day SHALL carry its attributed family, and in the observed layer it SHALL keep that family only when its method is `precedence_v1` and count as Unattributed otherwise. The barcode cells and monthly series `api` serves are built per layer this way. (PRD-0002 T-013 T-014)
 
@@ -257,7 +306,7 @@ In the attributed layer a unit-day SHALL carry its attributed family, and in the
 - **THEN** 07-03 is Refueling in the attributed layer and Unattributed in the observed layer, both at 30%
 
 ### Requirement: Derived version
-Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv` and `catalog/capacity.csv`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009)
+Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv` and `catalog/facilities.csv`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004)
 
 #### Scenario: A stable stamp
 - **WHEN** the derived version is computed twice by one binary
@@ -272,7 +321,7 @@ Two builds from the same raw store SHALL produce identical rows and identical su
 - **AND** only the second build's table remains
 
 ### Requirement: Full rebuilds swap in when complete
-A full rebuild SHALL write a fresh build table named `unit_day_<microseconds since epoch>` and its event table `event_<same number>`, make them current together with the `unit` table in one transaction only once complete, and then drop every other build's tables. A rebuild that fails SHALL leave the previous build current and serving, and the next rebuild SHALL drop its partial tables. (PRD-0002 T-008, PRD-0003 T-003)
+A full rebuild SHALL write a fresh build table named `unit_day_<microseconds since epoch>` and its event tables `event_<same number>` and `event_unit_<same number>`, make them current together with the `unit` table in one transaction only once complete, and then drop every other build's tables. A rebuild that fails SHALL leave the previous build current and serving, and the next rebuild SHALL drop its partial tables. (PRD-0002 T-008, PRD-0003 T-003 T-004)
 
 #### Scenario: A page that fails to parse
 - **WHEN** a rebuild meets a stored page for 2025-07-17 that isn't a status page
@@ -281,7 +330,7 @@ A full rebuild SHALL write a fresh build table named `unit_day_<microseconds sin
 
 #### Scenario: Two rebuilds
 - **WHEN** the ledger is rebuilt twice
-- **THEN** only the second build's `event_<n>` remains, numbered as its `unit_day_<n>`
+- **THEN** only the second build's `event_<n>` and `event_unit_<n>` remain, numbered as its `unit_day_<n>`
 
 ### Requirement: Serving through a record-shape change
 A current-build record the running binary cannot parse SHALL count as no build for refresh, so the next refresh rebuilds, while the build table it names SHALL keep serving every data route and SHALL NOT be dropped before a new build is current. (PRD-0002 T-011 T-020)
@@ -305,7 +354,7 @@ Refreshing the ledger SHALL do nothing when the current build's `derived_version
 - **AND** when the record is in an older shape, that refresh logs it once, and reading `/status` meanwhile logs nothing
 
 ### Requirement: In-place updates match a full rebuild
-An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, events, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003)
+An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, events with their identities and unit rows, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003 T-004)
 
 #### Scenario: A new page, then pages withdrawn
 - **WHEN** a page for 2025-07-16 arrives, and later both July pages are recorded as 404s
@@ -316,6 +365,11 @@ An in-place update SHALL leave the current build serving exactly what a full reb
 - **WHEN** the 2026-02-11 event page arrives, and later the 2020-10-20 page is recaptured with EN 54960 edited and 2026-02-11 is recorded as a 404
 - **THEN** each refresh updates the same event table, which then equals a fresh build's event set
 - **AND** EN 54960 reads as edited, and the three 2026-02-11 events are gone
+
+#### Scenario: A reactor event page arrives, then is withdrawn
+- **WHEN** the 2009-08-24 event page arrives, and later is recorded as a 404
+- **THEN** the first refresh adds its reactor events' unit rows, equal to a fresh build's
+- **AND** the second removes them
 
 ### Requirement: An interrupted update repeats
 An update that fails part way SHALL leave the current build's recorded raw digest unchanged, so the next refresh compares against the build's old unit-month hashes and writes those months again. (PRD-0002 T-019)

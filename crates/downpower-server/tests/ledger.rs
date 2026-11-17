@@ -8,7 +8,8 @@ use std::path::Path;
 use chrono::NaiveDate;
 use pretty_assertions::assert_eq;
 
-use downpower_ingest::events::{Event, EventSet, Site};
+use downpower_ingest::events::{Event, EventSet, Scram, Site};
+use downpower_ingest::facilities::{self, EventUnit, Facilities, Identity};
 use downpower_ingest::ledger::{self, Source, UnitDay, Unknowns};
 use downpower_ingest::raw::{Hash, RawStore, Series};
 use downpower_ingest::units::Units;
@@ -287,18 +288,42 @@ fn ledger_new_content_updates_the_current_table_to_what_a_full_rebuild_gives() {
 
 /// Every event the build in `table` stores, by number.
 async fn events(store: &db::Store, table: &str) -> Vec<Event> {
+    stored_events(store, table).await.into_iter().map(|stored| stored.event).collect()
+}
+
+async fn stored_events(store: &db::Store, table: &str) -> Vec<stored::StoredEvent> {
     let event_table = stored::event_table(table).unwrap();
-    let rows: Vec<surrealdb::types::SerdeWrapper<Event>> = store.query(format!("SELECT * OMIT id FROM {event_table} ORDER BY number")).await.unwrap().take(0).unwrap();
+    let rows: Vec<surrealdb::types::SerdeWrapper<stored::StoredEvent>> = store.query(format!("SELECT * OMIT id FROM {event_table} ORDER BY number")).await.unwrap().take(0).unwrap();
     rows.into_iter().map(|row| row.0).collect()
+}
+
+fn catalog() -> Facilities {
+    Facilities::catalog(&Units::catalog().unwrap()).unwrap()
 }
 
 /// The event set a build over `data_dir`'s raw store should hold.
 fn expected_events(data_dir: &Path) -> EventSet {
-    EventSet::build(&RawStore::open(data_dir).unwrap(), Unknowns::Fail).unwrap()
+    EventSet::build(&RawStore::open(data_dir).unwrap(), &catalog(), Unknowns::Fail).unwrap()
 }
 
 fn all(set: &EventSet) -> Vec<Event> {
     set.events.values().cloned().collect()
+}
+
+/// Every event as a build should store it, identity included.
+fn all_stored(set: &EventSet) -> Vec<stored::StoredEvent> {
+    set.events
+        .iter()
+        .map(|(number, event)| stored::StoredEvent {
+            event: event.clone(),
+            identity: set.identities.get(number).cloned(),
+        })
+        .collect()
+}
+
+/// Every unit row a build should store.
+fn all_units(set: &EventSet) -> Vec<EventUnit> {
+    set.events.iter().flat_map(|(number, event)| facilities::event_units(event, set.identities.get(number))).collect()
 }
 
 /// The fixture event page with EN 54960's licensee renamed, as the NRC re-renders an edited event.
@@ -317,10 +342,12 @@ fn ledger_the_rebuild_stores_each_event_once() {
         let build = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
 
         let expected = expected_events(tmp.path());
-        assert_eq!(events(&store, &build.table).await, all(&expected));
+        assert_eq!(stored_events(&store, &build.table).await, all_stored(&expected));
         assert_eq!(build.events, expected.archive);
         assert_eq!(build.events.events, 6);
-        assert_eq!(stored::event(&store, &build.table, 54960).await.unwrap(), expected.events.get(&54960).cloned());
+        let one = stored::event(&store, &build.table, 54962).await.unwrap().unwrap();
+        assert_eq!(one.event, expected.events[&54962]);
+        assert!(matches!(one.identity, Some(Identity::Facility { docket, .. }) if docket.as_str() == "07001257"));
         assert_eq!(stored::event(&store, &build.table, 1).await.unwrap(), None);
     });
 }
@@ -336,9 +363,11 @@ fn ledger_the_event_table_swaps_and_drops_with_its_build() {
         let second = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
 
         let event_table = stored::event_table(&second.table).unwrap();
+        let unit_table = stored::event_unit_table(&second.table).unwrap();
         assert_eq!(event_table, second.table.replace("unit_day_", "event_"));
+        assert_eq!(unit_table, second.table.replace("unit_day_", "event_unit_"));
         assert_ne!(event_table, stored::event_table(&first.table).unwrap());
-        assert_eq!(tables(&store, "event_").await, [event_table]);
+        assert_eq!(tables(&store, "event_").await, [event_table, unit_table]);
         assert_eq!(events(&store, &second.table).await.len(), 6);
     });
 }
@@ -367,7 +396,7 @@ fn ledger_new_event_pages_update_the_event_table_in_place() {
         assert_eq!(events(&store, &changed.table).await, all(&expected_events(tmp.path())));
         assert_eq!(changed.events.events, 6);
         let edited = stored::event(&store, &changed.table, 54960).await.unwrap().unwrap();
-        assert!(matches!(edited.site, Site::Licensee(licensee) if licensee.name.as_deref() == Some("Hillis-Carnes Engineering")));
+        assert!(matches!(edited.event.site, Site::Licensee(licensee) if licensee.name.as_deref() == Some("Hillis-Carnes Engineering")));
     });
 }
 
@@ -385,5 +414,77 @@ fn ledger_a_broken_event_page_is_counted_by_a_refresh_and_fails_a_rebuild() {
         assert_eq!(build.events.failed, [day("2020-10-21")]);
         assert_eq!(events(&store, &build.table).await.len(), 6);
         assert!(format!("{error:#}").contains("the event page for 2020-10-21"), "{error:#}");
+    });
+}
+
+#[test]
+fn ledger_reactor_events_store_a_row_per_unit_with_its_docket() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        put(&raw, Series::EventNotifications, "2009-08-24", Some(&file("events/2009-08-24.html")));
+        put(&raw, Series::EventNotifications, "2010-05-26", Some(&file("events/2010-05-26.html")));
+        let store = db::open(tmp.path()).await.unwrap();
+
+        let build = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+
+        let rows = stored::event_units(&store, &build.table).await.unwrap();
+        assert_eq!(rows, all_units(&expected_events(tmp.path())));
+        let quad_cities: Vec<(u8, &str)> = rows.iter().filter(|row| row.event == 45285).map(|row| (row.unit, row.docket.as_str())).collect();
+        assert_eq!(quad_cities, [(1, "05000254"), (2, "05000265")]);
+        let vermont_yankee = rows.iter().find(|row| row.event == 45957).unwrap();
+        assert_eq!(
+            (vermont_yankee.docket.as_str(), vermont_yankee.occurred, vermont_yankee.scram),
+            ("05000271", day("2010-05-26"), Some(Scram::Auto))
+        );
+        assert_eq!(rows.len(), 8);
+    });
+}
+
+#[test]
+fn ledger_new_event_pages_update_the_event_unit_table_in_place() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let first = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        assert_eq!(stored::event_units(&store, &first.table).await.unwrap(), []);
+
+        put(&raw, Series::EventNotifications, "2009-08-24", Some(&file("events/2009-08-24.html")));
+        let added = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        assert_eq!(added.table, first.table, "updated in place");
+        assert_eq!(stored::event_units(&store, &added.table).await.unwrap(), all_units(&expected_events(tmp.path())));
+        assert_eq!(stored_events(&store, &added.table).await, all_stored(&expected_events(tmp.path())));
+
+        put(&raw, Series::EventNotifications, "2009-08-24", None);
+        let removed = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+
+        assert_eq!(removed.table, first.table, "updated in place");
+        assert_eq!(stored::event_units(&store, &removed.table).await.unwrap(), []);
+    });
+}
+
+#[test]
+fn ledger_an_unknown_facility_is_quarantined_by_a_refresh_and_fails_a_rebuild() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = raw_store(tmp.path(), None);
+        let page = String::from_utf8(file("events/2020-10-20.html"))
+            .unwrap()
+            .replacen("Framatome Anp Richland", "Framatome Anp Kennewick", 1);
+        put(&raw, Series::EventNotifications, "2020-10-20", Some(page.as_bytes()));
+        let store = db::open(tmp.path()).await.unwrap();
+
+        let build = stored::refresh(&store, tmp.path()).await.unwrap().unwrap();
+        let error = stored::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap_err();
+
+        assert_eq!(
+            build.events.unknown_facilities.into_iter().collect::<Vec<_>>(),
+            [("Fuel Cycle Facility \"Framatome Anp Kennewick\" in WA".to_owned(), 1)]
+        );
+        let quarantined = stored::event(&store, &build.table, 54962).await.unwrap().unwrap();
+        assert_eq!(quarantined.identity, None);
+        assert!(format!("{error:#}").contains("event 54962: unknown Fuel Cycle Facility"), "{error:#}");
     });
 }

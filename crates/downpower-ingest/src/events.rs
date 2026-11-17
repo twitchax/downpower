@@ -17,6 +17,7 @@ use regex::{Captures, Regex};
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::{Deserialize, Serialize};
 
+use crate::facilities::{Facilities, Identity};
 use crate::ledger::Unknowns;
 use crate::raw::{RawStore, Series};
 use crate::{Res, Void, nrc};
@@ -254,10 +255,14 @@ pub enum UpdateKind {
     Note,
 }
 
-/// Every stored event, each from the copy fetched last (Decision 28), and what the archive held.
+/// Every stored event, each from the copy fetched last (Decision 28), who each is about (Decision
+/// 31), and what the archive held.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EventSet {
     pub events: BTreeMap<u32, Event>,
+    /// Every identified event's identity: all but Part 21 vendors, licensees with no license
+    /// number, and quarantined facilities.
+    pub identities: BTreeMap<u32, Identity>,
     pub archive: Archive,
 }
 
@@ -272,17 +277,21 @@ pub struct Archive {
     pub events: u64,
     /// Dates whose page failed to parse and was skipped, under [`Unknowns::Quarantine`].
     pub failed: Vec<NaiveDate>,
+    /// Facilities the catalogs don't know, with their events, under [`Unknowns::Quarantine`].
+    pub unknown_facilities: BTreeMap<String, u64>,
 }
 
 impl EventSet {
-    /// Parses the newest capture of every stored event page. An event on several pages comes from
-    /// the page fetched last, and between pages fetched at the same moment, the later date: pages
-    /// are rendered from the NRC's current database, so the newest fetch is the most current.
+    /// Parses the newest capture of every stored event page and identifies each event with
+    /// `facilities`. An event on several pages comes from the page fetched last, and between pages
+    /// fetched at the same moment, the later date: pages are rendered from the NRC's current
+    /// database, so the newest fetch is the most current.
     ///
     /// # Errors
     ///
-    /// When the raw store can't be read, or, under [`Unknowns::Fail`], a page fails to parse.
-    pub fn build(store: &RawStore, unknowns: Unknowns) -> Res<Self> {
+    /// When the raw store can't be read, or, under [`Unknowns::Fail`], a page fails to parse or
+    /// names a facility the catalogs don't know.
+    pub fn build(store: &RawStore, facilities: &Facilities, unknowns: Unknowns) -> Res<Self> {
         let parser = Parser::new()?;
         let mut archive = Archive::default();
         // Each event's newest copy, under the fetch time and page date it came from.
@@ -315,7 +324,8 @@ impl EventSet {
         }
         let events: BTreeMap<u32, Event> = newest.into_iter().map(|(number, (_, event))| (number, event)).collect();
         archive.events = events.len() as u64;
-        Ok(Self { events, archive })
+        let identities = facilities.identify_all(&events, unknowns, &mut archive.unknown_facilities)?;
+        Ok(Self { events, identities, archive })
     }
 }
 

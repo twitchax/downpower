@@ -253,6 +253,20 @@ Counted with a throwaway Python parser over the newest 200 of each of the 7,271 
   - Part 21's Licensee is often the affected plant, not the vendor.
   - Fuel cycle names follow ownership (B&W Nuclear Operating Group, then BWX Technologies;
     Framatome ANP Richland, then AREVA NP).
+- **Identity** (PRD-0003 T-004, `cargo xtask events`):
+  - Reactor events name a site and unit numbers. Across 148 spellings (82 ignoring case), every one
+    maps to a docket through `catalog/units.csv` or, for 19 units outside the ledger,
+    `catalog/facilities.csv`.
+  - Fuel cycle names need the state too, since `GENERAL ELECTRIC CO.` is GE Morris in IL and GE
+    Vallecitos in CA.
+  - Non-power reactors match on license number. Their Docket field is printed a digit short once
+    (`0500123`, under both R-79 and R-103).
+  - Of 19,725 events, 18,008 are identified: 9,835 reactor events (5 by site alone), 1,066 at a
+    catalogued facility and 7,107 in 4,631 licensee groups, 780 of them under more than one name.
+    The other 1,717 are Part 21 vendors or licensees with no state or no license number.
+  - A license with no digit is a placeholder (`GL`, `N/A`, `General License`). Keying on letters
+    and digits alone merges 126 groups that differ by punctuation (`21-01190.05` and
+    `21-01190-05`).
 - **Appended updates.**
   - The canonical marker is `* * * UPDATE ON 09/28/2020 AT 1834 EDT FROM MATTHEW SENISON TO
     JEFFREY WHITED * * *`. Variants put AT before ON, use `@`, `BY X TO Y` or `FROM X TAKEN BY Y`,

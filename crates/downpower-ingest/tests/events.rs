@@ -1,18 +1,21 @@
-//! The Event Notification parser against live NRC pages from every era (PRD-0003 uat-001). The
-//! fixtures are public-domain pages copied byte for byte out of the raw store, chosen so that
-//! together they hold every category, both header templates, retractions, revision imports, a
-//! fuel cycle facility's comments, NUL placeholders and a page with no events.
+//! The Event Notification parser against live NRC pages from every era (PRD-0003 uat-001, uat-003),
+//! the event set, and facility identity (uat-004). The fixtures are public-domain pages copied byte
+//! for byte out of the raw store, chosen so that together they hold every category, both header
+//! templates, retractions, revision imports, a fuel cycle facility's comments, NUL placeholders and
+//! a page with no events.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use pretty_assertions::assert_eq;
 
 use downpower_ingest::events::{self, Archive, Category, EmergencyClass, Event, EventSet, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo, Update};
+use downpower_ingest::facilities::{Facilities, Identity, Kind};
 use downpower_ingest::ledger::Unknowns;
 use downpower_ingest::raw::{RawStore, Record, Series, Source};
+use downpower_ingest::units::{Docket, Units};
 
 macro_rules! fixture {
     ($date:literal) => {
@@ -349,7 +352,7 @@ fn event_set_holds_every_event_once_with_the_archive_counts() {
     put(&store, "1999-02-02", EARLIER, Some(fixture!("1999-02-02")));
     put(&store, "1999-02-03", EARLIER, None);
 
-    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+    let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
 
     assert_eq!(set.events.keys().copied().collect::<Vec<_>>(), [54959, 54960, 54962, 54964, 54965, 55027, 58149, 58151, 58160]);
     assert!(set.events.iter().all(|(number, event)| *number == event.number));
@@ -360,6 +363,7 @@ fn event_set_holds_every_event_once_with_the_archive_counts() {
             empty: 1,
             events: 9,
             failed: vec![],
+            unknown_facilities: BTreeMap::new(),
         }
     );
 }
@@ -372,7 +376,7 @@ fn event_set_takes_each_event_from_the_page_fetched_last() {
         put(&store, "2020-10-20", original, Some(fixture!("2020-10-20")));
         put(&store, "2020-10-21", edit, Some(&edited()));
 
-        let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+        let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
 
         assert_eq!(licensee_of(&set, 54960).as_deref(), Some(expected), "original fetched {original}");
         assert_eq!(set.archive.events, 6);
@@ -386,7 +390,7 @@ fn event_set_breaks_a_tie_in_fetch_time_by_the_later_page() {
     put(&store, "2020-10-21", LATER, Some(&edited()));
     put(&store, "2020-10-20", LATER, Some(fixture!("2020-10-20")));
 
-    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+    let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
 
     assert_eq!(licensee_of(&set, 54960).as_deref(), Some("Hillis-Carnes Engineering"));
 }
@@ -398,7 +402,7 @@ fn event_set_reads_only_the_newest_capture_of_a_date() {
     put(&store, "2020-10-20", EARLIER, Some(&edited()));
     put(&store, "2020-10-20", LATER, Some(fixture!("2020-10-20")));
 
-    let set = EventSet::build(&store, Unknowns::Fail).unwrap();
+    let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
 
     assert_eq!(licensee_of(&set, 54960).as_deref(), Some("Hillis-Carnes Engineering Associates, Inc."));
     assert_eq!(set.archive.pages, 1);
@@ -411,10 +415,216 @@ fn event_set_fails_on_a_broken_page_unless_quarantining() {
     put(&store, "2020-10-20", EARLIER, Some(fixture!("2020-10-20")));
     put(&store, "2020-10-22", EARLIER, Some(b"<html><main>not an event page</main></html>"));
 
-    let error = EventSet::build(&store, Unknowns::Fail).unwrap_err();
-    let quarantined = EventSet::build(&store, Unknowns::Quarantine).unwrap();
+    let error = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap_err();
+    let quarantined = EventSet::build(&store, &facilities(), Unknowns::Quarantine).unwrap();
 
     assert!(format!("{error:#}").contains("the event page for 2020-10-22"), "{error:#}");
     assert_eq!(quarantined.archive.failed, [NaiveDate::from_ymd_opt(2020, 10, 22).unwrap()]);
     assert_eq!((quarantined.archive.pages, quarantined.archive.events), (2, 6));
+}
+
+fn facilities() -> Facilities {
+    Facilities::catalog(&Units::catalog().unwrap()).unwrap()
+}
+
+fn dockets(texts: &[&str]) -> Vec<Docket> {
+    texts.iter().map(|text| Docket::try_from((*text).to_owned()).unwrap()).collect()
+}
+
+fn fixture_events() -> Vec<Event> {
+    PAGES.iter().flat_map(|(date, ..)| page(date)).collect()
+}
+
+#[test]
+fn uat_event_identity_maps_every_fixture_reactor_event_to_its_units_dockets() {
+    let facilities = facilities();
+    let mut mapped = BTreeMap::new();
+    for event in fixture_events().into_iter().filter(|event| event.category == Category::PowerReactor) {
+        let Ok(Some(Identity::Reactor { dockets })) = facilities.identify(&event) else {
+            panic!("EN {} is not a reactor event", event.number);
+        };
+        assert_eq!(dockets.len(), event.units.len(), "EN {}", event.number);
+        mapped.insert(event.number, dockets);
+    }
+
+    assert_eq!(mapped.len(), 13);
+    assert_eq!(mapped[&35269], dockets(&["05000260", "05000296"]));
+    assert_eq!(mapped[&35270], dockets(&["05000361"]));
+    assert_eq!(mapped[&45285], dockets(&["05000254", "05000265"]));
+    assert_eq!(mapped[&45286], dockets(&["05000302"]));
+    assert_eq!(mapped[&45957], dockets(&["05000271"]));
+}
+
+#[test]
+fn uat_event_identity_maps_fuel_cycle_facilities_and_non_power_reactors_to_their_dockets() {
+    let facilities = facilities();
+    let docket_of = |number: u32| {
+        let event = fixture_events().into_iter().find(|event| event.number == number).unwrap();
+        match facilities.identify(&event) {
+            Ok(Some(Identity::Facility { docket, .. })) => docket,
+            other => panic!("EN {number}: {other:?}"),
+        }
+    };
+
+    assert_eq!(docket_of(35275), dockets(&["07007002"])[0]);
+    assert_eq!(docket_of(47578), dockets(&["07000143"])[0]);
+    assert_eq!(docket_of(54962), dockets(&["07001257"])[0]);
+    assert_eq!(docket_of(35267), dockets(&["05000184"])[0]);
+    assert_eq!(docket_of(58160), dockets(&["05000252"])[0]);
+}
+
+#[test]
+fn uat_event_identity_groups_licensees_by_state_and_license_number() {
+    let facilities = facilities();
+    let identities: BTreeMap<u32, Option<Identity>> = fixture_events().iter().map(|event| (event.number, facilities.identify(event).unwrap())).collect();
+    let group = |state: &str, license: &str, name: &str| {
+        Some(Identity::Licensee {
+            state: state.to_owned(),
+            license: license.to_owned(),
+            name: Some(name.to_owned()),
+        })
+    };
+
+    assert_eq!(identities[&45294], group("MI", "210025806", "ALLEGIANCE HEALTH"));
+    assert_eq!(identities[&45295], identities[&45294]);
+    assert_eq!(identities[&47580], group("CA", "SNM2511", "PACIFIC GAS & ELECTRIC CO."));
+    assert_eq!(identities[&54960], group("VA", "1074531", "Hillis-Carnes Engineering Associates, Inc."));
+    // No license number, a Part 21 vendor, and a licensee with no state stay text.
+    assert_eq!((&identities[&46890], &identities[&55027], &identities[&35599]), (&None, &None, &None));
+}
+
+/// Every facility the event set names, drawn from the stored archive on 2026-11-16: category,
+/// state, name, and a reactor's unit or a non-power reactor's license, one line each.
+const ARCHIVE_FACILITIES: &str = include_str!("fixtures/events/facilities.tsv");
+
+fn archive_event(line: &str) -> Event {
+    let [label, state, name, field] = line.split('\t').collect::<Vec<_>>()[..] else {
+        panic!("{line:?}");
+    };
+    let category = Category::ALL.into_iter().find(|category| category.label() == label).unwrap_or_else(|| panic!("{label:?}"));
+    let mut event = page("2020-10-20").remove(0);
+    event.category = category;
+    event.state = Some(state.to_owned()).filter(|state| !state.is_empty());
+    event.units = Vec::new();
+    if let Category::PowerReactor | Category::FuelCycleFacility = category {
+        let units: Vec<u8> = field.parse().into_iter().collect();
+        event.units = units
+            .iter()
+            .map(|&unit| UnitInfo {
+                unit,
+                scram: None,
+                critical: false,
+                initial_power: 0,
+                initial_mode: None,
+                current_power: 0,
+                current_mode: None,
+            })
+            .collect();
+        event.site = Site::Facility(Facility {
+            name: name.to_owned(),
+            units,
+            rx_type: None,
+            comments: None,
+        });
+    } else {
+        event.site = Site::Licensee(Licensee {
+            rep_org: None,
+            name: Some(name.to_owned()),
+            city: None,
+            county: None,
+            license: Some(field.to_owned()).filter(|license| !license.is_empty()),
+            agreement: false,
+            docket: None,
+        });
+    }
+    event
+}
+
+/// A name as the catalogs match it.
+fn key(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ").to_uppercase()
+}
+
+#[test]
+fn uat_event_identity_knows_every_facility_the_archive_names_and_uses_every_catalog_name() {
+    let facilities = facilities();
+    let units = Units::catalog().unwrap();
+
+    let unknown: Vec<&str> = ARCHIVE_FACILITIES.lines().filter(|line| !matches!(facilities.identify(&archive_event(line)), Ok(Some(_)))).collect();
+    assert_eq!(unknown, Vec::<&str>::new());
+
+    // What the archive uses, keyed as the catalogs match: a reactor site and unit, a fuel cycle
+    // facility's state and name, a non-power reactor's license.
+    let mut used = BTreeSet::new();
+    for line in ARCHIVE_FACILITIES.lines() {
+        let [label, state, name, field] = line.split('\t').collect::<Vec<_>>()[..] else { unreachable!() };
+        used.insert(match label {
+            "Power Reactor" => (key(name), field.to_owned()),
+            "Fuel Cycle Facility" => (key(name), state.to_owned()),
+            _ => (String::new(), field.chars().filter(char::is_ascii_alphanumeric).collect::<String>().to_uppercase()),
+        });
+    }
+    let mut catalogued = BTreeSet::new();
+    for unit in units.all() {
+        catalogued.extend(unit.en_site.iter().map(|site| (key(site), unit.en_unit.to_string())));
+    }
+    for entry in facilities.all() {
+        match entry.kind {
+            Kind::PowerReactor => catalogued.extend(entry.en_names.iter().map(|site| (key(site), entry.unit.unwrap().to_string()))),
+            Kind::FuelCycle => catalogued.extend(entry.en_names.iter().map(|name| (key(name), entry.state.clone()))),
+            Kind::NonPowerReactor => {
+                catalogued.insert((
+                    String::new(),
+                    entry.license.as_deref().unwrap().chars().filter(char::is_ascii_alphanumeric).collect::<String>().to_uppercase(),
+                ));
+            }
+        }
+    }
+    let unused: Vec<_> = catalogued.difference(&used).collect();
+    assert_eq!(unused, Vec::<&(String, String)>::new());
+}
+
+#[test]
+fn uat_event_identity_fails_an_unknown_facility_on_a_rebuild_and_quarantines_it_on_a_refresh() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    let page = String::from_utf8(fixture!("2020-10-20").to_vec()).unwrap();
+    assert_eq!(page.matches("Framatome Anp Richland").count(), 1);
+    put(&store, "2020-10-20", EARLIER, Some(page.replacen("Framatome Anp Richland", "Framatome Anp Kennewick", 1).as_bytes()));
+
+    let error = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap_err();
+    let quarantined = EventSet::build(&store, &facilities(), Unknowns::Quarantine).unwrap();
+
+    assert!(
+        format!("{error:#}").contains("event 54962: unknown Fuel Cycle Facility \"Framatome Anp Kennewick\" in WA; add it to catalog/units.csv or catalog/facilities.csv"),
+        "{error:#}"
+    );
+    assert!(quarantined.events.contains_key(&54962));
+    assert!(!quarantined.identities.contains_key(&54962));
+    assert_eq!(
+        quarantined.archive.unknown_facilities,
+        BTreeMap::from([("Fuel Cycle Facility \"Framatome Anp Kennewick\" in WA".to_owned(), 1)])
+    );
+    assert_eq!(quarantined.identities.len(), 4, "every other event but the Part 21 vendor");
+}
+
+#[test]
+fn event_set_names_a_licensee_group_after_its_newest_event() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    let page = String::from_utf8(fixture!("2009-08-24").to_vec()).unwrap();
+    let newest = "<b>Licensee:</b> ALLEGIANCE HEALTH<br>";
+    let at = page.rfind(newest).unwrap();
+    assert!(at > page.find("id=\"en45295\"").unwrap(), "the last Licensee line is EN 45295's");
+    let page = format!("{}<b>Licensee:</b> HENRY FORD ALLEGIANCE HEALTH<br>{}", &page[..at], &page[at + newest.len()..]);
+    put(&store, "2009-08-24", EARLIER, Some(page.as_bytes()));
+
+    let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
+
+    let name = |number: u32| match &set.identities[&number] {
+        Identity::Licensee { name, .. } => name.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(name(45294).as_deref(), Some("HENRY FORD ALLEGIANCE HEALTH"));
+    assert_eq!(name(45295), name(45294));
 }

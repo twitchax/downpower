@@ -15,6 +15,7 @@ use sha2::{Digest as _, Sha256};
 use crate::attribution::{self, Attributed, Attributor, Evidence, Method};
 use crate::capacity::{self, Annual};
 use crate::eia::NucStatus;
+use crate::facilities::Facilities;
 use crate::raw::{RawStore, Series};
 use crate::status::{self, Row, StatusPage};
 use crate::tags::{Family, Tags};
@@ -24,7 +25,8 @@ use crate::{Res, Void};
 /// Bumped whenever parsing, observing, attributing, the row shape or what a build stores beside its
 /// rows changes, so the deployed server rebuilds (Decision 15). The catalog files are hashed in
 /// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
-pub const LEDGER_VERSION: u32 = 4;
+/// 5: events carry their identity, and reactor events a row per unit (T-004).
+pub const LEDGER_VERSION: u32 = 5;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]
@@ -32,6 +34,8 @@ pub struct Catalog {
     pub tags: Tags,
     pub units: Units,
     pub capacity: Annual,
+    /// Who each Event Notification is about (PRD-0003 T-004).
+    pub facilities: Facilities,
 }
 
 impl Catalog {
@@ -41,9 +45,11 @@ impl Catalog {
     ///
     /// When a table breaks a rule its parser checks.
     pub fn embedded() -> Res<Self> {
+        let units = Units::catalog()?;
         Ok(Self {
             tags: Tags::catalog()?,
-            units: Units::catalog()?,
+            facilities: Facilities::catalog(&units)?,
+            units,
             capacity: Annual::catalog()?,
         })
     }
@@ -55,7 +61,7 @@ impl Catalog {
 pub fn derived_version() -> String {
     let mut hasher = Sha256::new();
     hasher.update(LEDGER_VERSION.to_le_bytes());
-    for catalog in [crate::tags::TAGS, crate::tags::UNCLASSIFIED, crate::units::CATALOG, capacity::CATALOG] {
+    for catalog in [crate::tags::TAGS, crate::tags::UNCLASSIFIED, crate::units::CATALOG, capacity::CATALOG, crate::facilities::CATALOG] {
         // Length-prefixed, so moving text from one file to the next changes the stamp.
         hasher.update((catalog.len() as u64).to_le_bytes());
         hasher.update(catalog.as_bytes());

@@ -1,0 +1,70 @@
+docket,kind,name,state,en_names,unit,license,source
+05000438,power_reactor,Bellefonte 1,AL,Bellefonte,1,,https://www.govinfo.gov/content/pkg/FR-2011-09-19/html/2011-23966.htm
+05000439,power_reactor,Bellefonte 2,AL,Bellefonte,2,,https://www.govinfo.gov/content/pkg/FR-2006-08-28/html/E6-14202.htm (Units 1 and 2: 50-438 and 50-439; CPPR-123 is Unit 2)
+05000155,power_reactor,Big Rock Point,MI,Big Rock Point,1,,https://www.govinfo.gov/content/pkg/FR-2003-07-29/html/03-19215.htm
+05000010,power_reactor,Dresden 1,IL,Dresden,1,,https://www.nrc.gov/info-finder/decommissioning/power-reactor/
+05000213,power_reactor,Haddam Neck,CT,Haddam Neck,1,,https://www.govinfo.gov/content/pkg/FR-2002-11-04/html/02-28014.htm
+05000133,power_reactor,Humboldt Bay 3,CA,Humboldt Bay,3,,https://www.govinfo.gov/content/pkg/FR-2020-03-24/html/2020-06111.htm
+05000409,power_reactor,La Crosse,WI,LaCrosse,1,,https://www.govinfo.gov/content/pkg/FR-2019-10-01/html/2019-21303.htm
+05000309,power_reactor,Maine Yankee,ME,Maine Yankee,1,,https://www.govinfo.gov/content/pkg/FR-1998-07-07/html/98-17920.htm
+05000245,power_reactor,Millstone 1,CT,Millstone,1,,https://www.nrc.gov/info-finder/decommissioning/power-reactor/
+05200017,power_reactor,North Anna 3,VA,North Anna,3,,https://www.govinfo.gov/content/pkg/FR-2016-05-18/html/2016-11750.htm
+05000312,power_reactor,Rancho Seco,CA,Rancho Seco,1,,https://www.govinfo.gov/content/pkg/FR-1995-03-28/html/95-7572.htm
+05000206,power_reactor,San Onofre 1,CA,San Onofre,1,,https://www.nrc.gov/info-finder/decommissioning/power-reactor/
+05200027,power_reactor,Summer 2,SC,Summer;Summer Construction,2,,"https://www.govinfo.gov/content/pkg/FR-2019-03-13/html/2019-04601.htm (Docket Nos. 52-027 and 52-028 for Units 2 and 3, in that order)"
+05200028,power_reactor,Summer 3,SC,Summer;Summer Construction,3,,"https://www.govinfo.gov/content/pkg/FR-2019-03-13/html/2019-04601.htm (Docket Nos. 52-027 and 52-028 for Units 2 and 3, in that order)"
+05000320,power_reactor,Three Mile Island 2,PA,Three Mile Island,2,,https://www.nrc.gov/info-finder/decommissioning/power-reactor/
+05000344,power_reactor,Trojan,OR,Trojan,1,,https://www.govinfo.gov/content/pkg/FR-1996-04-22/html/96-9854.htm
+05000029,power_reactor,Yankee Rowe,MA,Yankee Rowe,1,,https://www.govinfo.gov/content/pkg/FR-1999-10-07/html/99-26145.htm
+05000295,power_reactor,Zion 1,IL,Zion,1,,"https://www.govinfo.gov/content/pkg/FR-2019-12-06/html/2019-26352.htm (DPR-39 and DPR-48, Units 1 and 2 respectively)"
+05000304,power_reactor,Zion 2,IL,Zion,2,,"https://www.govinfo.gov/content/pkg/FR-2019-12-06/html/2019-26352.htm (DPR-39 and DPR-48, Units 1 and 2 respectively)"
+03000001,fuel_cycle,Mallinckrodt Maryland Heights,MO,Mallinckrodt Inc.,,,https://www.govinfo.gov/content/pkg/FR-2000-07-03/html/00-16729.htm (license 24-04206-01)
+04003392,fuel_cycle,Honeywell Metropolis Works,IL,"Allied-Signal Inc.;Honeywell International, Inc.",,,https://www.govinfo.gov/content/pkg/FR-2020-04-15/html/2020-07946.htm; AlliedSignal: https://www.govinfo.gov/content/pkg/FR-1995-05-17/html/95-12103.htm
+07000008,fuel_cycle,Battelle West Jefferson,OH,Battelle Memorial Institute,,,https://www.govinfo.gov/content/pkg/FR-2008-05-08/html/E8-10281.htm (license SNM-7)
+07000027,fuel_cycle,BWXT Nuclear Operations Group Lynchburg,VA,"BWX Technologies;BWX Technologies, Inc.;BWX Technologies Inc.;B&W Nuclear Operating Group, Inc.",,,"https://www.govinfo.gov/content/pkg/FR-2007-04-06/html/E7-6480.htm (license SNM-42, which the event texts cite)"
+07000036,fuel_cycle,Hematite,MO,CE Nuclear Power;Westinghouse Hematite,,,https://www.govinfo.gov/content/pkg/FR-2011-10-31/html/2011-28073.htm; Combustion Engineering: https://www.govinfo.gov/content/pkg/FR-1994-03-28/html/94-7209.htm
+07000143,fuel_cycle,Nuclear Fuel Services Erwin,TN,Nuclear Fuel Services Inc.;Nuclear Fuels Services,,,https://www.govinfo.gov/content/pkg/FR-2003-07-16/html/03-17962.htm
+07000754,fuel_cycle,GE Vallecitos Nuclear Center,CA,General Electric Co.,,,https://www.govinfo.gov/content/pkg/FR-1994-01-20/html/94-1324.htm (license SNM-960)
+07001113,fuel_cycle,Global Nuclear Fuel-Americas Wilmington,NC,GE Nuclear Energy;Global Nuclear Fuel - Americas;Global Laser Enrichment,,,https://www.govinfo.gov/content/pkg/FR-2023-11-01/html/2023-24060.htm; the GLE test loop runs under its license SNM-1097: https://www.govinfo.gov/content/pkg/FR-2024-04-29/html/2024-09097.htm
+07001151,fuel_cycle,Westinghouse Columbia Fuel Fabrication Facility,SC,Westinghouse Electric Corporation;Westinghouse Electric Company,,,"https://www.govinfo.gov/content/pkg/FR-2022-09-16/html/2022-20026.htm (license SNM-1107, which the event texts cite)"
+07001201,fuel_cycle,Framatome Lynchburg (Mt. Athos Road),VA,Framatome ANP,,,https://www.govinfo.gov/content/pkg/FR-2003-05-07/html/03-11304.htm (license SNM-1168)
+07001257,fuel_cycle,Framatome Richland,WA,Siemens Power Corporation;Framatome ANP Richland;AREVA NP Inc Richland,,,https://www.govinfo.gov/content/pkg/FR-1994-06-30/html/94-15943.htm; Framatome ANP Richland: https://www.govinfo.gov/content/pkg/FR-2001-06-18/html/01-15269.htm
+07003103,fuel_cycle,Urenco USA (Louisiana Energy Services),NM,Louisiana Energy Services,,,https://www.govinfo.gov/content/pkg/FR-2024-10-08/html/2024-23264.htm
+07007001,fuel_cycle,Paducah Gaseous Diffusion Plant,KY,Paducah Gaseous Diffusion Plant,,,https://www.govinfo.gov/content/pkg/FR-2013-05-22/html/2013-12186.htm
+07007002,fuel_cycle,Portsmouth Gaseous Diffusion Plant,OH,Portsmouth Gaseous Diffusion Plant,,,https://www.govinfo.gov/content/pkg/FR-2009-08-24/html/E9-20331.htm
+07007003,fuel_cycle,American Centrifuge Lead Cascade,OH,Portsmouth Lead Cascade,,,https://www.govinfo.gov/content/pkg/FR-2024-11-08/html/2024-26006.htm
+07007004,fuel_cycle,American Centrifuge Plant,OH,Portsmouth American Centrifuge;American Centrifuge Plant,,,https://www.govinfo.gov/content/pkg/FR-2009-08-24/html/E9-20331.htm (license SNM-2011)
+07200001,fuel_cycle,GE Morris Operation,IL,General Electric Co.,,,https://www.govinfo.gov/content/pkg/FR-2022-11-17/html/2022-24993.htm
+07200009,fuel_cycle,Fort St. Vrain ISFSI,CO,Fort Saint Vrain ISFSI,,,https://www.govinfo.gov/content/pkg/FR-2025-05-05/html/2025-07727.htm (license SNM-2504)
+05000002,non_power_reactor,University of Michigan,MI,,,R-28,Event Notification pages print this docket with license R-28 (EN 36514)
+05000005,non_power_reactor,Penn State University,PA,,,R-2,Event Notification pages print this docket with license R-2 (EN 40411)
+05000020,non_power_reactor,Massachusetts Institute of Technology,MA,,,R-37,Event Notification pages print this docket with license R-37 (EN 39969)
+05000027,non_power_reactor,Washington State University,WA,,,R-76,Event Notification pages print this docket with license R-76 (EN 38633)
+05000059,non_power_reactor,Texas A&M University (AGN),TX,,,R-23,Event Notification pages print this docket with license R-23 (EN 50749)
+05000073,non_power_reactor,General Electric Hitachi,CA,,,R-33,Event Notification pages print this docket with license R-33 (EN 51789)
+05000083,non_power_reactor,University of Florida,FL,,,R-56,Event Notification pages print this docket with license R-56 (EN 47979)
+05000113,non_power_reactor,University of Arizona,AZ,,,R-52,Event Notification pages print this docket with license R-52 (EN 37191)
+05000123,non_power_reactor,Missouri University of Science and Technology,MO,,,R-79,"Event Notification pages print license R-79 under docket 0500123, a digit short (EN 55266)"
+05000128,non_power_reactor,Texas A&M University,TX,,,R-83,Event Notification pages print this docket with license R-83 (EN 39193)
+05000150,non_power_reactor,Ohio State University,OH,,,R-75,Event Notification pages print this docket with license R-75 (EN 55739)
+05000156,non_power_reactor,University of Wisconsin,WI,,,R-74,Event Notification pages print this docket with license R-74 (EN 35913)
+05000160,non_power_reactor,Georgia Institute of Technology,GA,,,R-97,Event Notification pages print this docket with license R-97 (EN 36859)
+05000166,non_power_reactor,University of Maryland,MD,,,R-70,Event Notification pages print this docket with license R-70 (EN 47180)
+05000170,non_power_reactor,Armed Forces Radiobiology Research Institute,MD,,,R-84,Event Notification pages print this docket with license R-84 (EN 44396)
+05000182,non_power_reactor,Purdue University,IN,,,R-87,Event Notification pages print this docket with license R-87 (EN 53321)
+05000184,non_power_reactor,U.S. Department of Commerce,MD,,,TR-5,Event Notification pages print this docket with license TR-5 (EN 35267)
+05000186,non_power_reactor,University of Missouri,MO,,,R-103,Event Notification pages print this docket with license R-103 (EN 36884)
+05000188,non_power_reactor,Kansas State University,KS,,,R-88,Event Notification pages print this docket with license R-88 (EN 44289)
+05000193,non_power_reactor,State of Rhode Island,RI,,,R-95,Event Notification pages print this docket with license R-95 (EN 47375)
+05000223,non_power_reactor,University of Massachusetts Lowell,MA,,,R-125,Event Notification pages print this docket with license R-125 (EN 58523)
+05000225,non_power_reactor,Rensselaer Polytechnic Institute,NY,,,CX-22,Event Notification pages print this docket with license CX-22 (EN 54222)
+05000243,non_power_reactor,Oregon State University,OR,,,R-106,Event Notification pages print this docket with license R-106 (EN 38023)
+05000252,non_power_reactor,University of New Mexico,NM,,,R-102,Event Notification pages print this docket with license R-102 (EN 54546)
+05000264,non_power_reactor,Dow Chemical Company,MI,,,R-108,Event Notification pages print this docket with license R-108 (EN 54719)
+05000274,non_power_reactor,U.S. Department of the Interior,CO,,,R-113,Event Notification pages print this docket with license R-113 (EN 50009)
+05000284,non_power_reactor,Idaho State University,ID,,,R-110,Event Notification pages print this docket with license R-110 (EN 40776)
+05000288,non_power_reactor,Reed Institute,OR,,,R-112,Event Notification pages print this docket with license R-112 (EN 38310)
+05000297,non_power_reactor,North Carolina State University,NC,,,R-120,Event Notification pages print this docket with license R-120 (EN 44991)
+05000407,non_power_reactor,University of Utah,UT,,,R-126,Event Notification pages print this docket with license R-126 (EN 54625)
+05000602,non_power_reactor,University of Texas,TX,,,R-129,Event Notification pages print this docket with license R-129 (EN 36480)
+05000607,non_power_reactor,United States Air Force,CA,,,R-130,Event Notification pages print this docket with license R-130 (EN 56331)

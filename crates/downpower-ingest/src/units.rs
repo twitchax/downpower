@@ -8,23 +8,35 @@ use std::fmt;
 
 use anyhow::{Context as _, bail, ensure};
 use chrono::NaiveDate;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::Res;
 
 /// The catalog, embedded so the binary carries it.
 pub(crate) const CATALOG: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../catalog/units.csv"));
 
-/// An NRC docket number, e.g. `05000275` (Diablo Canyon 1). Part 50 licenses are `05000xxx` and
-/// Part 52 licenses (Vogtle 3 and 4) are `05200xxx`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// An NRC docket number: the license's part in three digits, then five, e.g. `05000275` (50-275,
+/// Diablo Canyon 1). Reactors are licensed under Part 50, or 52 (Vogtle 3 and 4, `05200025`); the
+/// facilities Event Notifications name add Part 30 (`03000001`), 40 (`04003392`), 70 (`07001113`)
+/// and 72 (`07200001`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Docket(String);
+
+/// The parts a docket can name: reactors first.
+const PARTS: [&str; 6] = ["050", "052", "030", "040", "070", "072"];
 
 impl Docket {
     /// The eight digits.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Whether the docket is a reactor's, under Part 50 or 52.
+    #[must_use]
+    pub fn is_reactor(&self) -> bool {
+        PARTS[..2].iter().any(|part| self.0.starts_with(part))
     }
 }
 
@@ -33,8 +45,14 @@ impl TryFrom<String> for Docket {
 
     fn try_from(value: String) -> Res<Self> {
         let digits = value.len() == 8 && value.bytes().all(|b| b.is_ascii_digit());
-        ensure!(digits && (value.starts_with("05000") || value.starts_with("05200")), "not an NRC power reactor docket: {value:?}");
+        ensure!(digits && PARTS.iter().any(|part| value.starts_with(part)), "not an NRC docket: {value:?}");
         Ok(Self(value))
+    }
+}
+
+impl From<Docket> for String {
+    fn from(docket: Docket) -> Self {
+        docket.0
     }
 }
 
@@ -60,6 +78,10 @@ pub struct Unit {
     pub name: String,
     /// Every spelling the status pages have used for the unit.
     pub nrc_names: Vec<String>,
+    /// Every spelling Event Notifications have used for the unit's site, matched ignoring case, and
+    /// the unit's number there (PRD-0003 T-004).
+    pub en_site: Vec<String>,
+    pub en_unit: u8,
     pub eia: EiaGenerator,
     /// The first day of commercial operation, for a unit that began after 1999. The pages list a
     /// new unit through months of startup testing at low power, which is no lost output.
@@ -90,13 +112,15 @@ impl Unit {
     }
 }
 
-/// A row of `catalog/units.csv`. `nrc_names` holds every spelling, joined by `;`.
+/// A row of `catalog/units.csv`. `nrc_names` and `en_site` hold every spelling, joined by `;`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CsvRow {
     docket: String,
     name: String,
     nrc_names: String,
+    en_site: String,
+    en_unit: u8,
     eia_plant: u32,
     eia_generator: String,
     commercial: Option<NaiveDate>,
@@ -137,9 +161,13 @@ impl Units {
         for (index, row) in csv::Reader::from_reader(csv.as_bytes()).deserialize::<CsvRow>().enumerate() {
             let line = index + 2;
             let row = row.with_context(|| format!("line {line}"))?;
+            let docket = Docket::try_from(row.docket).with_context(|| format!("line {line}"))?;
+            ensure!(docket.is_reactor(), "line {line}: {docket} is not a reactor docket");
             let unit = Unit {
-                docket: Docket::try_from(row.docket).with_context(|| format!("line {line}"))?,
+                docket,
                 nrc_names: row.nrc_names.split(';').map(str::to_owned).collect(),
+                en_site: row.en_site.split(';').map(str::to_owned).collect(),
+                en_unit: row.en_unit,
                 name: row.name,
                 eia: EiaGenerator {
                     plant: row.eia_plant,
@@ -170,6 +198,9 @@ impl Units {
             for name in &unit.nrc_names {
                 ensure!(!name.is_empty() && name.trim() == name, "line {line}: NRC name {name:?} is blank or padded");
                 insert_unique(&mut by_nrc_name, name.clone(), slot).with_context(|| format!("line {line}: NRC name {name:?}"))?;
+            }
+            for name in &unit.en_site {
+                ensure!(!name.is_empty() && name.trim() == name, "line {line}: EN site {name:?} is blank or padded");
             }
             insert_unique(&mut by_eia, unit.eia.clone(), slot).with_context(|| format!("line {line}: EIA generator {:?}", unit.eia))?;
             units.push(unit);
@@ -214,7 +245,7 @@ mod unit {
 
     use super::*;
 
-    const HEADER: &str = "docket,name,nrc_names,eia_plant,eia_generator,commercial,shutdown,restart,source\n";
+    const HEADER: &str = "docket,name,nrc_names,en_site,en_unit,eia_plant,eia_generator,commercial,shutdown,restart,source\n";
 
     fn error(rows: &str) -> String {
         format!("{:#}", Units::parse(&format!("{HEADER}{rows}")).unwrap_err())
@@ -226,7 +257,7 @@ mod unit {
 
     #[test]
     fn every_key_finds_its_unit() {
-        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,6026,1,,,,\n")).unwrap();
+        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,LaSalle;La Salle,1,6026,1,,,,\n")).unwrap();
         let unit = &units.all()[0];
 
         assert_eq!(unit.docket.as_str(), "05000373");
@@ -234,12 +265,32 @@ mod unit {
         assert_eq!(units.by_nrc_name("LaSalle 1"), Some(unit));
         assert_eq!(units.by_eia(&EiaGenerator { plant: 6026, generator: "1".to_owned() }), Some(unit));
         assert_eq!(units.by_nrc_name("Zion 1"), None);
+        assert_eq!(unit.en_site, ["LaSalle", "La Salle"]);
+        assert_eq!(unit.en_unit, 1);
+    }
+
+    #[test]
+    fn dockets_cover_every_part_an_event_names() {
+        for (docket, reactor) in [
+            ("05000275", true),
+            ("05200025", true),
+            ("03000001", false),
+            ("04003392", false),
+            ("07001113", false),
+            ("07200001", false),
+        ] {
+            let docket = Docket::try_from(docket.to_owned()).unwrap();
+            assert_eq!(docket.is_reactor(), reactor, "{docket}");
+        }
+        for docket in ["0500123", "05000O73", "06000001", "070011130"] {
+            assert!(Docket::try_from(docket.to_owned()).is_err(), "{docket}");
+        }
     }
 
     #[test]
     fn service_ends_after_the_shutdown_day_and_resumes_at_restart() {
         let units = Units::parse(&format!(
-            "{HEADER}05000255,Palisades,Palisades,1715,1,,2022-05-20,2025-10-01,test\n05000271,Vermont Yankee,Vermont Yankee,3751,1,,2014-12-29,,test\n05200025,Vogtle 3,Vogtle 3,649,3,2023-07-31,,,test\n"
+            "{HEADER}05000255,Palisades,Palisades,Palisades,1,1715,1,,2022-05-20,2025-10-01,test\n05000271,Vermont Yankee,Vermont Yankee,Vermont Yankee,1,3751,1,,2014-12-29,,test\n05200025,Vogtle 3,Vogtle 3,Vogtle,3,649,3,2023-07-31,,,test\n"
         ))
         .unwrap();
         let [palisades, vermont, vogtle] = units.all() else { panic!("three units") };
@@ -257,17 +308,21 @@ mod unit {
     #[test]
     fn the_table_is_checked() {
         let cases = [
-            ("5000373,LaSalle 1,LaSalle 1,6026,1,,,,\n", "not an NRC power reactor docket"),
-            ("05000373,A,A,1,1,,,,\n05000373,B,B,2,1,,,,\n", "docket 05000373 appears twice"),
-            ("05000373,A,A,1,1,,,,\n05000374,B,A,2,1,,,,\n", "NRC name \"A\": appears twice"),
-            ("05000373,A,A,1,1,,,,\n05000374,B,B,1,1,,,,\n", "EIA generator"),
-            ("05000373,A,A; B,1,1,,,,\n", "blank or padded"),
-            ("05000373,A,A,1,1,,2020-01-01,,\n", "has a date but no source"),
-            ("05000373,A,A,1,1,2020-01-01,,,\n", "has a date but no source"),
-            ("05000373,A,A,1,1,2021-01-01,2020-01-01,,x\n", "shuts down before commercial operation"),
-            ("05000373,A,A,1,1,,2020-01-01,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,1,1,,,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,plant,1,,,,\n", "line 2"),
+            ("5000373,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,\n", "not an NRC docket"),
+            ("07001113,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,\n", "not a reactor docket"),
+            ("05000373,A,A,A,1,1,1,,,,\n05000373,B,B,B,1,2,1,,,,\n", "docket 05000373 appears twice"),
+            ("05000373,A,A,A,1,1,1,,,,\n05000374,B,A,B,1,2,1,,,,\n", "NRC name \"A\": appears twice"),
+            ("05000373,A,A,A,1,1,1,,,,\n05000374,B,B,B,1,1,1,,,,\n", "EIA generator"),
+            ("05000373,A,A; B,A,1,1,1,,,,\n", "blank or padded"),
+            ("05000373,A,A,A; B,1,1,1,,,,\n", "EN site \" B\" is blank or padded"),
+            ("05000373,A,A,,1,1,1,,,,\n", "EN site \"\" is blank or padded"),
+            ("05000373,A,A,A,,1,1,,,,\n", "line 2"),
+            ("05000373,A,A,A,1,1,1,,2020-01-01,,\n", "has a date but no source"),
+            ("05000373,A,A,A,1,1,1,2020-01-01,,,\n", "has a date but no source"),
+            ("05000373,A,A,A,1,1,1,2021-01-01,2020-01-01,,x\n", "shuts down before commercial operation"),
+            ("05000373,A,A,A,1,1,1,,2020-01-01,2019-01-01,x\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,A,1,1,1,,,2019-01-01,x\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,A,1,plant,1,,,,\n", "line 2"),
         ];
         for (rows, expected) in cases {
             let error = error(rows);

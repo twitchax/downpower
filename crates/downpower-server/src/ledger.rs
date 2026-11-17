@@ -1,6 +1,7 @@
 //! The ledger in Surreal (DESIGN.md Decision 15). Each build is its own table, `unit_day_<n>`, one
 //! record per unit-day keyed `[docket, date]`, beside `event_<n>`, one record per Event
-//! Notification keyed by its number. `ledger:current` names the table the site reads along with
+//! Notification keyed by its number, and `event_unit_<n>`, one record per unit of a reactor event
+//! keyed `[number, unit]`. `ledger:current` names the table the site reads along with
 //! the `derived_version` that built it. A rebuild writes a fresh table while the old one
 //! keeps serving, flips `ledger:current` and the `unit` table in one transaction, then deletes the
 //! old table a unit at a time: one `DELETE` of a million rows peaks at 2.1 GB, and a `REMOVE TABLE`
@@ -20,6 +21,7 @@ use downpower_core::barcode::{self, Barcode, Layer, Packer};
 use downpower_core::series::Monthly;
 use downpower_ingest::chunks::{self, Chunk, Chunker, EventHashes, Hashes};
 use downpower_ingest::events::{Archive, Event, EventSet};
+use downpower_ingest::facilities::{self, EventUnit, Identity};
 use downpower_ingest::ledger::{self, Catalog, Summary, UnitDay, Unknowns};
 use downpower_ingest::raw::RawStore;
 use downpower_ingest::units::{Unit, Units};
@@ -40,6 +42,9 @@ const TABLE_PREFIX: &str = "unit_day_";
 
 /// A build's events live in `event_<n>`, beside its `unit_day_<n>`.
 const EVENT_PREFIX: &str = "event_";
+
+/// And its reactor events' units in `event_unit_<n>`, a name `event_` also prefixes.
+const EVENT_UNIT_PREFIX: &str = "event_unit_";
 
 /// A finished build, as `ledger:current` records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,12 +70,35 @@ struct Keyed {
     day: UnitDay,
 }
 
+/// An event as a build stores it: the event as its page shows it, and who it is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredEvent {
+    #[serde(flatten)]
+    pub event: Event,
+    /// `None` for a Part 21 vendor, a licensee with no license number, or a quarantined facility.
+    pub identity: Option<Identity>,
+}
+
 /// An event as stored, under its number.
 #[derive(Serialize, Deserialize)]
 struct KeyedEvent {
     id: u32,
     #[serde(flatten)]
-    event: Event,
+    stored: StoredEvent,
+}
+
+/// A reactor event's unit as stored, under `[number, unit]`.
+#[derive(Serialize, Deserialize)]
+struct KeyedUnit {
+    id: (u32, u8),
+    #[serde(flatten)]
+    row: EventUnit,
+}
+
+/// An event's rows: its own and one per unit of a reactor event.
+struct EventRows {
+    event: KeyedEvent,
+    units: Vec<KeyedUnit>,
 }
 
 /// A `unit` record, keyed by docket.
@@ -226,10 +254,10 @@ enum Write {
     Insert(Vec<Keyed>),
     /// One unit-month's rows, replacing whatever the table holds for that month; none deletes it.
     Replace { docket: String, month: NaiveDate, rows: Vec<Keyed> },
-    /// Events for a fresh event table.
-    InsertEvents(Vec<KeyedEvent>),
-    /// One event, replacing the stored one; `None` deletes it.
-    ReplaceEvent { number: u32, event: Option<Box<KeyedEvent>> },
+    /// Events and their units for a fresh event table.
+    InsertEvents { events: Vec<KeyedEvent>, units: Vec<KeyedUnit> },
+    /// One event and its units, replacing the stored ones; `None` deletes them.
+    ReplaceEvent { number: u32, rows: Option<Box<EventRows>> },
 }
 
 /// Takes each finished unit-month: a fresh build writes every one, an update only those whose hash
@@ -300,36 +328,52 @@ impl Sink {
 fn send_events(set: &EventSet, old: Option<&EventHashes>, sender: &tokio::sync::mpsc::Sender<Write>) -> anyhow::Result<(EventHashes, u64)> {
     let send = |write: Write| sender.blocking_send(write).context("the ledger writer stopped");
     let mut hashes = EventHashes::default();
-    let mut batch = Vec::with_capacity(EVENT_BATCH);
+    let (mut events, mut units) = (Vec::with_capacity(EVENT_BATCH), Vec::new());
     let mut moved = 0;
     for (number, event) in &set.events {
-        let hash = chunks::hash(event);
+        let identity = set.identities.get(number);
+        // The unit rows follow from the event and its identity, so this hash covers them too.
+        let hash = chunks::hash(&(event, identity));
         hashes.0.insert(*number, hash);
-        let keyed = || KeyedEvent { id: *number, event: event.clone() };
+        let rows = || EventRows {
+            event: KeyedEvent {
+                id: *number,
+                stored: StoredEvent {
+                    event: event.clone(),
+                    identity: identity.cloned(),
+                },
+            },
+            units: facilities::event_units(event, identity).into_iter().map(|row| KeyedUnit { id: (row.event, row.unit), row }).collect(),
+        };
         match old {
             None => {
-                batch.push(keyed());
-                if batch.len() >= EVENT_BATCH {
-                    send(Write::InsertEvents(std::mem::replace(&mut batch, Vec::with_capacity(EVENT_BATCH))))?;
+                let EventRows { event, units: rows } = rows();
+                events.push(event);
+                units.extend(rows);
+                if events.len() >= EVENT_BATCH {
+                    send(Write::InsertEvents {
+                        events: std::mem::replace(&mut events, Vec::with_capacity(EVENT_BATCH)),
+                        units: std::mem::take(&mut units),
+                    })?;
                 }
             }
             Some(old) if old.0.get(number) != Some(&hash) => {
                 moved += 1;
                 send(Write::ReplaceEvent {
                     number: *number,
-                    event: Some(Box::new(keyed())),
+                    rows: Some(Box::new(rows())),
                 })?;
             }
             Some(_) => {}
         }
     }
-    if !batch.is_empty() {
-        send(Write::InsertEvents(batch))?;
+    if !events.is_empty() {
+        send(Write::InsertEvents { events, units })?;
     }
     if let Some(old) = old {
         for number in old.0.keys().filter(|number| !hashes.0.contains_key(number)) {
             moved += 1;
-            send(Write::ReplaceEvent { number: *number, event: None })?;
+            send(Write::ReplaceEvent { number: *number, rows: None })?;
         }
     }
     Ok((hashes, moved))
@@ -357,6 +401,7 @@ struct Written {
 /// events go first, so the ledger can resolve references against them (T-005).
 async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, old: Option<Old>) -> anyhow::Result<Written> {
     let event_table = event_table(table)?;
+    let unit_table = event_unit_table(table)?;
     let units = Units::catalog()?;
     let raw = RawStore::open(data_dir)?;
     let raw_digest = raw.digest()?;
@@ -365,7 +410,7 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
     let builder = tokio::task::spawn_blocking(move || {
         let catalog = Catalog::embedded()?;
         let (old_days, old_events) = old.map_or((None, None), |old| (Some(old.days), Some(old.events)));
-        let set = EventSet::build(&raw, unknowns)?;
+        let set = EventSet::build(&raw, &catalog.facilities, unknowns)?;
         let (event_hashes, events_moved) = send_events(&set, old_events.as_ref(), &sender)?;
         let mut sink = Sink {
             old: old_days,
@@ -387,14 +432,20 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
     });
     let insert = format!("INSERT INTO {table} $rows RETURN NONE");
     let replace = format!("BEGIN; DELETE {table}:[$docket, $from]..[$docket, $to] RETURN NONE; INSERT INTO {table} $rows RETURN NONE; COMMIT;");
-    let insert_events = format!("INSERT INTO {event_table} $rows RETURN NONE");
+    let insert_events = format!("INSERT INTO {event_table} $events RETURN NONE; INSERT INTO {unit_table} $units RETURN NONE;");
     while let Some(write) = receiver.recv().await {
         let query = match write {
-            Write::InsertEvents(rows) => store.query(insert_events.as_str()).bind(("rows", SerdeWrapper(rows))),
-            // The number is a u32, so splicing it in is safe.
-            Write::ReplaceEvent { number, event } => store
-                .query(format!("BEGIN; DELETE {event_table}:{number} RETURN NONE; INSERT INTO {event_table} $rows RETURN NONE; COMMIT;"))
-                .bind(("rows", SerdeWrapper(event.map(|event| vec![*event]).unwrap_or_default()))),
+            Write::InsertEvents { events, units } => store.query(insert_events.as_str()).bind(("events", SerdeWrapper(events))).bind(("units", SerdeWrapper(units))),
+            Write::ReplaceEvent { number, rows } => {
+                let (events, units) = rows.map_or_else(|| (Vec::new(), Vec::new()), |rows| (vec![rows.event], rows.units));
+                // The number is a u32, so splicing it in is safe.
+                store
+                    .query(format!(
+                        "BEGIN; DELETE {event_table}:{number} RETURN NONE; DELETE {unit_table}:[{number}, NONE]..=[{number}, ..] RETURN NONE; INSERT INTO {event_table} $events RETURN NONE; INSERT INTO {unit_table} $units RETURN NONE; COMMIT;"
+                    ))
+                    .bind(("events", SerdeWrapper(events)))
+                    .bind(("units", SerdeWrapper(units)))
+            }
             Write::Insert(rows) => store.query(insert.as_str()).bind(("rows", SerdeWrapper(rows))),
             Write::Replace { docket, month, rows } => store
                 .query(replace.as_str())
@@ -490,14 +541,15 @@ pub async fn rebuild(store: &Store, data_dir: &Path, unknowns: Unknowns) -> anyh
     let units = Units::catalog()?;
     let table = format!("{TABLE_PREFIX}{}", Utc::now().timestamp_micros());
     let event_table = event_table(&table)?;
+    let unit_table = event_unit_table(&table)?;
     // A build that died part way left its tables behind; the current one keeps serving.
     let serving = serving(store).await?;
     drop_tables(store, &units, serving.as_deref()).await?;
     store
-        .query(format!("DEFINE TABLE {table} SCHEMALESS; DEFINE TABLE {event_table} SCHEMALESS;"))
+        .query(format!("DEFINE TABLE {table} SCHEMALESS; DEFINE TABLE {event_table} SCHEMALESS; DEFINE TABLE {unit_table} SCHEMALESS;"))
         .await
         .and_then(surrealdb::IndexedResults::check)
-        .with_context(|| format!("defining {table} and {event_table}"))?;
+        .with_context(|| format!("defining {table}, {event_table} and {unit_table}"))?;
     tracing::info!(%table, "rebuilding the ledger");
 
     let written = write(store, data_dir, unknowns, &table, None).await?;
@@ -594,9 +646,9 @@ pub async fn refresh(store: &Store, data_dir: &Path) -> anyhow::Result<Option<Bu
     }
 }
 
-/// Checks that `table` is an event table's name, since it is spliced into queries.
+/// Checks that `table` is an event or event unit table's name, since it is spliced into queries.
 fn checked_events(table: &str) -> anyhow::Result<&str> {
-    let digits = table.strip_prefix(EVENT_PREFIX).unwrap_or_default();
+    let digits = table.strip_prefix(EVENT_UNIT_PREFIX).or_else(|| table.strip_prefix(EVENT_PREFIX)).unwrap_or_default();
     ensure!(!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()), "{table:?} is not an event table");
     Ok(table)
 }
@@ -612,12 +664,15 @@ async fn tables(store: &Store) -> anyhow::Result<Vec<String>> {
 }
 
 /// Drops every build's tables except `keep`'s: a build table a unit at a time and then the empty
-/// table, an event table at once. A build's 20,000 events are about 35 MB, so its `REMOVE TABLE`
-/// stays small beside the 900 MB a million unit-days takes (PRD-0002.log.md, T-008).
+/// table, an event or event unit table at once. A build's 20,000 events are about 35 MB, so its
+/// `REMOVE TABLE` stays small beside the 900 MB a million unit-days takes (PRD-0002.log.md, T-008).
 async fn drop_tables(store: &Store, units: &Units, keep: Option<&str>) -> anyhow::Result<()> {
-    let keep_events = keep.map(event_table).transpose()?;
+    let keep_events = match keep {
+        Some(keep) => vec![event_table(keep)?, event_unit_table(keep)?],
+        None => Vec::new(),
+    };
     let all = tables(store).await?;
-    for event_table in all.iter().filter(|table| table.starts_with(EVENT_PREFIX) && keep_events.as_ref() != Some(*table)) {
+    for event_table in all.iter().filter(|table| table.starts_with(EVENT_PREFIX) && !keep_events.contains(table)) {
         let event_table = checked_events(event_table)?;
         store
             .query(format!("DELETE chunks:[$table] RETURN NONE; REMOVE TABLE {event_table};"))
@@ -667,20 +722,46 @@ pub fn event_table(table: &str) -> anyhow::Result<String> {
     Ok(format!("{EVENT_PREFIX}{suffix}"))
 }
 
+/// The event unit table of the build whose rows are in `table`.
+///
+/// # Errors
+///
+/// When `table` isn't a build table.
+pub fn event_unit_table(table: &str) -> anyhow::Result<String> {
+    let suffix = checked(table)?.strip_prefix(TABLE_PREFIX).unwrap_or_default();
+    Ok(format!("{EVENT_UNIT_PREFIX}{suffix}"))
+}
+
 /// One event from the build whose rows are in `table`.
 ///
 /// # Errors
 ///
 /// When `table` isn't a build table or the query fails.
-pub async fn event(store: &Store, table: &str, number: u32) -> anyhow::Result<Option<Event>> {
+pub async fn event(store: &Store, table: &str, number: u32) -> anyhow::Result<Option<StoredEvent>> {
     let event_table = event_table(table)?;
-    let event: Option<SerdeWrapper<Event>> = store
+    let event: Option<SerdeWrapper<StoredEvent>> = store
         .query(format!("SELECT * OMIT id FROM ONLY {event_table}:{number}"))
         .await
         .with_context(|| format!("reading event {number} from {event_table}"))?
         .take(0)
         .with_context(|| format!("reading event {number} from {event_table}"))?;
     Ok(event.map(|event| event.0))
+}
+
+/// Every reactor event's unit rows from the build whose rows are in `table`, by event and unit.
+///
+/// # Errors
+///
+/// When `table` isn't a build table or the query fails.
+pub async fn event_units(store: &Store, table: &str) -> anyhow::Result<Vec<EventUnit>> {
+    let unit_table = event_unit_table(table)?;
+    let rows: Vec<SerdeWrapper<EventUnit>> = store
+        .query(format!("SELECT * OMIT id FROM {unit_table} ORDER BY event, unit"))
+        .await
+        .with_context(|| format!("reading {unit_table}"))?
+        .take(0)
+        .with_context(|| format!("reading {unit_table}"))?;
+    Ok(rows.into_iter().map(|row| row.0).collect())
 }
 
 /// One unit's rows in `table`, oldest first.

@@ -1,6 +1,7 @@
 //! `cargo xtask events`: parses every stored Event Notification page and prints what the archive
 //! holds, so a template change or a new label shows up before a rebuild meets it (PRD-0003 T-001),
-//! and how well the update markers parse (T-002).
+//! how well the update markers parse (T-002), and who the events are about, with every facility the
+//! catalogs don't know (T-004).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -8,8 +9,11 @@ use std::path::Path;
 use anyhow::{bail, ensure};
 use chrono::Datelike as _;
 
-use downpower_ingest::events::{Category, Event, Parser, UpdateKind};
+use downpower_ingest::events::{Category, Event, Parser, Site, UpdateKind};
+use downpower_ingest::facilities::{Facilities, Identity};
+use downpower_ingest::ledger::Unknowns;
 use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::units::Units;
 
 /// Failures printed in full; the rest are counted.
 const SHOWN: usize = 20;
@@ -90,6 +94,7 @@ pub fn run(data_dir: &Path) -> anyhow::Result<()> {
     }
 
     timeline(&events);
+    let unknown = identity(&events)?;
 
     for failure in failures.iter().take(SHOWN) {
         println!("FAILED {failure}");
@@ -97,7 +102,55 @@ pub fn run(data_dir: &Path) -> anyhow::Result<()> {
     if !failures.is_empty() {
         bail!("{} of {pages} event pages failed to parse", failures.len());
     }
+    if !unknown.is_empty() {
+        bail!("{} facilities the catalogs don't know; add them to catalog/units.csv or catalog/facilities.csv", unknown.len());
+    }
     Ok(())
+}
+
+/// Who the events are about: identified events by kind, the licensee groups, and every facility the
+/// catalogs don't know, which it returns.
+fn identity(events: &[&Event]) -> anyhow::Result<BTreeMap<String, u64>> {
+    let facilities = Facilities::catalog(&Units::catalog()?)?;
+    let set: BTreeMap<u32, Event> = events.iter().map(|event| (event.number, (*event).clone())).collect();
+    let mut unknown = BTreeMap::new();
+    let identities = facilities.identify_all(&set, Unknowns::Quarantine, &mut unknown)?;
+
+    let (mut units, mut sites, mut facility, mut licensee) = (0_usize, 0_usize, 0_usize, 0_usize);
+    // Each licensee group's names as its events spell them, ignoring case.
+    let mut groups: HashMap<(&str, &str), HashSet<String>> = HashMap::new();
+    for (number, identity) in &identities {
+        match identity {
+            Identity::Reactor { dockets } if dockets.is_empty() => sites += 1,
+            Identity::Reactor { .. } => units += 1,
+            Identity::Facility { .. } => facility += 1,
+            Identity::Licensee { state, license, .. } => {
+                licensee += 1;
+                let names = groups.entry((state, license)).or_default();
+                if let Site::Licensee(site) = &set[number].site {
+                    names.extend(site.name.as_deref().map(str::to_uppercase));
+                }
+            }
+        }
+    }
+    let quarantined = usize::try_from(unknown.values().sum::<u64>())?;
+    println!(
+        "identified {} of {} events: {units} reactor events by unit, {sites} by site alone, {facility} at a catalogued facility, {licensee} by licensee; {} stay text",
+        identities.len(),
+        set.len(),
+        set.len() - identities.len() - quarantined
+    );
+    println!(
+        "{} licensee groups by (state, license number), {} of them under more than one name",
+        groups.len(),
+        groups.values().filter(|names| names.len() > 1).count()
+    );
+    let mut by_uses: Vec<(&String, &u64)> = unknown.iter().collect();
+    by_uses.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    for (name, uses) in by_uses.iter().take(SHOWN) {
+        println!("UNKNOWN {name}: {uses} events");
+    }
+    Ok(unknown)
 }
 
 /// The update markers: kinds, how often each field parses, and the banner against the timeline.

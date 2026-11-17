@@ -284,6 +284,9 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
       `catalog/facilities.csv`. It covers reactors outside the ledger (shut down before 1999, or
       under construction), fuel cycle facilities with their ownership history, and research and
       non-power reactors, all keyed by docket.
+    - A fuel cycle name matches with its state, since `GENERAL ELECTRIC CO.` is two GE facilities,
+      and a non-power reactor on its license number, since its printed docket is once a digit
+      short (PRD-0003.log.md#t-004).
     - An unknown facility name fails the backfill and is quarantined at runtime (Decision 21).
     - Materials licensees group by (state, license number), shown under the newest name.
     - Part 21 vendors stay text.
