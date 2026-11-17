@@ -71,12 +71,13 @@ impl Report {
     }
 
     /// How long after its date a page may still change. A status page shows only `Unit | Power`
-    /// until it is 28 days old, when the reason column fills in.
+    /// until it is 28 days old, when the reason column fills in. An Event Notification page's
+    /// events keep changing too: 15.5% are edited after day 2 and 6.9% after day 28 (DESIGN.md
+    /// Decision 29).
     #[must_use]
     pub const fn hold(self) -> Days {
         match self {
-            Self::PowerStatus => Days::new(28),
-            Self::EventNotifications => Days::new(2),
+            Self::PowerStatus | Self::EventNotifications => Days::new(28),
         }
     }
 }
@@ -182,9 +183,9 @@ mod unit {
     }
 
     #[test]
-    fn an_event_page_settles_after_two_days() {
-        assert!(!settles(&fetched(Series::EventNotifications, "2026-11-11", 200, "2026-11-12")));
-        assert!(settles(&fetched(Series::EventNotifications, "2026-11-10", 200, "2026-11-12")));
+    fn an_event_page_settles_after_28_days() {
+        assert!(!settles(&fetched(Series::EventNotifications, "2026-10-15", 200, "2026-11-11")));
+        assert!(settles(&fetched(Series::EventNotifications, "2026-10-15", 200, "2026-11-12")));
     }
 
     #[test]

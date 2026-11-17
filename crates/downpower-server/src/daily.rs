@@ -15,7 +15,8 @@ use surrealdb::types::SerdeWrapper;
 use downpower_ingest::eia::{self, NucStatus};
 use downpower_ingest::fetch::{self, Config, Fetcher, Summary};
 use downpower_ingest::nrc::Report;
-use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::raw::{RawStore, Record, Series};
+use downpower_ingest::status::{self, StatusPage};
 use downpower_ingest::units::Units;
 
 use crate::db::Store;
@@ -36,8 +37,14 @@ const NUC_STATUS_AGE: TimeDelta = TimeDelta::days(7);
 /// catches up after downtime.
 const CATCH_UP: Days = Days::new(60);
 
-/// The Event Notification pages a run looks back over; each settles two days after its date.
-const EVENTS_BACK: Days = Days::new(7);
+/// How far back from today a run fetches every page again, whatever the store holds: yesterday's
+/// and today's status pages, and the last week of Event Notification pages (Decision 12).
+const fn refetched(report: Report) -> Days {
+    match report {
+        Report::PowerStatus => Days::new(1),
+        Report::EventNotifications => Days::new(7),
+    }
+}
 
 /// Where a run fetches from.
 #[derive(Debug, Clone)]
@@ -118,28 +125,49 @@ pub async fn run_once(store: &Store, data_dir: &Path, sources: Option<&Sources>,
     run
 }
 
-/// Decision 12's fetches: the newest status page (numbers only), the page that has just passed its
-/// hold (reasons), any page in between the store lacks, and any older one not yet settled; the
-/// recent Event Notification pages; and a `NUC_STATUS` once the stored one is a week old.
+/// Decision 12's fetches: the status and Event Notification pages [`fetch_report`] names, and a
+/// `NUC_STATUS` once the stored one is a week old.
 async fn fetch(data_dir: &Path, sources: &Sources, today: NaiveDate, run: &mut Run) -> anyhow::Result<()> {
     let raw = RawStore::open(data_dir)?;
-    let stored = raw.latest(Series::PowerStatus)?;
     let mut fetcher = Fetcher::new(sources.nrc.clone(), raw.clone())?;
-    let past_hold = today - Report::PowerStatus.hold();
-    let mut status = fetcher.run(Report::PowerStatus, past_hold - CATCH_UP, past_hold).await?;
-    for date in (past_hold + Days::new(1)).iter_days().take_while(|date| *date < today - Days::new(1)) {
-        if !stored.contains_key(&date) {
-            add(&mut status, fetcher.run(Report::PowerStatus, date, date).await?);
-        }
-    }
-    add(&mut status, fetcher.run(Report::PowerStatus, today - Days::new(1), today).await?);
-    run.status = Some(status);
-    run.events = Some(fetcher.run(Report::EventNotifications, today - EVENTS_BACK, today).await?);
+    run.status = Some(fetch_report(&mut fetcher, &raw, Report::PowerStatus, today).await?);
+    run.events = Some(fetch_report(&mut fetcher, &raw, Report::EventNotifications, today).await?);
     let newest_nuc_status = raw.latest(Series::NucStatus)?.into_values().map(|record| record.fetched_at).max();
     if newest_nuc_status.is_none_or(|fetched_at| Utc::now() - fetched_at >= NUC_STATUS_AGE) {
         run.nuc_status = fetch_nuc_status(&raw, &sources.nuc_status_url).await?;
     }
     Ok(())
+}
+
+/// One report's pages: every unsettled page from [`CATCH_UP`] before the hold's edge through the
+/// edge, the page that has just passed its hold among them; each date between the edge and the
+/// newest pages whose stored copy has no report; and the newest pages, as [`refetched`] counts them.
+async fn fetch_report(fetcher: &mut Fetcher, raw: &RawStore, report: Report, today: NaiveDate) -> anyhow::Result<Summary> {
+    let edge = today - report.hold();
+    let newest = today - refetched(report);
+    let mut summary = fetcher.run(report, edge - CATCH_UP, edge).await?;
+    let stored = raw.latest(report.into())?;
+    for date in (edge + Days::new(1)).iter_days().take_while(|date| *date < newest) {
+        if !reported(raw, report, stored.get(&date))? {
+            add(&mut summary, fetcher.run(report, date, date).await?);
+        }
+    }
+    add(&mut summary, fetcher.run(report, newest, today).await?);
+    Ok(summary)
+}
+
+/// Whether a date's newest capture holds its report. No capture or a 404 doesn't, and neither does
+/// a status page reading "No data available", as a day's page does until the NRC publishes it
+/// (Decision 29). A status page that doesn't parse counts as reported: fetching it again wouldn't
+/// change the parser, and the rebuild reports it.
+fn reported(raw: &RawStore, report: Report, newest: Option<&Record>) -> anyhow::Result<bool> {
+    let Some(hash) = newest.and_then(|record| record.sha256.as_ref()) else {
+        return Ok(false);
+    };
+    Ok(match report {
+        Report::PowerStatus => !matches!(status::parse(&raw.get(hash)?), Ok(StatusPage::NoData)),
+        Report::EventNotifications => true,
+    })
 }
 
 fn add(total: &mut Summary, more: Summary) {

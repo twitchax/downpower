@@ -97,7 +97,7 @@ A fetch run SHALL report how many pages it `stored`, how many it found `unchange
 - **AND** the rerun reports 4 skipped and sends no request
 
 ### Requirement: Holds and settled pages
-A page SHALL count as settled once a 200 or 404 for it was captured on or after its date plus its hold: 28 days for a status page, whose reason column fills in then, and 2 days for an Event Notification page. A run SHALL skip settled pages and fetch the rest again, so an interrupted run resumes where it stopped. (PRD-0002 T-002)
+A page SHALL count as settled once a 200 or 404 for it was captured on or after its date plus its 28-day hold: a status page's reason column fills in then, and an Event Notification page's events are still being edited until then. A run SHALL skip settled pages and fetch the rest again, so an interrupted run resumes where it stopped. (PRD-0002 T-002, PRD-0003 T-006)
 
 #### Scenario: A status page at its hold's edge
 - **WHEN** the 2026-10-14 status page was captured on 2026-11-10
@@ -105,8 +105,9 @@ A page SHALL count as settled once a 200 or 404 for it was captured on or after 
 - **AND** a capture on 2026-11-11 settles it
 
 #### Scenario: An Event Notification page
-- **WHEN** the 2026-11-10 Event Notification page was captured on 2026-11-12
-- **THEN** it is settled
+- **WHEN** the 2026-10-15 Event Notification page was captured on 2026-11-11
+- **THEN** it is not settled
+- **AND** a capture on 2026-11-12 settles it
 
 ### Requirement: Unchanged refetches keep the stored copy
 When a refetched 200 page matches the newest stored copy of its date once every `<script>` naming `BOOMR` (the CDN's beacon) is dropped from both, the fetcher SHALL record the fetch against the stored copy's hash, store no new blob and count it `unchanged`, so the digest holds. Any other difference SHALL be stored as new content. (PRD-0002 T-019)

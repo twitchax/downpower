@@ -75,9 +75,9 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     Notification page, is fetched once into the raw store (Decision 15).
     - Politeness: one request every 5 seconds under `downpower/0.1 (+https://github.com/twitchax/downpower)`,
       the User-Agent the NRC email names, with backoff on 429s and 5xx responses.
-    - A page is settled once it has been fetched far enough past its date: 28 days for a status page
-      (the reason column fills in), 2 days for an EN page (28 from PRD-0003, Decision 29). The
-      fetcher resumes by skipping settled pages.
+    - A page is settled once it has been fetched 28 days or more past its date: a status page's
+      reason column fills in then, and an EN page's events are still being edited (Decision 29).
+      The fetcher resumes by skipping settled pages.
     - **A 403 stops the run,** which shows as a failed run on `/status` (nothing pages anyone). If the block returns, the fallback is the original plan: for
       each report date, the newest Wayback capture taken 28 or more days after it.
     - About 10,200 status pages (roughly 14 hours) and 7,000 EN pages (roughly 10 hours), run once
@@ -94,11 +94,12 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
 12. **Recent reason text comes from re-fetching.** The daily job fetches the newest status page
     (numbers only) and the page that has just passed its 28-day hold (reasons). Until a day passes
     the hold, its readout says "reason not yet published".
-    - The job runs at start and every six hours (revised 2026-11-14). Each run also fetches any day
-      in the hold the store lacks, catches up on unsettled pages up to 60 days past the hold, takes
-      the last week of Event Notification pages, and fetches `NUC_STATUS` once the stored copy is
-      a week old. PRD-0003 adds the refetch of report-less days and the EN hold (Decision 29) and
-      the weekly scram dataset (Decision 33).
+    - The job runs at start and every six hours (revised 2026-11-14). Each run fetches status and
+      Event Notification pages alike: unsettled pages up to 60 days past the hold, any day in the
+      hold with no report yet (nothing stored, a 404, or a status page reading "No data
+      available") until one appears, and the newest pages (yesterday's and today's status pages,
+      the last week of EN pages). It fetches `NUC_STATUS` once the stored copy is a week old.
+      PRD-0003 adds the weekly scram dataset (Decision 33).
     - It rebuilds the ledger only when the raw store's content changed, and records each run for
       `/status`. One task fetches and rebuilds, so two rebuilds never overlap.
 13. **The NRC email.** Aaron sent it to the Chief Data Officer on 2026-11-12.

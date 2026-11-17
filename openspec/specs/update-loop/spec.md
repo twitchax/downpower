@@ -16,19 +16,33 @@ The update loop runs inside `downpower serve`: at start and, with `DOWNPOWER_FET
 - **WHEN** `DOWNPOWER_FETCH` is unset, `yes`, or `daily`
 - **THEN** only `daily` gives the loop sources to fetch from
 
-### Requirement: Status pages a run fetches
-A fetching run SHALL fetch, through one fetcher paced at the nrc.gov rate as `raw-store` describes: every unsettled status page from 60 days before the hold's edge (today − 28 days) through the edge; each date after the edge and before yesterday that the store has no record for; and yesterday's and today's pages. (PRD-0002 T-011)
+### Requirement: Pages a run fetches
+A fetching run SHALL fetch status, then Event Notification, pages through one fetcher paced as `raw-store` describes. For each report it SHALL fetch every unsettled page from 60 days before the hold's edge (today − 28 days) through the edge, each later date with no report yet, and the newest pages, every run: yesterday's and today's status pages, and Event Notification pages from 7 days ago on. (PRD-0002 T-011, PRD-0003 T-006)
 
 #### Scenario: A first run over an empty store
 - **WHEN** a run fetches from a fake nrc.gov into an empty store
 - **THEN** it stores 89 status pages: 61 through the hold's edge, the 26 between it and yesterday, then yesterday and today
+- **AND** 89 Event Notification pages: 61 through the edge, the 20 between it and 7 days ago, then the newest week
 
 #### Scenario: A second run the same day
 - **WHEN** the same day's next run fetches
 - **THEN** it requests only yesterday's and today's status pages
 
-### Requirement: Event Notification pages and NUC_STATUS a run fetches
-A fetching run SHALL also fetch the unsettled Event Notification pages dated from 7 days ago through today, and a fresh `NUC_STATUS`, checked as `raw-store` describes, when none is stored or the newest was fetched 7 or more days ago. (PRD-0002 T-011)
+#### Scenario: An Event Notification page captured inside the 28-day hold
+- **WHEN** the store holds the page at the hold's edge captured two days after its date, the page before it captured 28 days after its date, and a page inside the hold
+- **THEN** a run requests every date from 60 days before the edge through today but those two settled or stored pages
+- **AND** the same day's next run requests only the newest week
+
+### Requirement: Pages with no report yet
+A date between the hold's edge and the newest pages SHALL count as having no report when the store has no capture of it, its newest capture is a 404, or it is a status page reading "No data available", and each run SHALL fetch it again until a report appears. A status page that doesn't parse SHALL count as reported. (PRD-0003 T-006)
+
+#### Scenario: A late status report
+- **WHEN** the page 10 days back reads "No data available" through two runs and then carries a report
+- **THEN** each of those three runs requests it, before yesterday's and today's pages
+- **AND** the run after requests only yesterday's and today's
+
+### Requirement: NUC_STATUS a run fetches
+A fetching run SHALL also fetch a fresh `NUC_STATUS`, checked as `raw-store` describes, when none is stored or the newest was fetched 7 or more days ago. (PRD-0002 T-011)
 
 #### Scenario: NUC_STATUS once a week
 - **WHEN** a second run follows a first that fetched `NUC_STATUS` the same day
