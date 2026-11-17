@@ -274,7 +274,9 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
     - The appended `* * * UPDATE … * * *` blocks parse into a timeline (date, time, from, to,
       text). An "EN Revision Imported" line is a note, not an update.
     - A retracted event stays listed and marked, but counts toward nothing: no scram, no resolved
-      reference, no FFD count.
+      reference, no FFD count. Retracted means the page's own `THIS EVENT HAS BEEN RETRACTED`
+      banner, the NRC's flag: retraction markers without it are mostly retractions later withdrawn,
+      and "retract" in the text is as often a radiography source (PRD-0003.log.md#t-002).
     - The NRC's past versions of a page aren't reconstructed: the appended updates already carry
       the history, and the backfill fetched each page once.
 31. **Facility identity.**

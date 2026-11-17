@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use chrono::{NaiveDate, NaiveTime};
 use pretty_assertions::assert_eq;
 
-use downpower_ingest::events::{self, Category, EmergencyClass, Event, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo};
+use downpower_ingest::events::{self, Category, EmergencyClass, Event, Facility, Licensee, Scram, Section, Site, Stamp, UnitInfo, Update};
 
 macro_rules! fixture {
     ($date:literal) => {
@@ -85,7 +85,11 @@ fn uat_events_parse_a_1999_fuel_cycle_facility_with_comments() {
     let event = event("1999-01-15", 35275);
 
     assert_eq!(
-        Event { text: String::new(), ..event.clone() },
+        Event {
+            text: String::new(),
+            updates: vec![],
+            ..event.clone()
+        },
         Event {
             number: 35275,
             category: Category::FuelCycleFacility,
@@ -109,6 +113,8 @@ fn uat_events_parse_a_1999_fuel_cycle_facility_with_comments() {
             units: vec![],
             title: Some("4-HOUR NRC 91-01 BULLETIN NOTIFICATION INVOLVING ABANDONED EQUIPMENT IN THE X-326 PROCESS BUILDING".to_owned()),
             text: String::new(),
+            updates: vec![],
+            revised: None,
         }
     );
     assert!(event.text.starts_with(
@@ -222,4 +228,79 @@ fn uat_events_parse_a_2026_non_power_reactor_in_region_0() {
     let Site::Licensee(licensee) = event.site else { panic!("not a licensee") };
     assert_eq!((licensee.license.as_deref(), licensee.docket.as_deref(), licensee.agreement), (Some("R-102"), Some("05000252"), true));
     assert_eq!(event.title.as_deref(), Some("TECHNICAL SPECIFICATION VIOLATION"));
+}
+
+/// An update's fields on one line: kind, date, time and zone, then from and to.
+fn summary(update: &Update) -> String {
+    let or_dash = |value: Option<String>| value.unwrap_or_else(|| "-".to_owned());
+    format!(
+        "{:?} {} {} {} | {} | {}",
+        update.kind,
+        or_dash(update.date.map(|date| date.to_string())),
+        or_dash(update.time.map(|time| time.format("%H:%M").to_string())),
+        or_dash(update.zone.clone()),
+        or_dash(update.from.clone()),
+        or_dash(update.to.clone()),
+    )
+}
+
+fn summaries(event: &Event) -> Vec<String> {
+    event.updates.iter().map(summary).collect()
+}
+
+#[test]
+fn uat_event_updates_parse_four_1999_updates_in_three_formats() {
+    let event = event("1999-01-15", 35275);
+
+    assert_eq!(
+        summaries(&event),
+        [
+            "Update 1999-01-18 19:55 - | LARSON | WEAVER",
+            "Update 1999-01-20 16:43 - | HALCOMB | WEAVER",
+            "Update 1999-01-21 18:47 EST | SISSLER | MacKINNON",
+            "Update 1999-01-25 12:55 EST | RICHARD LARSON | FANGIE JONES",
+        ]
+    );
+    assert!(
+        event.updates[0]
+            .text
+            .starts_with("THE FOLLOWING TEXT IS A PORTION OF A FACSIMILE RECEIVED FROM PORTSMOUTH:\n\n\"THIS IS REPORTABLE")
+    );
+    assert!(!event.updates[0].text.contains("* * *"));
+    assert!(event.updates[3].text.ends_with("IRO (Frank Congel)."));
+}
+
+#[test]
+fn uat_event_updates_parse_long_star_runs_email_updates_and_at_signs() {
+    assert_eq!(summaries(&event("1999-01-15", 35599)), ["Update 1999-04-27 16:53 - | JEFF HAVENER | TROCINE"]);
+    assert_eq!(
+        summaries(&event("2009-08-24", 45459)),
+        [
+            "Update 2009-12-01 16:42 EST | PAUL STEPANTSCHENKO | DONG PARK",
+            "Update 2011-04-01 16:13 EST | TOM HORNER | DONG PARK",
+            "Update 2011-12-01 16:11 EST | TOM HORNER | VINCE KLCO",
+        ]
+    );
+    assert_eq!(summaries(&event("2009-08-24", 45287)), ["Update 2009-08-25 15:34 - | GREG MILLER | HOWIE CROUCH"]);
+    assert_eq!(summaries(&event("1999-01-15", 35267)), Vec::<String>::new());
+}
+
+#[test]
+fn uat_event_updates_mark_retractions_by_the_banner() {
+    let retraction = event("2020-10-20", 54960);
+    let banner_only = event("1999-01-15", 35269);
+
+    assert!(retraction.retracted && banner_only.retracted);
+    assert_eq!(summaries(&retraction), ["Retraction 2020-12-08 09:22 EST | ASFAW FENTA | SOLOMON SAHLE"]);
+    assert_eq!(summaries(&banner_only), ["Update 1999-01-20 17:01 - | SWAFFORD | WEAVER"]);
+}
+
+#[test]
+fn uat_event_updates_keep_a_revision_import_as_a_note() {
+    let event = event("2020-10-20", 54960);
+
+    assert_eq!(event.revised, NaiveDate::from_ymd_opt(2020, 12, 8));
+    assert!(event.updates.iter().all(|update| !update.marker.contains("EN Revision")));
+    let revised: Vec<u32> = page("2020-10-20").iter().filter(|event| event.revised.is_some()).map(|event| event.number).collect();
+    assert!(revised.contains(&54960));
 }

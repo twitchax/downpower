@@ -5,10 +5,13 @@
 //! licensee's rather than a facility's). Any other label, order or element fails the parse, so a
 //! template change stops the backfill instead of quietly dropping fields.
 
+use std::borrow::Cow;
 use std::iter::Peekable;
+use std::ops::Range;
 
 use anyhow::{Context as _, anyhow, bail, ensure};
 use chrono::{NaiveDate, NaiveTime};
+use regex::{Captures, Regex};
 use scraper::{ElementRef, Html, Node, Selector};
 
 use crate::{Res, Void, nrc};
@@ -77,7 +80,9 @@ impl Category {
 pub struct Event {
     pub number: u32,
     pub category: Category,
-    /// The page's "THIS EVENT HAS BEEN RETRACTED" banner.
+    /// The page's "THIS EVENT HAS BEEN RETRACTED" banner: the NRC's own flag, and the one that
+    /// counts (Decision 30). A retraction in the timeline is not enough on its own, since many
+    /// were later withdrawn (PRD-0003.log.md#t-002).
     pub retracted: bool,
     pub site: Site,
     /// The NRC region, 1 to 4, or 0 for events headquarters handles (non-power reactors, for one).
@@ -103,6 +108,11 @@ pub struct Event {
     /// The event text with its line breaks, entities decoded and each line trimmed. Updates and
     /// retractions are appended to it as `* * * UPDATE ... * * *` paragraphs.
     pub text: String,
+    /// The appended updates, in the text's order (Decision 30).
+    pub updates: Vec<Update>,
+    /// The date of an `EN Revision Imported Date` line, the NRC's 2020–2023 re-import. A note,
+    /// not an update.
+    pub revised: Option<NaiveDate>,
 }
 
 /// The header block, which takes one of two shapes by category.
@@ -199,18 +209,84 @@ pub enum Scram {
     Manual,
 }
 
-/// Parses one event page, as stored in the raw store. A page that reads "No events found" has no
-/// events.
+/// One appended block of the event text: a marker line such as
+/// `* * * UPDATE ON 09/28/2020 AT 1834 EDT FROM MATTHEW SENISON TO JEFFREY WHITED * * *` and the
+/// lines after it. Markers are typed by hand, so any of the fields may be missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Update {
+    pub kind: UpdateKind,
+    /// The marker line with its stars trimmed.
+    pub marker: String,
+    /// `None` when the marker has no date or a mistyped one (`09//22/99`, `O1/23/01`).
+    pub date: Option<NaiveDate>,
+    pub time: Option<NaiveTime>,
+    pub zone: Option<String>,
+    /// Who called, as written.
+    pub from: Option<String>,
+    /// Who took the call, as written.
+    pub to: Option<String>,
+    /// The lines after the marker, up to the next one.
+    pub text: String,
+}
+
+/// What a marker says it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UpdateKind {
+    /// `UPDATE`, `UPDATED`, and typos like `UDATE` and `UPDATEON`.
+    Update,
+    /// `RETRACTION`, `RETRACTED`, `THIS EVENT WAS RETRACTED`, and so on.
+    Retraction,
+    /// `PARTIAL RETRACTION`: one reporting criterion withdrawn, the event standing.
+    PartialRetraction,
+    /// `UNRETRACTION`: an earlier retraction withdrawn.
+    Unretraction,
+    /// Any other marker: briefings, summaries, `HOO NOTE`s, closeouts.
+    Note,
+}
+
+/// Parses one event page with a parser of its own; see [`Parser::parse`].
 ///
 /// # Errors
 ///
-/// When the page is not UTF-8 or departs from the template: an unknown category, label, label
-/// order or element, a unit table where none belongs (or none where one does), a value that
-/// doesn't parse, or a summary whose event numbers differ from the events below it.
+/// As [`Parser::parse`].
 pub fn parse(page: &[u8]) -> Res<Vec<Event>> {
+    Parser::new()?.parse(page)
+}
+
+/// The event page parser, its selectors and marker patterns compiled once for a run of pages.
+pub struct Parser {
+    selectors: Selectors,
+    markers: Markers,
+}
+
+impl Parser {
+    /// # Errors
+    ///
+    /// When a selector or pattern fails to compile, which the tests rule out.
+    pub fn new() -> Res<Self> {
+        Ok(Self {
+            selectors: Selectors::new()?,
+            markers: Markers::new()?,
+        })
+    }
+
+    /// Parses one event page, as stored in the raw store. A page that reads "No events found" has
+    /// no events.
+    ///
+    /// # Errors
+    ///
+    /// When the page is not UTF-8 or departs from the template: an unknown category, label, label
+    /// order or element, a unit table where none belongs (or none where one does), a value that
+    /// doesn't parse, or a summary whose event numbers differ from the events below it.
+    pub fn parse(&self, page: &[u8]) -> Res<Vec<Event>> {
+        parse_page(self, page)
+    }
+}
+
+fn parse_page(parser: &Parser, page: &[u8]) -> Res<Vec<Event>> {
     let text = std::str::from_utf8(page).context("an event page is not UTF-8")?;
     let html = Html::parse_document(nrc::main(text));
-    let selectors = Selectors::new()?;
+    let selectors = &parser.selectors;
 
     let mut blocks = html.select(&selectors.content);
     let (Some(content), None) = (blocks.next(), blocks.next()) else {
@@ -245,7 +321,7 @@ pub fn parse(page: &[u8]) -> Res<Vec<Event>> {
             grid.value().id()
         );
         let body = children.next().filter(|div| is_class(*div, "div", "border")).context("expected the event text's div.border")?;
-        events.push(event(grid, table, body, &selectors)?);
+        events.push(event(grid, table, body, parser)?);
     }
 
     let mut held: Vec<u32> = events.iter().map(|event| event.number).collect();
@@ -325,14 +401,14 @@ impl Scram {
     }
 }
 
-fn event(grid: ElementRef<'_>, table: Option<ElementRef<'_>>, body: ElementRef<'_>, selectors: &Selectors) -> Res<Event> {
+fn event(grid: ElementRef<'_>, table: Option<ElementRef<'_>>, body: ElementRef<'_>, parser: &Parser) -> Res<Event> {
     ensure!(is_class(grid, "div", "grid"), "expected an event's div.grid, found <{}>", grid.value().name());
     let id = grid.value().id().unwrap_or_default();
     let number: u32 = id.strip_prefix("en").and_then(|number| number.parse().ok()).with_context(|| format!("event id {id:?}"))?;
-    parse_event(number, grid, table, body, selectors).with_context(|| format!("event {number}"))
+    parse_event(number, grid, table, body, parser).with_context(|| format!("event {number}"))
 }
 
-fn parse_event(number: u32, grid: ElementRef<'_>, table: Option<ElementRef<'_>>, body: ElementRef<'_>, selectors: &Selectors) -> Res<Event> {
+fn parse_event(number: u32, grid: ElementRef<'_>, table: Option<ElementRef<'_>>, body: ElementRef<'_>, parser: &Parser) -> Res<Event> {
     let mut blocks = elements(grid)?.into_iter().peekable();
     let mut retracted = false;
     while let Some(banner) = blocks.next_if(|div| is_class(*div, "div", "retracted")) {
@@ -376,13 +452,15 @@ fn parse_event(number: u32, grid: ElementRef<'_>, table: Option<ElementRef<'_>>,
     fields.end()?;
 
     let units = match (category, table) {
-        (Category::PowerReactor, Some(table)) => unit_table(table, selectors)?,
+        (Category::PowerReactor, Some(table)) => unit_table(table, &parser.selectors)?,
         (Category::PowerReactor, None) => bail!("no {UNIT_INFO} table"),
         (_, None) => Vec::new(),
         (category, Some(_)) => bail!("a unit table on a {} event", category.label()),
     };
 
     let text = event_text(body)?;
+    let revised = revised(&text)?;
+    let timeline = parser.markers.updates(&text);
     Ok(Event {
         number,
         category,
@@ -401,6 +479,8 @@ fn parse_event(number: u32, grid: ElementRef<'_>, table: Option<ElementRef<'_>>,
         units,
         title: title(&text),
         text,
+        updates: timeline,
+        revised,
     })
 }
 
@@ -556,8 +636,8 @@ fn power(value: &str) -> Res<u8> {
     Ok(power)
 }
 
-/// The event text: each `<br>` a line break, the page source's own newlines spaces (as a browser
-/// shows them), and each line trimmed.
+/// The event text: each `<br>` a line break, escaped ones included, the page source's own
+/// newlines spaces (as a browser shows them), and each line trimmed.
 fn event_text(body: ElementRef<'_>) -> Res<String> {
     let mut raw = String::new();
     for node in body.children() {
@@ -567,6 +647,10 @@ fn event_text(body: ElementRef<'_>) -> Res<String> {
             Node::Element(element) => bail!("unexpected <{}> in the event text", element.name()),
             _ => {}
         }
+    }
+    // Nine revision headers from December 2025 carry their line breaks escaped, as text.
+    if raw.contains("<br>") {
+        raw = raw.replace("<br>", "\n");
     }
     let lines: Vec<&str> = raw.lines().map(str::trim).collect();
     Ok(lines.join("\n").trim().to_owned())
@@ -588,6 +672,160 @@ fn title(text: &str) -> Option<String> {
     }
     let title = first.trim_matches(|c: char| c == '-' || c.is_whitespace());
     (!title.is_empty()).then(|| title.to_owned())
+}
+
+/// The marker patterns, measured over the archive's 6,103 update and retraction markers
+/// (PRD-0003.log.md#t-002). The `regex` crate has no lookaround, so each pattern consumes the
+/// character on either side of its match and the fields come from named groups.
+struct Markers {
+    date: Regex,
+    spelled: Regex,
+    time: Regex,
+    pair: Regex,
+}
+
+/// A month's name, abbreviated or not.
+const MONTH: &str = "JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEP(?:T|TEMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?";
+const MONTHS: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+impl Markers {
+    fn new() -> Res<Self> {
+        let compile = |pattern: &str| Regex::new(pattern).with_context(|| format!("compiling {pattern:?}"));
+        Ok(Self {
+            // Month, day, and a 2- or 4-digit year, not inside a longer run of digits and slashes.
+            date: compile(r"(?:^|[^\d/])(?P<date>(?P<month>\d{1,2})/(?P<day>\d{1,2})/(?P<year>\d{4}|\d{2}))(?:[^\d/]|$)")?,
+            // `MAY 28, 2021` or `14 APRIL 2021`, which markers have used since about 2018.
+            spelled: compile(&format!(
+                r"(?i)\b(?:(?P<day1>\d{{1,2}})\s+(?P<month1>{MONTH})\.?,?\s+(?P<year1>\d{{4}})|(?P<month2>{MONTH})\.?\s+(?P<day2>\d{{1,2}}),?\s+(?P<year2>\d{{4}}))\b"
+            ))?,
+            // A 24-hour time with or without its colon, then perhaps `HRS` and a zone.
+            time: compile(r"(?i)(?:^|[^\d/:.])(?P<hour>[0-2]\d):?(?P<minute>[0-5]\d)(?:\s*(?:HRS?\.?\s*)?(?P<zone>AK[SD]T|A[SD]T|[ECMPHY][SD]?T)\b)?(?:\D|$)")?,
+            // FROM or BY the caller, then TO, TAKEN BY or RECEIVED BY whoever took the call.
+            pair: compile(r"(?i)\b(?:FROM|BY)\s+(?P<from>[^*@]+?),?\s+(?:TO|TAKEN BY|RECEIVED BY)\s+(?P<to>[^*@]+?)(?:\s+(?:AT|ON|VIA)\b|\s*[@*,]|\s*$)")?,
+        })
+    }
+
+    /// The updates appended to `text`, in order. Each holds the lines after its marker up to the
+    /// next one; the lines before the first marker are the report itself.
+    fn updates(&self, text: &str) -> Vec<Update> {
+        let mut blocks: Vec<(&str, Vec<&str>)> = Vec::new();
+        for line in text.lines() {
+            match (marker(line), blocks.last_mut()) {
+                (Some(marker), _) => blocks.push((marker, Vec::new())),
+                (None, Some((_, lines))) => lines.push(line),
+                (None, None) => {}
+            }
+        }
+        blocks
+            .into_iter()
+            .map(|(marker, lines)| Update {
+                text: lines.join("\n").trim().to_owned(),
+                ..self.update(marker)
+            })
+            .collect()
+    }
+
+    /// One marker's fields, with no text yet.
+    fn update(&self, marker: &str) -> Update {
+        let date = self.numeric_date(marker).or_else(|| self.spelled_date(marker));
+        // The time and the names are read with the date taken out, so its digits read as neither.
+        let rest = match &date {
+            Some((_, range)) => Cow::Owned(format!("{} {}", &marker[..range.start], &marker[range.end..])),
+            None => Cow::Borrowed(marker),
+        };
+        let time = self.time.captures_iter(&rest).find_map(|captures| {
+            let time = NaiveTime::from_hms_opt(number(&captures, "hour")?, number(&captures, "minute")?, 0)?;
+            Some((time, captures.name("zone").map(|zone| zone.as_str().to_ascii_uppercase())))
+        });
+        let pair = self.pair.captures(&rest);
+        let name = |group: &str| {
+            let name = pair.as_ref()?.name(group)?.as_str().trim().trim_end_matches(',').trim_end();
+            (!name.is_empty()).then(|| name.to_owned())
+        };
+        let (time, zone) = time.map_or((None, None), |(time, zone)| (Some(time), zone));
+        Update {
+            kind: kind(marker),
+            marker: marker.to_owned(),
+            date: date.map(|(date, _)| date),
+            time,
+            zone,
+            from: name("from"),
+            to: name("to"),
+            text: String::new(),
+        }
+    }
+}
+
+impl Markers {
+    /// The first valid `M/D/YY` or `M/D/YYYY` date in `marker`, and where it sits.
+    fn numeric_date(&self, marker: &str) -> Option<(NaiveDate, Range<usize>)> {
+        self.date.captures_iter(marker).find_map(|captures| {
+            let year = match number(&captures, "year")? {
+                year @ 0..=49 => 2000 + year,
+                year @ 50..=99 => 1900 + year,
+                year => year,
+            };
+            let date = NaiveDate::from_ymd_opt(i32::try_from(year).ok()?, number(&captures, "month")?, number(&captures, "day")?)?;
+            Some((date, captures.name("date")?.range()))
+        })
+    }
+
+    /// The first valid spelled-out date in `marker`, and where it sits.
+    fn spelled_date(&self, marker: &str) -> Option<(NaiveDate, Range<usize>)> {
+        self.spelled.captures_iter(marker).find_map(|captures| {
+            let either = |first: &str, second: &str| captures.name(first).or_else(|| captures.name(second));
+            let name = either("month1", "month2")?.as_str();
+            let month = MONTHS.iter().position(|month| name.get(..3).is_some_and(|start| start.eq_ignore_ascii_case(month)))?;
+            let day = either("day1", "day2")?.as_str().parse().ok()?;
+            let year = either("year1", "year2")?.as_str().parse().ok()?;
+            let date = NaiveDate::from_ymd_opt(year, u32::try_from(month + 1).ok()?, day)?;
+            Some((date, captures.get(0)?.range()))
+        })
+    }
+}
+
+fn number(captures: &Captures<'_>, group: &str) -> Option<u32> {
+    captures.name(group)?.as_str().parse().ok()
+}
+
+/// The marker on `line`, its stars trimmed: a line that opens with three or more stars, or one
+/// that opens on an update or a retraction and closes with three or more (a handful lost their
+/// opening stars). A line of stars alone is a rule in the text, not a marker.
+fn marker(line: &str) -> Option<&str> {
+    let stars = |chars: &mut dyn Iterator<Item = char>| chars.take_while(|c| *c == '*' || c.is_whitespace()).filter(|c| *c == '*').count();
+    let body = line.trim_matches(|c: char| c == '*' || c.is_whitespace());
+    if body.is_empty() {
+        return None;
+    }
+    if stars(&mut line.chars()) >= 3 {
+        return Some(body);
+    }
+    let opens = |word: &str| body.get(..word.len()).is_some_and(|start| start.eq_ignore_ascii_case(word));
+    ((opens("UPDATE") || opens("RETRACT")) && stars(&mut line.chars().rev()) >= 3).then_some(body)
+}
+
+/// A marker's kind, from the first of its keywords that it holds, typos included.
+fn kind(marker: &str) -> UpdateKind {
+    let upper = marker.to_ascii_uppercase();
+    if upper.contains("UNRETRACT") {
+        UpdateKind::Unretraction
+    } else if upper.contains("PARTIAL RETRACT") {
+        UpdateKind::PartialRetraction
+    } else if upper.contains("RETRACT") {
+        UpdateKind::Retraction
+    } else if ["UPDATE", "UDATE", "UDPATE"].iter().any(|word| upper.contains(word)) {
+        UpdateKind::Update
+    } else {
+        UpdateKind::Note
+    }
+}
+
+/// The date of an `EN Revision Imported Date: 9/29/2020` first line.
+fn revised(text: &str) -> Res<Option<NaiveDate>> {
+    let Some(rest) = text.lines().next().and_then(|line| line.strip_prefix("EN Revision Imported Date")) else {
+        return Ok(None);
+    };
+    date("EN Revision Imported Date", rest.trim_start_matches([' ', ':']).trim()).map(Some)
 }
 
 /// One line of a field block: `<b>Label:</b> value`, or a line with no label, which continues the
@@ -954,6 +1192,8 @@ mod unit {
                 text: "AUTOMATIC REACTOR TRIP\n\n\" At 0512 CST, with Unit 1 at 100 percent power & rising, the reactor tripped.\n\n\
                        \"The Resident Inspector has been notified.\""
                     .to_owned(),
+                updates: vec![],
+                revised: None,
             }
         );
     }
@@ -1239,5 +1479,225 @@ mod unit {
     #[test]
     fn a_page_that_is_not_utf8_fails() {
         assert!(parse(b"\xff\xfe").unwrap_err().to_string().contains("not UTF-8"));
+    }
+
+    fn updates(text: &str) -> Vec<Update> {
+        Parser::new().unwrap().markers.updates(text)
+    }
+
+    /// An update's fields on one line: kind, date, time and zone, then from and to.
+    fn summary(update: &Update) -> String {
+        let or_dash = |value: Option<String>| value.unwrap_or_else(|| "-".to_owned());
+        format!(
+            "{:?} {} {} {} | {} | {}",
+            update.kind,
+            or_dash(update.date.map(|date| date.to_string())),
+            or_dash(update.time.map(|time| time.format("%H:%M").to_string())),
+            or_dash(update.zone.clone()),
+            or_dash(update.from.clone()),
+            or_dash(update.to.clone()),
+        )
+    }
+
+    /// A marker line in each variant the archive holds, and its fields as `summary` writes them.
+    const MARKERS: [(&str, &str); 35] = [
+        (
+            "* * * UPDATE AT 1949 EST ON 01/01/99 BY ALAN BRIESE TO FANGIE JONES * * *",
+            "Update 1999-01-01 19:49 EST | ALAN BRIESE | FANGIE JONES",
+        ),
+        (
+            "* * * UPDATE 1835 EST ON 2/3/99 FROM HOWARD SMITH TO S.SANDIN * * *",
+            "Update 1999-02-03 18:35 EST | HOWARD SMITH | S.SANDIN",
+        ),
+        (
+            "* * * UPDATE at 1047 on 01/27/99 by Fred Smith to Dick Jolliffe * * *",
+            "Update 1999-01-27 10:47 - | Fred Smith | Dick Jolliffe",
+        ),
+        (
+            "***RETRACTION ON 03/05/99 AT 1532ET BY ANDREW WISNIEWSKI TAKEN BY MACKINNON***",
+            "Retraction 1999-03-05 15:32 ET | ANDREW WISNIEWSKI | MACKINNON",
+        ),
+        (
+            "****Update on 01/21/99 at 1602 ET by Bannister taken by MacKinnon****",
+            "Update 1999-01-21 16:02 ET | Bannister | MacKinnon",
+        ),
+        (
+            "* * * RETRACTED ON 2/2/99 AT 1122 EST BY MIKE MEYER TO FANGIE JONES * * *",
+            "Retraction 1999-02-02 11:22 EST | MIKE MEYER | FANGIE JONES",
+        ),
+        (
+            "* * * UPDATED AT 1633 EST ON 01/03/2001 BY ROBERT ALLEN TO FANGIE JONES * * *",
+            "Update 2001-01-03 16:33 EST | ROBERT ALLEN | FANGIE JONES",
+        ),
+        ("* * * UPDATEON 09/20/03 @ 1000 BY KOPCHICK TO GOULD * * *", "Update 2003-09-20 10:00 - | KOPCHICK | GOULD"),
+        (
+            "* * * UDATE ON 01/29/03 AT 1414 EST FROM DON ROLAND TO GERRY WAIG * * *",
+            "Update 2003-01-29 14:14 EST | DON ROLAND | GERRY WAIG",
+        ),
+        (
+            "* * * UDPATE ON 02/27/07 AT 0950 EST FROM ARTHUR TUCKER VIA E-MAIL TO MACKINNON * * *",
+            "Update 2007-02-27 09:50 EST | ARTHUR TUCKER VIA E-MAIL | MACKINNON",
+        ),
+        (
+            "* * * UPDATE ON 3/1/99 @ 1817 BY POWERS TO GOULD ***  EVENT RETRACTION",
+            "Retraction 1999-03-01 18:17 - | POWERS | GOULD",
+        ),
+        (
+            "* * * EVENT RETRACTED AT 1743 EST 3/7/02 BY GRANT FERNSLER TO GERRY WAIG * * *",
+            "Retraction 2002-03-07 17:43 EST | GRANT FERNSLER | GERRY WAIG",
+        ),
+        ("* * * THIS EVENT IS BEING RETRACTED ON 12/20/05 AT 1557 * * *", "Retraction 2005-12-20 15:57 - | - | -"),
+        (
+            "* * * PARTIAL RETRACTION ON 5/15/2020 AT 1442 EDT FROM BUD HINCKLEY TO THOMAS HERRITY * * *",
+            "PartialRetraction 2020-05-15 14:42 EDT | BUD HINCKLEY | THOMAS HERRITY",
+        ),
+        (
+            "* * * UNRETRACTION ON 06/22/05 AT 0945 EDT BY MARTY JOHNSON TO HOWIE CROUCH * * *",
+            "Unretraction 2005-06-22 09:45 EDT | MARTY JOHNSON | HOWIE CROUCH",
+        ),
+        (
+            "* * * RETRACTION AT 12:42 ON 8/3/99 FROM DORAZIO TO POERTNER * * *",
+            "Retraction 1999-08-03 12:42 - | DORAZIO | POERTNER",
+        ),
+        ("* * * UPDATE 0818 1/18/2001FROM OGDEN TAKEN BY STRANSKY * * *", "Update 2001-01-18 08:18 - | OGDEN | STRANSKY"),
+        ("* * * UPDATE AT 1545 BY PROPPER, TAKEN BY WEAVER * * *", "Update - 15:45 - | PROPPER | WEAVER"),
+        ("* * * UPDATE AT 1701 ON 1/20/99, BY SWAFFORD TAKEN BY WEAVER * * *", "Update 1999-01-20 17:01 - | SWAFFORD | WEAVER"),
+        ("* * * UPDATE AT 2257 ON 09//22/99 BY JOE HALCOMB TAKEN BY JOLLIFFE * * *", "Update - 22:57 - | JOE HALCOMB | JOLLIFFE"),
+        (
+            "* * * UPDATE FROM GREG MILLER TO HOWIE CROUCH @ 1534 ON 8/25/09 * * *",
+            "Update 2009-08-25 15:34 - | GREG MILLER | HOWIE CROUCH",
+        ),
+        (
+            "* * * UPDATE RECEIVED VIA EMAIL FROM PAUL STEPANTSCHENKO TO DONG PARK AT 1642 EST ON 12/01/09 * * *",
+            "Update 2009-12-01 16:42 EST | PAUL STEPANTSCHENKO | DONG PARK",
+        ),
+        (
+            "* * * 1058 EDT ON 7/11/2019, UPDATE FROM RANDY IANTORNO (CURTIS-WRIGHT) TO MICHAEL BLOODGOOD * * *",
+            "Update 2019-07-11 10:58 EDT | RANDY IANTORNO (CURTIS-WRIGHT) | MICHAEL BLOODGOOD",
+        ),
+        (
+            "******************** UPDATE AT 1653 ON 04/27/99 FROM JEFF HAVENER TO TROCINE ********************",
+            "Update 1999-04-27 16:53 - | JEFF HAVENER | TROCINE",
+        ),
+        (
+            "* * * Updated on 5/10/00 to reflect correct reactor mode of cold shutdown vice hot shutdown * * *",
+            "Update 2000-05-10 - - | - | -",
+        ),
+        ("UPDATE ON 3/31/2000 BY LAMB, RECEIVED BY WEAVER * * *", "Update 2000-03-31 - - | LAMB | WEAVER"),
+        (
+            "RETRACTION ON 11/18/2008 AT 1214 FROM RANDY WROBLEWSKI TO MARK ABRAMOVITZ * * *",
+            "Retraction 2008-11-18 12:14 - | RANDY WROBLEWSKI | MARK ABRAMOVITZ",
+        ),
+        (
+            "* * * UPDATE ON MAY 28, 2021 AT 1603 EDT FROM ANTHONY CARPENITO TO BRIAN P. SMITH * * *",
+            "Update 2021-05-28 16:03 EDT | ANTHONY CARPENITO | BRIAN P. SMITH",
+        ),
+        (
+            "* * * RETRACTION ON 14 APRIL 2021 AT 1522 EDT FROM BROOKE OLSON TO JOANNA BRIDGE * * *",
+            "Retraction 2021-04-14 15:22 EDT | BROOKE OLSON | JOANNA BRIDGE",
+        ),
+        (
+            "* * * UPDATE ON SEPTEMBER 22, 2026, AT 1102 EDT FROM NATHANIEL KISHBAUGH TO ERNEST WEST * * *",
+            "Update 2026-09-22 11:02 EDT | NATHANIEL KISHBAUGH | ERNEST WEST",
+        ),
+        (
+            "* * * UPDATE FROM STEVE MACK TO DONALD NORWOOD VIA E-MAIL ON APRIL 27, 2009 AT 1552 HOURS * * *",
+            "Update 2009-04-27 15:52 - | STEVE MACK | DONALD NORWOOD",
+        ),
+        (
+            "* * * RETRACTION FROM KIM HOFFMAN TO JOHN SHOEMAKER AT 1303 EST ON 1/17/18/17 * * *",
+            "Retraction - 13:03 EST | KIM HOFFMAN | JOHN SHOEMAKER",
+        ),
+        ("* * * COMMISSIONERS' ASSISTANTS' BRIEFING HELD AT 1430 EDT 8/31/1999 * * *", "Note 1999-08-31 14:30 EDT | - | -"),
+        (
+            "********** HOO NOTE:  Based on plant status calls that occurred on 05/15/99 and 05/16/99, the cause",
+            "Note 1999-05-15 - - | - | -",
+        ),
+        (
+            "* * * CLOSEOUT  RECEIVED AT 1642 EST ON 3/4/20119 FROM SHELDON THOMAS TO MARK ABRAMOVITZ * * *",
+            "Note - 16:42 EST | SHELDON THOMAS | MARK ABRAMOVITZ",
+        ),
+    ];
+
+    #[test]
+    fn markers_in_every_recorded_variant_parse() {
+        for (line, expected) in MARKERS {
+            let updates = updates(&format!("THE REPORT\n\n{line}\n\nMore."));
+
+            assert_eq!(updates.iter().map(summary).collect::<Vec<_>>(), [expected], "{line:?}");
+        }
+    }
+
+    #[test]
+    fn lines_that_are_not_markers_stay_text() {
+        let text = "THE REPORT\n\
+                    * * * * * * * * * * * * * * * * * * * *\n\
+                    THIS IS NOT A NEW REPORT.\n\
+                    \"***This event did not result in any offsite release.***\"\n\
+                    Cs-137    Berthold    LB7440  ***    50 mCi\n\
+                    \"Beaver Valley Unit 2 has terminated the Unusual Event at 0955 EDT * * *\n\
+                    *Starred note\n\
+                    THE UPDATE WAS LATE * * *";
+
+        assert_eq!(updates(text), []);
+    }
+
+    #[test]
+    fn each_update_holds_its_lines_up_to_the_next_marker() {
+        let text = "LOSS OF POWER\n\nThe report.\n\n\
+                    * * * UPDATE AT 1949 EST ON 01/01/99 BY ALAN BRIESE TO FANGIE JONES * * *\n\n\
+                    First update.\n\n* * * * * * * *\n\nSecond paragraph.\n\n\
+                    * * * RETRACTION ON 01/02/99 AT 0800 EST FROM BRIESE TO JONES * * *\n\nRetracted.";
+
+        let updates = updates(text);
+
+        let texts: Vec<(&str, &str)> = updates.iter().map(|update| (update.marker.as_str(), update.text.as_str())).collect();
+        assert_eq!(
+            texts,
+            [
+                ("UPDATE AT 1949 EST ON 01/01/99 BY ALAN BRIESE TO FANGIE JONES", "First update.\n\n* * * * * * * *\n\nSecond paragraph."),
+                ("RETRACTION ON 01/02/99 AT 0800 EST FROM BRIESE TO JONES", "Retracted."),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_revision_import_is_a_note_not_an_update() {
+        let cases = [
+            ("EN Revision Imported Date: 12/8/2020\n\nEN Revision Text: DAMAGED GAUGE\n\nThe following ...", Some("2020-12-08")),
+            ("EN Revision Imported Date : 10/2/2020\n\nEN Revision Text : OFFSITE NOTIFICATION", Some("2020-10-02")),
+            ("AUTOMATIC REACTOR TRIP\n\nEN Revision Imported Date: 12/8/2020", None),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(revised(text).unwrap(), expected.map(day), "{text:?}");
+            assert_eq!(updates(text), [], "{text:?}");
+        }
+    }
+
+    #[test]
+    fn an_escaped_line_break_in_the_text_is_a_line_break() {
+        let text = "EN Revision Imported Date: 12/11/2025&lt;br&gt;&lt;br&gt;EN Revision Text: LEAKING SOURCE<br />\n<br />\nThe body.";
+
+        let event = one(Parts::agreement().text(text));
+
+        assert_eq!(event.text, "EN Revision Imported Date: 12/11/2025\n\nEN Revision Text: LEAKING SOURCE\n\nThe body.");
+        assert_eq!((event.title.as_deref(), event.revised), (Some("LEAKING SOURCE"), Some(day("2025-12-11"))));
+    }
+
+    #[test]
+    fn a_revision_date_that_does_not_parse_fails() {
+        let error = format!("{:#}", revised("EN Revision Imported Date: 13/45/2020\n\nEN Revision Text: X").unwrap_err());
+
+        assert!(error.contains("EN Revision Imported Date \"13/45/2020\""), "{error}");
+    }
+
+    #[test]
+    fn a_retraction_marker_alone_does_not_retract_the_event() {
+        let text = "AUTOMATIC REACTOR TRIP<br />\n<br />\n* * * RETRACTION ON 11/12/2026 AT 0900 EST FROM SAM HALL TO ADAM KOZIOL * * *<br />\n<br />\nNot reportable.";
+
+        let event = one(Parts::reactor().text(text));
+
+        assert!(!event.retracted);
+        assert_eq!(event.updates.iter().map(summary).collect::<Vec<_>>(), ["Retraction 2026-11-12 09:00 EST | SAM HALL | ADAM KOZIOL"]);
     }
 }

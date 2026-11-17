@@ -93,7 +93,7 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** it prints the in-service unit-days and each family's unit-days below 100%, unit-years, TWh and share
 
 ### Requirement: xtask events
-`cargo xtask events` SHALL parse every stored Event Notification page and print the archive's counts (pages with events, empty pages by year, events repeated across pages, events by category and with no 10 CFR section, unused event numbers), and SHALL fail when any page fails to parse, printing the first 20 failures. (PRD-0003 T-001)
+`cargo xtask events` SHALL parse every stored Event Notification page and print the archive's counts (pages with events, empty pages by year, events repeated across pages, events by category and with no 10 CFR section, unused event numbers) and the update markers' kinds and parse rates, and SHALL fail when any page fails to parse, printing the first 20 failures. (PRD-0003 T-001 T-002)
 
 #### Scenario: A page departs from the template
 - **WHEN** `cargo xtask events` runs over a raw store holding an event page with a label the parser doesn't know

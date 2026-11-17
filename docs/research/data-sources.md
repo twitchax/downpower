@@ -274,6 +274,10 @@ Counted with a throwaway Python parser over the newest 200 of each of the 7,271 
     TIME = (?:\b(?:AT|@)\s*|\b)([0-2]\d[0-5]\d)\s*([ECMP][SD]T|[ECMP]T)?\b    # on rest, DATE removed
     PAIR = \b(?:FROM|BY)\s+(?P<frm>[^*@]+?)\s+(?:TO|TAKEN BY|RECEIVED BY)\s+(?P<to>[^*@]+?)(?=\s+(?:AT|ON|VIA)\b|\s*@|\s*$)
     ```
+
+    The Rust parser (PRD-0003 T-002) widens them (typos like `UDATE`, markers missing their
+    opening stars, spelled dates like `MAY 28, 2021`, `12:42`) and reads 6,119 markers: date
+    99.3%, time 98.0%, from and to 95.3%.
 - **Edits after publication:** 22% of events are edited at all, 15.5% after day 2, 6.9% after
   day 28, 2.2% after day 90 (DESIGN.md Decision 29).
 - **Status-report cross-references:** `See EN#` days carry 58 TWh, 2.4% of all lost output. A rough
