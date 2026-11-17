@@ -118,11 +118,19 @@ For each unit-day with reason text, the ledger SHALL record what the tags say: e
 - **THEN** `.` is an accepted tag, `zorbulating the flux capacitor` an unknown one, and one cause is observed
 
 ### Requirement: Attribution by precedence
-A day whose tags name a cause SHALL be attributed the cause of the highest family in the order Forced > Refueling > Maintenance > Equipment > Environmental > Grid > Fuel cycle > Unattributed, a tie going to the cause named first, with method `precedence_v1` and the naming tag as evidence. (PRD-0002 T-006)
+A day whose tags name a cause, or whose EN references resolve, SHALL be attributed the cause of the highest family in the order Forced > Refueling > Maintenance > Equipment > Environmental > Grid > Fuel cycle > Unattributed. A tie SHALL go to a cause the tags name before a resolved one, and then to the one named first. The method is `precedence_v1` with the naming tag as evidence, or `xref_en_v1` with the resolved event. (PRD-0002 T-006, PRD-0003 T-005)
 
 #### Scenario: Equipment over Fuel cycle
 - **WHEN** a reason reads `Coastdown to Refueling Outage;\r\n\r\nTransformer Limitation`
 - **THEN** the day is attributed `transformer` by `precedence_v1` with the tag `transformer limitation` as evidence
+
+#### Scenario: A resolved scram over maintenance
+- **WHEN** Crystal River 3 reads `Reduced Power for Maintenance; See EN #45286` the day after EN 45286, its `M/R` scram
+- **THEN** the day is attributed `scram` by `xref_en_v1`
+
+#### Scenario: A tie goes to the reason
+- **WHEN** Browns Ferry 3 reads `Forced Outage; See EN #45290`, an `M/R` scram on that unit
+- **THEN** the day is attributed `forced_outage` by `precedence_v1`
 
 ### Requirement: Inherited causes
 A day with no cause but a transition SHALL take the unit's last attributed cause when that day is at most 14 calendar days back, with method `inherit_14d` and evidence `inherited_from` the day the cause was observed. Inherited days extend the chain, a newly observed cause restarts it, and a day with no cause neither extends nor breaks it; with nothing in reach the day is Unattributed, still `inherit_14d`. (PRD-0002 T-006)
@@ -140,16 +148,46 @@ A day with no cause but a transition SHALL take the unit's last attributed cause
 - **WHEN** a unit reads `Refueling Outage`, `Increasing Power`, `Forced Outage`, `Startup in Progress` on days 1 to 4
 - **THEN** day 4 inherits `forced_outage` from day 3
 
+#### Scenario: A resolved reference starts a chain
+- **WHEN** Crystal River 3 reads `See EN #45286` on 2009-08-25 and `Startup in Progress` on 08-28
+- **THEN** 08-28 inherits `scram` from 08-25
+
 ### Requirement: Why a day is Unattributed
-A day with neither a cause nor a transition SHALL be Unattributed with method `xref_unresolved` and its EN numbers as evidence when it carries EN references, and `no_cause` otherwise. A row inside the 28-day hold SHALL be `reason_pending`, a row from EIA alone `no_report`, and a quarantined row `unknown_tag`. (PRD-0002 T-006 T-008)
+A day with neither a cause nor a transition SHALL be Unattributed with method `xref_unresolved` and each reference's number and reason as evidence when it carries EN references none of which resolve, and `no_cause` otherwise. A row inside the 28-day hold SHALL be `reason_pending`, a row from EIA alone `no_report`, and a quarantined row `unknown_tag`. (PRD-0002 T-006 T-008, PRD-0003 T-005)
 
 #### Scenario: An unresolved Event Notification
-- **WHEN** a reason reads `SEE EN #49154`
-- **THEN** the day is Unattributed by `xref_unresolved` with evidence `[49154]`
+- **WHEN** a reason reads `SEE EN #49154` and the event set has no EN 49154
+- **THEN** the day is Unattributed by `xref_unresolved` with evidence `[{number: 49154, reason: missing}]`
 
 #### Scenario: A held row
 - **WHEN** a page inside the hold reports Diablo Canyon 2 at 55%
 - **THEN** its row is Unattributed by `reason_pending`, with no reason
+
+### Requirement: EN reference resolution
+A day's `See EN# N` SHALL resolve when the event set holds event N, its unit table lists the day's unit, and it isn't retracted; otherwise it SHALL stay unresolved with the reason `no_number`, `missing`, `other_unit` or `retracted`, checked in that order. A resolved reference's cause SHALL come from `catalog/xref.toml` over the unit's SCRAM Code and the event's 10 CFR sections, with the event number and the deciding field as evidence. (PRD-0003 T-005)
+
+#### Scenario: Three ways to resolve
+- **WHEN** Crystal River 3 cites EN 45286 (SCRAM Code `M/R`), Catawba 2 cites EN 35268 (`N`, 50.72(b)(1)(i)(A) `PLANT S/D REQD BY TS`), and FitzPatrick cites EN 35278 (`N`, 50.72(b)(2)(iii)(D))
+- **THEN** they resolve to `scram` decided by the scram code, `required_shutdown` decided by the section, and `en_reported` decided by nothing
+
+#### Scenario: References that don't resolve
+- **WHEN** Browns Ferry 2 cites the retracted EN 35269, and on another day EN 45290, a Browns Ferry 3 scram; Catawba 2 cites EN 35275, a fuel cycle facility's; Cooper cites EN 99999; and FitzPatrick cites `SEE EN # PENDING`
+- **THEN** their reasons are `retracted`, `other_unit`, `other_unit`, `missing` and `no_number`
+
+### Requirement: The xref rule table
+`catalog/xref.toml` SHALL hold ordered rules and a fallback, each naming a fine cause from `catalog/tags.toml`, and a rule SHALL match on exactly one of SCRAM Codes and 10 CFR sections. A section rule's code SHALL match a section's code or a prefix of it that ends a paragraph, spaces ignored, and its description, when given, SHALL match ignoring case and spacing. The first matching rule decides; with none, the fallback. (PRD-0003 T-005)
+
+#### Scenario: The committed rules
+- **WHEN** a resolved unit's SCRAM Code is `A/R`, `M/R`, `A` or `M`, or the event lists 50.72(b)(2)(i) or (b)(1)(i)(A) as `PLANT S/D REQD BY TS`
+- **THEN** the cause is `scram`, then `required_shutdown`, and otherwise `en_reported`, all Forced
+
+#### Scenario: One code, two meanings
+- **WHEN** an event lists 50.72(b)(2)(i) as `DEG/UNANALYZED COND`, its meaning before the 2000 revision of 10 CFR 50.72
+- **THEN** no rule matches it, and `50.7` would not match `50.72(b)` either
+
+#### Scenario: A table the catalog can't back
+- **WHEN** a rule names a cause `catalog/tags.toml` lacks, matches on both SCRAM Codes and sections, or lists an unknown SCRAM Code
+- **THEN** loading the table fails, naming the rule
 
 ### Requirement: Unknown tags
 A reason carrying a tag nothing knows SHALL fail the build under the fail policy, naming the date, unit and tag. Under the quarantine policy the row SHALL be Unattributed with method `unknown_tag` and the unknown tags as evidence, keep its known tags observed, and add each unknown tag's uses to the summary's `unknown_tags`. (PRD-0002 T-005 T-008 T-011)
@@ -305,8 +343,12 @@ In the attributed layer a unit-day SHALL carry its attributed family, and in the
 - **WHEN** Diablo Canyon 2 reads `Refueling Outage` on 2025-07-01 and `Increasing Power` at 30% on 07-03
 - **THEN** 07-03 is Refueling in the attributed layer and Unattributed in the observed layer, both at 30%
 
+#### Scenario: A resolved reference
+- **WHEN** Crystal River 3 reads only `See EN #45286`, a scram
+- **THEN** the day is Forced in the attributed layer and Unattributed in the observed layer
+
 ### Requirement: Derived version
-Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv` and `catalog/facilities.csv`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004)
+Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv`, `catalog/facilities.csv` and `catalog/xref.toml`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004 T-005)
 
 #### Scenario: A stable stamp
 - **WHEN** the derived version is computed twice by one binary

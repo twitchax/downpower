@@ -1,11 +1,13 @@
 //! The two label layers (DESIGN.md Decisions 18–20). [`observe`] turns a reason into what its tags
 //! say, which is checkable against the text. [`attribute`] infers one primary cause per unit-day
-//! from a unit's observed days, and every attributed value names its method and its evidence.
+//! from a unit's observed days and the events their `See EN#` references resolve to (Decision 32),
+//! and every attributed value names its method and its evidence.
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::tags::{Cause, Family, Label, Tags};
+use crate::xref::{Resolution, Resolved, Unresolved};
 
 /// The longest gap, in calendar days, a transition bridges back to the unit's last attributed day
 /// (Decision 18).
@@ -59,7 +61,12 @@ pub enum Method {
     /// Inherited days extend the chain, so a run of transitions carries one cause through.
     #[serde(rename = "inherit_14d")]
     Inherit14d,
-    /// Only EN references, not yet resolved through the Event Notifications (PRD-0003).
+    /// The cause of the event a `See EN#` reference resolved to, through `catalog/xref.toml`
+    /// (Decision 32). It competes in [`Method::PrecedenceV1`]'s order, and loses a tie to a cause
+    /// the reason names, which is observed rather than inferred.
+    #[serde(rename = "xref_en_v1")]
+    XrefEnV1,
+    /// Only EN references, none of which resolved.
     #[serde(rename = "xref_unresolved")]
     XrefUnresolved,
     /// Nothing on the day names a cause.
@@ -83,6 +90,7 @@ impl Method {
         match self {
             Self::PrecedenceV1 => "precedence_v1",
             Self::Inherit14d => "inherit_14d",
+            Self::XrefEnV1 => "xref_en_v1",
             Self::XrefUnresolved => "xref_unresolved",
             Self::NoCause => "no_cause",
             Self::ReasonPending => "reason_pending",
@@ -100,8 +108,10 @@ pub enum Evidence {
     Tag(String),
     /// The day whose observed cause a transition took, which starts the chain the transition is on.
     InheritedFrom(NaiveDate),
-    /// The EN references, numbered where the tag carried one.
-    Xrefs(Vec<Option<u32>>),
+    /// The event a reference resolved to, and the field that decided its cause.
+    Event(Resolved),
+    /// The EN references, none of which resolved, each with why.
+    Xrefs(Vec<Unresolved>),
     /// The tags nothing knows, on a quarantined row.
     Unknown(Vec<String>),
     None,
@@ -154,17 +164,31 @@ pub struct Attributor<'a> {
     last: Option<(NaiveDate, NaiveDate, &'a Cause)>,
 }
 
+/// Where a candidate cause comes from.
+enum Origin<'r> {
+    Tag(&'r String),
+    Event(&'r Resolved),
+}
+
 impl<'a> Attributor<'a> {
-    /// Attributes `date`, which must follow every day passed in before it.
-    pub fn attribute(&mut self, date: NaiveDate, observed: &Observed<'a>) -> Attributed<'a> {
-        // Ties keep the cause named first, since `min_by_key` returns the first minimum.
-        if let Some((cause, tag)) = observed.causes.iter().min_by_key(|(cause, _)| precedence_v1(cause.family)) {
+    /// Attributes `date`, which must follow every day passed in before it. `resolve` resolves one of
+    /// the day's EN references for this unit.
+    pub fn attribute(&mut self, date: NaiveDate, observed: &Observed<'a>, resolve: impl Fn(Option<u32>) -> Resolution<'a>) -> Attributed<'a> {
+        let resolutions: Vec<Resolution<'a>> = observed.xrefs.iter().map(|&number| resolve(number)).collect();
+        let named = observed.causes.iter().map(|(cause, tag)| (*cause, Origin::Tag(tag)));
+        let resolved = resolutions
+            .iter()
+            .filter_map(|resolution| resolution.as_ref().ok())
+            .map(|(cause, resolved)| (*cause, Origin::Event(resolved)));
+        // Ties keep the first candidate, since `min_by_key` returns the first minimum: the reason's
+        // causes in order, then the resolved references in order.
+        if let Some((cause, origin)) = named.chain(resolved).min_by_key(|(cause, _)| precedence_v1(cause.family)) {
             self.last = Some((date, date, cause));
-            return Attributed {
-                cause: Some(cause),
-                method: Method::PrecedenceV1,
-                evidence: Evidence::Tag(tag.clone()),
+            let (method, evidence) = match origin {
+                Origin::Tag(tag) => (Method::PrecedenceV1, Evidence::Tag(tag.clone())),
+                Origin::Event(resolved) => (Method::XrefEnV1, Evidence::Event(resolved.clone())),
             };
+            return Attributed { cause: Some(cause), method, evidence };
         }
         if observed.transition {
             return match self.last.filter(|(previous, ..)| (date - *previous).num_days() <= INHERIT_DAYS) {
@@ -179,16 +203,17 @@ impl<'a> Attributor<'a> {
                 None => Attributed::unattributed(Method::Inherit14d, Evidence::None),
             };
         }
-        if !observed.xrefs.is_empty() {
-            return Attributed::unattributed(Method::XrefUnresolved, Evidence::Xrefs(observed.xrefs.clone()));
+        if !resolutions.is_empty() {
+            return Attributed::unattributed(Method::XrefUnresolved, Evidence::Xrefs(resolutions.into_iter().filter_map(Result::err).collect()));
         }
         Attributed::unattributed(Method::NoCause, Evidence::None)
     }
 }
 
-/// Attributes one unit's days, which must be in date order (see [`Attributor`]).
+/// Attributes one unit's days, which must be in date order (see [`Attributor`]), resolving their
+/// references with `resolve`.
 #[must_use]
-pub fn attribute<'a>(days: &[(NaiveDate, Observed<'a>)]) -> Vec<Attributed<'a>> {
+pub fn attribute<'a>(days: &[(NaiveDate, Observed<'a>)], resolve: impl Fn(Option<u32>) -> Resolution<'a>) -> Vec<Attributed<'a>> {
     let mut attributor = Attributor::default();
-    days.iter().map(|(date, observed)| attributor.attribute(*date, observed)).collect()
+    days.iter().map(|(date, observed)| attributor.attribute(*date, observed, &resolve)).collect()
 }

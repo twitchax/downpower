@@ -208,6 +208,12 @@ impl Tags {
         Some(Classified { label, matched })
     }
 
+    /// The fine cause called `name`.
+    #[must_use]
+    pub fn cause(&self, name: &str) -> Option<&Cause> {
+        self.causes.iter().find(|cause| cause.name == name)
+    }
+
     /// Whether a key or rule knows `tag` without the accepted-unknown list.
     #[must_use]
     pub fn matches(&self, tag: &str) -> bool {

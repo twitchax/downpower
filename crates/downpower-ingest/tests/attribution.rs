@@ -6,17 +6,24 @@ use chrono::{Days, NaiveDate};
 use pretty_assertions::assert_eq;
 
 use downpower_ingest::attribution::{self, Attributed, Evidence, Method, Observed};
+use downpower_ingest::events::Scram;
 use downpower_ingest::tags::{Family, Tags};
+use downpower_ingest::xref::{Decider, Reason, Resolution, Resolved, Unresolved};
 
 /// Day `n` counted from July 1, 2025 (day 1), so day 32 is August 1.
 fn day(n: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2025, 7, 1).unwrap() + Days::new(u64::from(n) - 1)
 }
 
+/// Resolves nothing, as an archive with no events would. `tests/xref.rs` resolves against events.
+fn missing<'a>(number: Option<u32>) -> Resolution<'a> {
+    Err(Unresolved { number, reason: Reason::Missing })
+}
+
 /// One unit's days, each `(day, reason)`.
 fn attribute<'a>(tags: &'a Tags, days: &[(u32, &str)]) -> Vec<Attributed<'a>> {
     let observed: Vec<(NaiveDate, Observed<'a>)> = days.iter().map(|&(n, reason)| (day(n), attribution::observe(tags, reason))).collect();
-    attribution::attribute(&observed)
+    attribution::attribute(&observed, missing)
 }
 
 /// `(cause name or "-", method, evidence)` for compact comparisons.
@@ -108,12 +115,22 @@ fn uat_attribution_days_without_a_cause_neither_extend_nor_break_the_chain() {
 }
 
 #[test]
-fn uat_attribution_an_unresolved_xref_is_unattributed_and_keeps_its_number() {
+fn uat_attribution_an_unresolved_xref_is_unattributed_and_keeps_its_number_and_reason() {
     let tags = Tags::catalog().unwrap();
 
     let attributed = attribute(&tags, &[(1, "SEE EN #49154")]);
 
-    assert_eq!(summary(&attributed[0]), ("-".to_owned(), "xref_unresolved", Evidence::Xrefs(vec![Some(49154)])));
+    assert_eq!(
+        summary(&attributed[0]),
+        (
+            "-".to_owned(),
+            "xref_unresolved",
+            Evidence::Xrefs(vec![Unresolved {
+                number: Some(49154),
+                reason: Reason::Missing
+            }])
+        )
+    );
     assert_eq!(attributed[0].family(), Family::Unattributed);
 }
 
@@ -132,7 +149,7 @@ fn uat_attribution_flags_alone_name_no_cause() {
     let tags = Tags::catalog().unwrap();
 
     let observed = attribution::observe(&tags, "Hot Weather Alert; Conservative Operations; Hot Weather Alert");
-    let attributed = attribution::attribute(&[(day(1), observed.clone())]);
+    let attributed = attribution::attribute(&[(day(1), observed.clone())], missing);
 
     assert_eq!(observed.flags, ["hot_weather_alert", "conservative_ops"]);
     assert_eq!(summary(&attributed[0]), ("-".to_owned(), "no_cause", Evidence::None));
@@ -159,6 +176,7 @@ fn uat_attribution_every_value_names_a_method_that_matches_its_evidence() {
         let consistent = match value.method {
             Method::PrecedenceV1 => value.cause.is_some() && matches!(value.evidence, Evidence::Tag(_)),
             Method::Inherit14d => value.cause.is_some() == matches!(value.evidence, Evidence::InheritedFrom(_)),
+            Method::XrefEnV1 => value.cause.is_some() && matches!(value.evidence, Evidence::Event(_)),
             Method::XrefUnresolved => value.cause.is_none() && matches!(value.evidence, Evidence::Xrefs(_)),
             Method::NoCause => value.cause.is_none() && value.evidence == Evidence::None,
             Method::ReasonPending | Method::NoReport | Method::UnknownTag => false,
@@ -172,6 +190,7 @@ fn uat_attribution_methods_serialize_as_their_stored_names() {
     let methods = [
         Method::PrecedenceV1,
         Method::Inherit14d,
+        Method::XrefEnV1,
         Method::XrefUnresolved,
         Method::NoCause,
         Method::ReasonPending,
@@ -191,6 +210,36 @@ fn uat_attribution_evidence_serializes_by_kind() {
         serde_json::json!({"tag": "refueling outage"})
     );
     assert_eq!(serde_json::to_value(Evidence::InheritedFrom(day(1))).unwrap(), serde_json::json!({"inherited_from": "2025-07-01"}));
-    assert_eq!(serde_json::to_value(Evidence::Xrefs(vec![Some(49154), None])).unwrap(), serde_json::json!({"xrefs": [49154, null]}));
+    assert_eq!(
+        serde_json::to_value(Evidence::Event(Resolved {
+            number: 45286,
+            decided_by: Some(Decider::Scram(Scram::ManualReactor))
+        }))
+        .unwrap(),
+        serde_json::json!({"event": {"number": 45286, "decided_by": {"scram": "manual_reactor"}}})
+    );
+    assert_eq!(
+        serde_json::to_value(Evidence::Event(Resolved {
+            number: 35268,
+            decided_by: Some(Decider::Section("50.72(b)(1)(i)(A)".to_owned()))
+        }))
+        .unwrap(),
+        serde_json::json!({"event": {"number": 35268, "decided_by": {"section": "50.72(b)(1)(i)(A)"}}})
+    );
+    assert_eq!(
+        serde_json::to_value(Evidence::Event(Resolved { number: 35278, decided_by: None })).unwrap(),
+        serde_json::json!({"event": {"number": 35278, "decided_by": null}})
+    );
+    assert_eq!(
+        serde_json::to_value(Evidence::Xrefs(vec![
+            Unresolved {
+                number: Some(49154),
+                reason: Reason::Retracted
+            },
+            Unresolved { number: None, reason: Reason::NoNumber }
+        ]))
+        .unwrap(),
+        serde_json::json!({"xrefs": [{"number": 49154, "reason": "retracted"}, {"number": null, "reason": "no_number"}]})
+    );
     assert_eq!(serde_json::to_value(Evidence::None).unwrap(), serde_json::json!("none"));
 }

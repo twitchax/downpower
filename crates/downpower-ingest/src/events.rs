@@ -473,7 +473,8 @@ impl EmergencyClass {
 }
 
 impl Scram {
-    fn parse(code: &str) -> Res<Option<Self>> {
+    /// The code as the page writes it; `None` for a blank cell.
+    pub(crate) fn parse(code: &str) -> Res<Option<Self>> {
         Ok(Some(match code {
             "" => return Ok(None),
             "N" => Self::No,

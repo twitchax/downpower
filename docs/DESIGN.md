@@ -168,8 +168,8 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       run of transitions (weeks of "DEFUELED" after one refueling tag) carries the cause through,
       and the evidence names the day the cause was observed. A newly observed cause restarts the
       chain, and a day without a cause neither extends nor breaks it.
-    - `xref` covers `See EN# N`. It resolves through `event` once Event Notifications land
-      (Decision 32), and until then counts as Unattributed with the EN number kept.
+    - `xref` covers `See EN# N`, which resolves through the event it cites (Decision 32), and is
+      Unattributed with its number and the reason when it doesn't resolve.
     - Matching (revised 2026-11-13): normalize (lowercase, collapse whitespace), split the reason
       into tags on `;` and line breaks, and look up each tag's exact key. A tag no key matches goes
       through an ordered list of keyword rules, each a committed regex mapped to one entry, and the
@@ -295,8 +295,16 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
     - A scram code other than `N` gives `scram`, a required shutdown gives its own fine cause, and
       anything the table doesn't match falls back to Forced/`en_reported`.
     - The evidence names the event and the deciding field. The resolved cause competes in
-      Decision 19's precedence like any other.
+      Decision 19's precedence like any other, and loses a tie to a cause the reason names, which
+      is observed rather than inferred (revised 2026-11-17).
+    - A required shutdown matches on its 10 CFR description as well as its code: the 2000
+      revision of 10 CFR 50.72 moved it to (b)(2)(i), which had meant a degraded or unanalyzed
+      condition, and both meanings appear in 2001 (PRD-0003.log.md#t-005).
+    - `RPS ACTUATION - CRITICAL` is not a rule: sections belong to the whole event, and on a
+      multi-unit event it names only the unit that scrammed. The unit's own SCRAM Code decides.
     - Unresolved references carried 58 TWh, 2.4% of all lost output and half of Unattributed.
+      Resolution attributes 42.6 TWh and leaves 18.6, of which 16.4 cite events the archive
+      lacks (revised 2026-11-17).
 33. **Scrams are checked twice, never rebuilt into a tracker.**
     - **Internally:** each EN scram against the status reports' drop on that unit, and each
       status-report scram outage against an EN.

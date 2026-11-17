@@ -15,6 +15,7 @@ pub mod raw;
 pub mod status;
 pub mod tags;
 pub mod units;
+pub mod xref;
 
 /// The house result alias.
 pub type Res<T> = anyhow::Result<T>;

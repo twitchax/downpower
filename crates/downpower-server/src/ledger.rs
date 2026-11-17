@@ -420,7 +420,7 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
             replaced: 0,
         };
         let mut chunker = Chunker::default();
-        let summary = ledger::build(&raw, &catalog, unknowns, |days| {
+        let summary = ledger::build(&raw, &catalog, &set, unknowns, |days| {
             for day in &days {
                 packers.push(day)?;
             }

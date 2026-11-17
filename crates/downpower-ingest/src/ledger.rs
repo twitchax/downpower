@@ -15,18 +15,21 @@ use sha2::{Digest as _, Sha256};
 use crate::attribution::{self, Attributed, Attributor, Evidence, Method};
 use crate::capacity::{self, Annual};
 use crate::eia::NucStatus;
+use crate::events::EventSet;
 use crate::facilities::Facilities;
 use crate::raw::{RawStore, Series};
 use crate::status::{self, Row, StatusPage};
 use crate::tags::{Family, Tags};
 use crate::units::{Unit, Units};
+use crate::xref::Rules;
 use crate::{Res, Void};
 
 /// Bumped whenever parsing, observing, attributing, the row shape or what a build stores beside its
 /// rows changes, so the deployed server rebuilds (Decision 15). The catalog files are hashed in
 /// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
-/// 5: events carry their identity, and reactor events a row per unit (T-004).
-pub const LEDGER_VERSION: u32 = 5;
+/// 5: events carry their identity, and reactor events a row per unit (T-004). 6: `See EN#` days
+/// resolve through `catalog/xref.toml` (T-005).
+pub const LEDGER_VERSION: u32 = 6;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]
@@ -36,6 +39,8 @@ pub struct Catalog {
     pub capacity: Annual,
     /// Who each Event Notification is about (PRD-0003 T-004).
     pub facilities: Facilities,
+    /// How a resolved `See EN#` names its cause (PRD-0003 T-005).
+    pub xref: Rules,
 }
 
 impl Catalog {
@@ -46,8 +51,10 @@ impl Catalog {
     /// When a table breaks a rule its parser checks.
     pub fn embedded() -> Res<Self> {
         let units = Units::catalog()?;
+        let tags = Tags::catalog()?;
         Ok(Self {
-            tags: Tags::catalog()?,
+            xref: Rules::catalog(&tags)?,
+            tags,
             facilities: Facilities::catalog(&units)?,
             units,
             capacity: Annual::catalog()?,
@@ -61,7 +68,14 @@ impl Catalog {
 pub fn derived_version() -> String {
     let mut hasher = Sha256::new();
     hasher.update(LEDGER_VERSION.to_le_bytes());
-    for catalog in [crate::tags::TAGS, crate::tags::UNCLASSIFIED, crate::units::CATALOG, capacity::CATALOG, crate::facilities::CATALOG] {
+    for catalog in [
+        crate::tags::TAGS,
+        crate::tags::UNCLASSIFIED,
+        crate::units::CATALOG,
+        capacity::CATALOG,
+        crate::facilities::CATALOG,
+        crate::xref::CATALOG,
+    ] {
         // Length-prefixed, so moving text from one file to the next changes the stamp.
         hasher.update((catalog.len() as u64).to_le_bytes());
         hasher.update(catalog.as_bytes());
@@ -226,6 +240,8 @@ pub struct Coverage {
 pub struct Builder<'a> {
     catalog: &'a Catalog,
     nuc_status: Option<&'a NucStatus>,
+    /// The events `See EN#` references resolve against.
+    events: &'a EventSet,
     unknowns: Unknowns,
     attributors: HashMap<&'a str, Attributor<'a>>,
     /// Each unit's row on the previous published page, which a stale repeat copies.
@@ -235,10 +251,11 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     #[must_use]
-    pub fn new(catalog: &'a Catalog, nuc_status: Option<&'a NucStatus>, unknowns: Unknowns) -> Self {
+    pub fn new(catalog: &'a Catalog, nuc_status: Option<&'a NucStatus>, events: &'a EventSet, unknowns: Unknowns) -> Self {
         Self {
             catalog,
             nuc_status,
+            events,
             unknowns,
             attributors: HashMap::new(),
             previous: HashMap::new(),
@@ -367,7 +384,9 @@ impl<'a> Builder<'a> {
         };
         let observed = attribution::observe(&self.catalog.tags, detail.reason.as_deref().unwrap_or_default());
         let attributed = if observed.unknown.is_empty() {
-            self.attributors.entry(unit.docket.as_str()).or_default().attribute(date, &observed)
+            let (xref, events) = (&self.catalog.xref, self.events);
+            let resolve = |number| xref.resolve(events, unit.docket.as_str(), number);
+            self.attributors.entry(unit.docket.as_str()).or_default().attribute(date, &observed, resolve)
         } else {
             match self.unknowns {
                 Unknowns::Fail => bail!("{date}, {}: tags nothing knows: {:?}; add a key or rule to catalog/tags.toml", unit.name, observed.unknown),
@@ -443,14 +462,15 @@ fn repeats(copy: &Row, previous: &Row) -> bool {
 }
 
 /// Builds the ledger from the newest capture of every status page and the newest `NUC_STATUS`,
-/// handing `emit` each day's rows from the first page through the last day either source covers.
+/// resolving `See EN#` references against `events`, and hands `emit` each day's rows from the
+/// first page through the last day either source covers.
 ///
 /// # Errors
 ///
 /// When the raw store can't be read, a page or the `NUC_STATUS` doesn't parse, a day fails (see
 /// [`Builder::day`]), or `emit` fails. Under [`Unknowns::Fail`], also when a `NUC_STATUS` generator
 /// is missing from the catalog.
-pub fn build(store: &RawStore, catalog: &Catalog, unknowns: Unknowns, mut emit: impl FnMut(Vec<UnitDay>) -> Void) -> Res<Summary> {
+pub fn build(store: &RawStore, catalog: &Catalog, events: &EventSet, unknowns: Unknowns, mut emit: impl FnMut(Vec<UnitDay>) -> Void) -> Res<Summary> {
     let pages = store.latest(Series::PowerStatus)?;
     let nuc_status = match store.latest(Series::NucStatus)?.into_values().next_back() {
         Some(record) => {
@@ -467,7 +487,7 @@ pub fn build(store: &RawStore, catalog: &Catalog, unknowns: Unknowns, mut emit: 
         return Ok(Summary::default());
     };
     let last = pages.keys().next_back().copied().into_iter().chain(nuc_status.as_ref().and_then(NucStatus::end)).max().unwrap_or(first);
-    let mut builder = Builder::new(catalog, nuc_status.as_ref(), unknowns);
+    let mut builder = Builder::new(catalog, nuc_status.as_ref(), events, unknowns);
     for date in first.iter_days().take_while(|date| *date <= last) {
         let page = match pages.get(&date).and_then(|record| record.sha256.as_ref()) {
             Some(hash) => Some(status::parse(&store.get(hash)?).with_context(|| format!("the status page for {date}"))?),

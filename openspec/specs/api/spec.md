@@ -90,15 +90,19 @@ The barcode SHALL carry a weak ETag, `W/"<first 16 hex digits of the buffer's sh
 - **THEN** the answers are 200 with that row, 404, and 400
 
 ### Requirement: Unit-day JSON
-A unit-day SHALL serialize with `docket`, `date`, `power`, `source`, `eia_power`, `reason`, `down`, `changed`, `scrams`, `causes` (each `{cause, tag}`), `flags`, `transition`, `xrefs`, `unclassified`, `unknown`, `cause`, `family` (snake_case), `method` (the names `ledger` lists), `evidence`, `capacity_kw` and `lost_kwh`. (PRD-0002 T-006 T-008 T-009 T-013)
+A unit-day SHALL serialize with `docket`, `date`, `power`, `source`, `eia_power`, `reason`, `down`, `changed`, `scrams`, `causes` (each `{cause, tag}`), `flags`, `transition`, `xrefs`, `unclassified`, `unknown`, `cause`, `family` (snake_case), `method` (the names `ledger` lists), `evidence`, `capacity_kw` and `lost_kwh`. (PRD-0002 T-006 T-008 T-009 T-013, PRD-0003 T-005)
 
 #### Scenario: Evidence by kind
-- **WHEN** evidence is a tag, an inherited day, EN references, or none
-- **THEN** it serializes as `{"tag": "refueling outage"}`, `{"inherited_from": "2025-07-01"}`, `{"xrefs": [49154, null]}`, or `"none"`
+- **WHEN** evidence is a tag, an inherited day, or none
+- **THEN** it serializes as `{"tag": "refueling outage"}`, `{"inherited_from": "2025-07-01"}`, or `"none"`
+
+#### Scenario: Evidence from Event Notifications
+- **WHEN** evidence is a resolved event or references that don't resolve
+- **THEN** it serializes as `{"event": {"number": 45286, "decided_by": {"scram": "manual_reactor"}}}`, with `{"section": "50.72(b)(1)(i)(A)"}` or null for `decided_by`, or as `{"xrefs": [{"number": 49154, "reason": "retracted"}, {"number": null, "reason": "no_number"}]}`
 
 #### Scenario: Methods by name
 - **WHEN** each method serializes
-- **THEN** it reads `precedence_v1`, `inherit_14d`, `xref_unresolved`, `no_cause`, `reason_pending`, `no_report` or `unknown_tag`, and parses back
+- **THEN** it reads `precedence_v1`, `inherit_14d`, `xref_en_v1`, `xref_unresolved`, `no_cause`, `reason_pending`, `no_report` or `unknown_tag`, and parses back
 
 ### Requirement: Status JSON
 `/api/status` SHALL answer JSON `{"build": ..., "serving": ..., "runs": [...]}`: the current build with its `version`, `table`, `built_at`, `raw_digest` and the summary `ledger` lists, or null when none is readable; the table the views read, or null; and the newest 20 runs, newest first, as `update-loop` records them. (PRD-0002 T-015 T-021)

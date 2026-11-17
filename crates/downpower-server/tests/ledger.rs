@@ -105,7 +105,8 @@ fn ledger_rows_read_back_as_written() {
         let mut in_memory = Vec::new();
         let raw = RawStore::open(tmp.path()).unwrap();
         let catalog = ledger::Catalog::embedded().unwrap();
-        ledger::build(&raw, &catalog, Unknowns::Fail, |days| {
+        let events = EventSet::build(&raw, &catalog.facilities, Unknowns::Fail).unwrap();
+        ledger::build(&raw, &catalog, &events, Unknowns::Fail, |days| {
             in_memory.extend(days);
             Ok(())
         })

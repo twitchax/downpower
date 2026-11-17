@@ -10,7 +10,9 @@ use clap::{Parser, Subcommand};
 
 use chrono::{Datelike as _, NaiveDate};
 
+use downpower_ingest::attribution::{Evidence, Method};
 use downpower_ingest::eia::NucStatus;
+use downpower_ingest::events::EventSet;
 use downpower_ingest::ledger::{self, Catalog, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
 use downpower_ingest::status::{self, StatusPage};
@@ -206,9 +208,17 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
     let mut causes: HashMap<String, Totals> = HashMap::new();
     let mut unattributed: HashMap<(String, String), u64> = HashMap::new();
     let mut without_capacity: BTreeMap<String, (NaiveDate, NaiveDate, u64)> = BTreeMap::new();
+    let mut references: BTreeMap<String, Totals> = BTreeMap::new();
     let started = std::time::Instant::now();
-    let built = ledger::build(&store, &catalog, Unknowns::Fail, |days| {
+    let events = EventSet::build(&store, &catalog.facilities, Unknowns::Fail)?;
+    let built = ledger::build(&store, &catalog, &events, Unknowns::Fail, |days| {
         for day in days.into_iter().filter(|day| day.power < 100) {
+            if !day.xrefs.is_empty() {
+                let slot = references.entry(reference_outcome(day.method, &day.evidence, day.cause.as_deref())).or_default();
+                slot.days += 1;
+                slot.points += u64::from(100 - day.power);
+                slot.kwh += day.lost_kwh.unwrap_or_default();
+            }
             if day.lost_kwh.is_none() {
                 let span = without_capacity.entry(day.docket.clone()).or_insert((day.date, day.date, 0));
                 span.1 = day.date;
@@ -260,6 +270,10 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
     for (cause, totals) in causes.iter().take(15) {
         line(cause, *totals);
     }
+    println!("days below 100% citing an EN, by what became of the reference:");
+    for (outcome, totals) in &references {
+        line(outcome, *totals);
+    }
     println!("booking no lost output (catalog/tags.toml no_lost_output):");
     for (cause, totals) in causes.iter().filter(|(_, totals)| totals.kwh == 0 && totals.points > 0) {
         line(cause, *totals);
@@ -275,6 +289,20 @@ fn summary(data_dir: &Path) -> anyhow::Result<()> {
         println!("  {name:<24} {why:<20} {twh:>6.1} TWh");
     }
     Ok(())
+}
+
+/// What became of a day's `See EN#` references: the cause they resolved to, why none resolved, or
+/// the method that decided the day without them.
+fn reference_outcome(method: Method, evidence: &Evidence, cause: Option<&str>) -> String {
+    match (method, evidence) {
+        (Method::XrefEnV1, _) => format!("resolved: {}", cause.unwrap_or_default()),
+        (Method::XrefUnresolved, Evidence::Xrefs(unresolved)) => {
+            let mut reasons: Vec<String> = unresolved.iter().map(|unresolved| format!("{:?}", unresolved.reason)).collect();
+            reasons.dedup();
+            format!("unresolved: {}", reasons.join("+"))
+        }
+        (method, _) => format!("decided by {}", method.as_str()),
+    }
 }
 
 /// One unit-day where the NRC page and EIA disagree: the date, the unit, NRC power, EIA power.

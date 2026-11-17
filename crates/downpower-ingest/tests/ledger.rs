@@ -10,6 +10,7 @@ use pretty_assertions::assert_eq;
 use downpower_core::barcode::{Cell, Layer};
 use downpower_ingest::attribution::{Evidence, Method};
 use downpower_ingest::eia::NucStatus;
+use downpower_ingest::events::EventSet;
 use downpower_ingest::ledger::{self, Builder, Catalog, ObservedCause, Source, UnitDay, Unknowns};
 use downpower_ingest::raw::{RawStore, Record, Series};
 use downpower_ingest::status::{Detail, Row, StatusPage};
@@ -48,21 +49,24 @@ fn page(rows: Vec<Row>) -> StatusPage {
     StatusPage::Report(rows)
 }
 
+/// The catalog, the `NUC_STATUS` fixture, and no events: `tests/xref.rs` resolves references.
 struct Fixture {
     catalog: Catalog,
     nuc_status: NucStatus,
+    events: EventSet,
 }
 
 fn catalog() -> Fixture {
     Fixture {
         catalog: Catalog::embedded().unwrap(),
         nuc_status: NucStatus::parse(NUC_STATUS).unwrap(),
+        events: EventSet::default(),
     }
 }
 
 impl Fixture {
     fn builder(&self, unknowns: Unknowns) -> Builder<'_> {
-        Builder::new(&self.catalog, Some(&self.nuc_status), unknowns)
+        Builder::new(&self.catalog, Some(&self.nuc_status), &self.events, unknowns)
     }
 }
 
@@ -308,7 +312,7 @@ fn ledger_build_streams_from_the_first_page_to_the_last_day_either_source_covers
     let catalog = catalog();
     let mut days: Vec<UnitDay> = Vec::new();
 
-    let summary = ledger::build(&store, &catalog.catalog, Unknowns::Fail, |rows| {
+    let summary = ledger::build(&store, &catalog.catalog, &catalog.events, Unknowns::Fail, |rows| {
         days.extend(rows);
         Ok(())
     })
@@ -333,7 +337,7 @@ fn ledger_build_over_an_empty_store_builds_nothing() {
     let store = RawStore::open(tmp.path()).unwrap();
     let catalog = catalog();
 
-    let summary = ledger::build(&store, &catalog.catalog, Unknowns::Fail, |_| panic!("no rows")).unwrap();
+    let summary = ledger::build(&store, &catalog.catalog, &catalog.events, Unknowns::Fail, |_| panic!("no rows")).unwrap();
 
     assert_eq!(summary, ledger::Summary::default());
 }
@@ -378,7 +382,7 @@ fn ledger_capacity_before_2007_comes_from_eia_860() {
 #[test]
 fn ledger_without_nuc_status_days_from_2007_have_no_capacity() {
     let catalog = catalog();
-    let mut builder = Builder::new(&catalog.catalog, None, Unknowns::Fail);
+    let mut builder = Builder::new(&catalog.catalog, None, &catalog.events, Unknowns::Fail);
 
     let days = builder.day(day("2025-07-05"), Some(&page(vec![row("Diablo Canyon 2", 55, "")]))).unwrap();
 

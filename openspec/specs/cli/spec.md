@@ -86,7 +86,7 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** the tag is in `catalog/reasons.tsv` and listed in `catalog/unclassified.tsv`, for review before commit
 
 ### Requirement: xtask summary and eia
-`cargo xtask summary` SHALL build the ledger as a rebuild does, under the fail policy, and print lost output by family, method and fine cause. `cargo xtask eia` SHALL compare the stored status pages with the newest stored `NUC_STATUS` and print their disagreement rate and the in-service unit-days only EIA reports. (PRD-0002 T-006 T-007 T-009)
+`cargo xtask summary` SHALL build the event set and the ledger as a rebuild does, under the fail policy, and print lost output by family, method and fine cause, and for days citing an EN, by the cause their references resolved to or why none did. `cargo xtask eia` SHALL compare the stored status pages with the newest stored `NUC_STATUS` and print their disagreement rate and the in-service unit-days only EIA reports. (PRD-0002 T-006 T-007 T-009, PRD-0003 T-005)
 
 #### Scenario: A summary over the archive
 - **WHEN** `cargo xtask summary` runs over a raw store whose units and tags are all known

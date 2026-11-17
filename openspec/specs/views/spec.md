@@ -61,7 +61,7 @@ Both charts SHALL clamp the range to the days or months the data covers, and an 
 - **AND** a range from 01-04 back to 01-02 shows all four days
 
 ### Requirement: Barcode readout
-Hovering the barcode, or moving a cursor over it with the arrow keys (starting at the newest day of the first row, Escape clearing it), SHALL show the cell's power, as precise as its bucket allows, and its family or `full power`, with the unit and date; once the pointer rests on a cell, the readout SHALL add the day's reason and its provenance from `api`'s unit-day route. (PRD-0002 T-013 T-021)
+Hovering the barcode, or moving a cursor over it with the arrow keys (starting at the newest day of the first row, Escape clearing it), SHALL show the cell's power, as precise as its bucket allows, and its family or `full power`, with the unit and date; once the pointer rests on a cell, the readout SHALL add the day's reason and its provenance from `api`'s unit-day route. (PRD-0002 T-013 T-021, PRD-0003 T-005)
 
 #### Scenario: Keyboard cursor
 - **WHEN** a reader focuses the barcode and presses an arrow key
@@ -70,6 +70,10 @@ Hovering the barcode, or moving a cursor over it with the arrow keys (starting a
 #### Scenario: Provenance in words
 - **WHEN** the row behind a cell is a `reactor_trip` by `precedence_v1`
 - **THEN** the readout says `reactor trip · named on the day`, and a bucket of 50% reads `50–53%`
+
+#### Scenario: A resolved reference in words
+- **WHEN** the row is a `scram` by `xref_en_v1`
+- **THEN** the readout says `scram · from the event report it cites`
 
 #### Scenario: A transition with nothing to inherit
 - **WHEN** the row is a transition by `inherit_14d` with no cause in the 14 days before

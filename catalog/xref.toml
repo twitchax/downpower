@@ -1,0 +1,34 @@
+# How a status day's `See EN# N` names a cause (DESIGN.md Decision 32, method `xref_en_v1`).
+#
+# A reference resolves when the archive holds event N, the event's unit table lists the day's unit,
+# and the event isn't retracted. The first rule below that matches it then names the cause, and a
+# resolved event no rule matches takes `fallback`. Every cause is a fine cause in catalog/tags.toml.
+#
+# A rule matches on one of:
+#   - `scram`: the unit's SCRAM Code in the event's unit table, as the page writes it.
+#   - `sections`: a 10 CFR section the event lists. `code` matches the section's code or a prefix of
+#     it that ends a paragraph, with spaces ignored: `50.72(b)` matches `50.72(b)(2)(i)`, and `50.7`
+#     doesn't match `50.72(b)`. A `description`, when given, must match too, case and spacing aside.
+#
+# Sections belong to the whole event, and the SCRAM Code to one unit. `RPS ACTUATION - CRITICAL`
+# stays out of the rules: on a multi-unit event it names the one unit that scrammed, so the
+# others would read as scrams too.
+
+fallback = "en_reported"
+
+# Every code but `N`. `A` is an actuation, sometimes while shut down, but a status day that cites
+# one is losing output to it.
+[[rules]]
+cause = "scram"
+scram = ["A/R", "M/R", "A", "M"]
+
+# A shutdown the plant's Technical Specifications required. The 2000 revision of 10 CFR 50.72 moved
+# it from (b)(1)(i)(A) to (b)(2)(i), where a degraded or unanalyzed condition had been. Both
+# meanings of (b)(2)(i) appear in 2001 (the new one from EN 37677 on 2001-01-23, the old one until
+# EN 38444 on 2001-10-30), so the description decides with the code.
+[[rules]]
+cause = "required_shutdown"
+sections = [
+    { code = "50.72(b)(1)(i)(A)", description = "PLANT S/D REQD BY TS" },
+    { code = "50.72(b)(2)(i)", description = "PLANT S/D REQD BY TS" },
+]

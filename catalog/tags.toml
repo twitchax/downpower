@@ -39,6 +39,10 @@ rod_pattern = "fuel_cycle"
 fuel_management = "fuel_cycle"
 scram = "forced"
 forced_outage = "forced"
+# Named only through a resolved `See EN#` (catalog/xref.toml): a shutdown the Technical
+# Specifications required, and an event no rule there names a cause for.
+required_shutdown = "forced"
+en_reported = "forced"
 maintenance = "maintenance"
 testing = "maintenance"
 steam_generator = "equipment"

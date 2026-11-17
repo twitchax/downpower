@@ -53,7 +53,8 @@ fn method(method: &str) -> &'static str {
     match method {
         "precedence_v1" => "named on the day",
         "inherit_14d" => "inherited from an earlier day",
-        "xref_unresolved" => "an event report, not yet resolved",
+        "xref_en_v1" => "from the event report it cites",
+        "xref_unresolved" => "an event report that doesn't resolve",
         "no_cause" => "no cause given",
         "reason_pending" => "reason not yet published",
         "no_report" => "no NRC report; EIA's number",
@@ -345,11 +346,21 @@ mod tests {
         assert_eq!(provenance(&row(None, "no_cause")), "no cause given");
         assert_eq!(provenance(&row(Some("refueling"), "inherit_14d")), "refueling · inherited from an earlier day");
         assert_eq!(provenance(&row(None, "inherit_14d")), "a transition, with no cause in the 14 days before");
+        assert_eq!(provenance(&row(Some("scram"), "xref_en_v1")), "scram · from the event report it cites");
     }
 
     #[test]
     fn every_method_reads_in_words() {
-        for name in ["precedence_v1", "inherit_14d", "xref_unresolved", "no_cause", "reason_pending", "no_report", "unknown_tag"] {
+        for name in [
+            "precedence_v1",
+            "inherit_14d",
+            "xref_en_v1",
+            "xref_unresolved",
+            "no_cause",
+            "reason_pending",
+            "no_report",
+            "unknown_tag",
+        ] {
             assert!(!method(name).is_empty(), "{name}");
         }
     }
