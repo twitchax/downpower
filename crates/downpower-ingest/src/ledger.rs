@@ -18,6 +18,7 @@ use crate::eia::NucStatus;
 use crate::events::EventSet;
 use crate::facilities::Facilities;
 use crate::raw::{RawStore, Series};
+use crate::scrams::{self, Check};
 use crate::status::{self, Row, StatusPage};
 use crate::tags::{Family, Tags};
 use crate::units::{Unit, Units};
@@ -29,7 +30,8 @@ use crate::{Res, Void};
 /// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
 /// 5: events carry their identity, and reactor events a row per unit (T-004). 6: `See EN#` days
 /// resolve through `catalog/xref.toml` (T-005). 7: an event with a blank Last Update Date parses.
-pub const LEDGER_VERSION: u32 = 7;
+/// 8: builds record the internal scram check (T-007).
+pub const LEDGER_VERSION: u32 = 8;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]
@@ -220,6 +222,9 @@ pub struct Summary {
     pub without_capacity: u64,
     /// Every date the build covers, by what the ledger has for it.
     pub dates: Coverage,
+    /// The internal scram check: the Event Notifications and the status reports against each other.
+    #[serde(default)]
+    pub scrams: scrams::Counts,
 }
 
 /// Dates by source (Decisions 11 and 12): what `/status` reports the ledger rests on.
@@ -246,6 +251,7 @@ pub struct Builder<'a> {
     attributors: HashMap<&'a str, Attributor<'a>>,
     /// Each unit's row on the previous published page, which a stale repeat copies.
     previous: HashMap<&'a str, Row>,
+    scrams: Check<'a>,
     summary: Summary,
 }
 
@@ -259,6 +265,7 @@ impl<'a> Builder<'a> {
             unknowns,
             attributors: HashMap::new(),
             previous: HashMap::new(),
+            scrams: Check::new(events),
             summary: Summary::default(),
         }
     }
@@ -311,12 +318,14 @@ impl<'a> Builder<'a> {
             self.summary.first.get_or_insert(date);
             self.summary.last = Some(date);
         }
+        self.scrams.observe(&days);
         Ok(days)
     }
 
     /// What the build did so far.
     #[must_use]
-    pub fn finish(self) -> Summary {
+    pub fn finish(mut self) -> Summary {
+        self.summary.scrams = self.scrams.finish().counts();
         self.summary
     }
 

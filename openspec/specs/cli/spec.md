@@ -92,6 +92,13 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **WHEN** `cargo xtask summary` runs over a raw store whose units and tags are all known
 - **THEN** it prints the in-service unit-days and each family's unit-days below 100%, unit-years, TWh and share
 
+### Requirement: xtask scrams
+`cargo xtask scrams` SHALL build the event set and the ledger under the fail policy, run the scram check as `ledger` describes, and print both directions' counts and agreement overall and by year, every `missed` EN scram, and `--examples` report scrams (20 by default) of each of `missed` and `no_scram_code`. (PRD-0003 T-007)
+
+#### Scenario: Over the archive
+- **WHEN** `cargo xtask scrams` runs over a raw store whose units, tags and facilities are all known
+- **THEN** it prints the share of EN scrams the status reports show and the share of report scrams an event reports
+
 ### Requirement: xtask events
 `cargo xtask events` SHALL parse every stored Event Notification page and print the archive's counts (pages with events, empty pages by year, events repeated across pages, events by category and with no 10 CFR section, unused event numbers), the update markers' kinds and parse rates, and the events identified by kind, and SHALL fail when any page fails to parse or names a facility the catalogs lack, printing the first 20 of each. (PRD-0003 T-001 T-002 T-004)
 

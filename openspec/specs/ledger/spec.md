@@ -269,11 +269,41 @@ A `NUC_STATUS` rating SHALL carry across days EIA skips and past the end of the 
 - **THEN** no unit in service in a year from 1999 to 2006 lacks a rating for it
 
 ### Requirement: Build summary
-Every build SHALL record a summary: rows; first and last day; rows from EIA alone; rows inside the hold; NRC rows EIA also reports and how many disagree on power; units a page lists twice; quarantined tags and unit names with their uses; total lost kWh; rows below 100% without a capacity; and each covered date counted once as `reasons`, `held`, `eia` or `missing`. (PRD-0002 T-008 T-015)
+Every build SHALL record a summary: rows; first and last day; rows from EIA alone; rows inside the hold; NRC rows EIA also reports and how many disagree on power; units a page lists twice; quarantined tags and unit names with their uses; total lost kWh; rows below 100% without a capacity; each covered date counted once as `reasons`, `held`, `eia` or `missing`; and the scram check's counts. (PRD-0002 T-008 T-015, PRD-0003 T-007)
 
 #### Scenario: Dates by source
 - **WHEN** a build meets a page with reasons, a held page, a no-data day EIA fills, and a day with nothing
 - **THEN** its dates count 1 each as `reasons`, `held`, `eia` and `missing`
+
+### Requirement: EN scrams in the status reports
+Each unit a live event's table gives a SCRAM Code other than `N` SHALL count once: `dropped` when an NRC row the day of the event or the next shows it 10 or more points below its initial power; else `named` when such a row has the Scrams (#) count, a `scram` tag, or cites the event; else `no_report` when neither day has an NRC row; else `low_power` from under 10%; else `missed`. (PRD-0003 T-007)
+
+#### Scenario: A scram the reports show
+- **WHEN** EN 45286 scrams Crystal River 3 from 100% on 2009-08-24 and it reads 100% that day and 0% the next
+- **THEN** it counts as `dropped`
+
+#### Scenario: A quick restart the report names
+- **WHEN** Browns Ferry 3, scrammed by EN 45290 from 100%, reads 95% the next day citing EN 45290
+- **THEN** it counts as `named`
+
+#### Scenario: A retracted event
+- **WHEN** the event is retracted
+- **THEN** its scram counts toward nothing
+
+### Requirement: Status-report scrams in the event reports
+A unit's report scram SHALL start on the first of a run of consecutive NRC rows with the Scrams (#) count or a `scram` tag, dated by its Down date when that is within the 7 days before, else the row's date. It SHALL count once: `event` when a live event on the unit within 2 days or cited gives a SCRAM Code other than `N`; else `retracted` when a retracted one does; else `no_scram_code` when events on the unit are within 2 days; else `missed`. (PRD-0003 T-007)
+
+#### Scenario: Two days marked, one scram
+- **WHEN** Crystal River 3 reads `Automatic Reactor Trip` on 2009-08-25 and 08-26
+- **THEN** one report scram counts, as `event`, through EN 45286
+
+#### Scenario: The event says no scram
+- **WHEN** Peach Bottom 2 reads `Manual Reactor Scram` on 2009-08-25 and its only event near then, EN 45289, says `N`
+- **THEN** it counts as `no_scram_code`
+
+#### Scenario: Only a retracted event
+- **WHEN** the one event matching a report scram is retracted
+- **THEN** it counts as `retracted`, a known difference outside the agreement rate
 
 ### Requirement: The event set
 Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events, and the dates of pages skipped for failing to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003)

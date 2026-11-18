@@ -137,6 +137,14 @@ Each chart SHALL say it is loading until its data arrives and show the error whe
 - **WHEN** `/api/status` has no readable build but names a serving table
 - **THEN** the panel says the site serves the previous build until the new one is done
 
+### Requirement: Status page scram check
+Once a build records the scram check, the ledger panel SHALL state both agreement rates as `ledger` defines the outcomes: EN scrams `dropped` or `named` of those plus `missed`, and report scrams `event` of those plus `no_scram_code` and `missed`. (PRD-0003 T-007)
+
+#### Scenario: The scram check
+- **WHEN** a build counts 1,200 dropped, 51 named and 20 missed EN scrams, and 1,208 event, 50 no-scram-code and 529 missed report scrams
+- **THEN** the panel reads `1,251 of 1,271` (98.4%) and `1,208 of 1,787` (67.6%)
+- **AND** a build from before the check shows no scram sentence
+
 ### Requirement: Status page runs
 `/status` SHALL list the runs `api` returns, each marked passed or failed, with its start time, its status-page and event-report counts (`stored`, `unchanged`, `missing`, `settled`) or `not fetched`, the last `NUC_STATUS` day when it fetched one, whether it rebuilt or left the ledger unchanged, and its errors. (PRD-0002 T-015 T-019)
 

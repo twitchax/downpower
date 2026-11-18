@@ -124,6 +124,11 @@ label = "cause:coastdown"
 pattern = 'permanent(ly)? (plant )?(shut ?down|cessation|ceased|defueled)|decommission'
 label = "cause:permanent_shutdown"
 
+# Control rod scram time tests are planned derates, not scrams (PRD-0003.log.md#t-007).
+[[rules]]
+pattern = 'scram tim|scram test'
+label = "cause:testing"
+
 [[rules]]
 pattern = '\bscram|\b(reactor|rx|unit|plant|turbine|generator) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|tripped'
 label = "cause:scram"

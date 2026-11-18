@@ -22,6 +22,7 @@ use downpower_ingest::units::Units;
 mod capacity;
 mod crosscheck;
 mod events;
+mod scrams;
 
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
 const UNCLASSIFIED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/unclassified.tsv");
@@ -75,6 +76,14 @@ enum Command {
     /// pages, events by category, repeats across pages, and unused event numbers. Fails if any page
     /// fails to parse.
     Events,
+    /// Builds the ledger and runs the internal scram check (DESIGN.md Decision 33): how many EN
+    /// scrams the status reports show and how many status-report scrams an EN reports, by year, with
+    /// the cases where the two disagree.
+    Scrams {
+        /// Status-report scrams to print per outcome.
+        #[arg(long, default_value_t = 20)]
+        examples: usize,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -88,6 +97,7 @@ fn main() -> anyhow::Result<()> {
         Command::Capacity { dir } => capacity::run(&dir, Path::new(CAPACITY)),
         Command::Crosscheck { dir } => crosscheck::run(&cli.data_dir, &dir),
         Command::Events => events::run(&cli.data_dir),
+        Command::Scrams { examples } => scrams::run(&cli.data_dir, examples),
     }
 }
 

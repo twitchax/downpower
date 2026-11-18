@@ -92,6 +92,25 @@ fn uat_reasons_snapshot_keys_win_over_rules() {
     assert!(matches!(classified.label, Label::Cause(cause) if cause.family == Family::Maintenance));
 }
 
+/// The scram check (PRD-0003 T-007) found the scram rule catching control rod scram time tests,
+/// planned derates no Event Notification reports.
+#[test]
+fn a_scram_time_test_is_testing_not_a_scram() {
+    let tags = Tags::catalog().unwrap();
+    let tests = [
+        "holding power for scram time testing",
+        "control rod scram time testing",
+        "testing control rod scram times",
+        "power ascension on hold for scram timing",
+        "reduced power for turbine test, scram test and rod sequence exchange",
+    ];
+    for tag in tests {
+        assert_eq!(label(&tags, tag), "testing/Maintenance", "{tag}");
+    }
+    assert_eq!(label(&tags, "automatic reactor scram. see event # 41243"), "scram/Forced");
+    assert_eq!(label(&tags, "single control rod scram during rps testing"), "scram/Forced");
+}
+
 #[test]
 fn uat_reasons_snapshot_only_full_electrical_output_books_no_lost_output() {
     let tags = Tags::catalog().unwrap();

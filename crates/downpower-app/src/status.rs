@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
+use downpower_core::scrams::Counts;
 use leptos::prelude::*;
 use serde::Deserialize;
 
@@ -38,6 +39,9 @@ pub struct Summary {
     pub lost_kwh: u64,
     pub without_capacity: u64,
     pub dates: Coverage,
+    /// Builds from before the scram check (PRD-0003 T-007) don't have it.
+    #[serde(default)]
+    pub scrams: Counts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -95,6 +99,22 @@ fn share(part: u64, whole: u64, digits: usize) -> String {
     #[allow(clippy::cast_precision_loss, reason = "counts far below 2^52")]
     let percent = if whole == 0 { 0.0 } else { part as f64 / whole as f64 * 100.0 };
     format!("{percent:.digits$}%")
+}
+
+/// The scram check in words, or `None` for a build from before it.
+fn scrams(counts: Counts) -> Option<String> {
+    let (events, reports) = (counts.events, counts.reports);
+    (events.checked() + reports.checked() > 0).then(|| {
+        format!(
+            "The NRC's two sources on scrams: the status reports show {} of {} scrams an event report lists ({}), and an event report lists {} of {} scrams the status reports mark ({}).",
+            thousands(events.agreed()),
+            thousands(events.checked()),
+            share(events.agreed(), events.checked(), 1),
+            thousands(reports.agreed()),
+            thousands(reports.checked()),
+            share(reports.agreed(), reports.checked(), 1)
+        )
+    })
 }
 
 /// A fetch summary in words.
@@ -206,6 +226,7 @@ fn Ledger(current: Option<Build>, serving: Option<String>) -> impl IntoView {
                     share(summary.disagreed, summary.compared, 3)
                 )}
             </p>
+            {scrams(summary.scrams).map(|sentence| view! { <p>{sentence}</p> })}
             {if summary.unknown_tags.is_empty() && summary.unknown_units.is_empty() {
                 view! { <p class="meta">"Nothing quarantined: every reason tag and unit name is known."</p> }.into_any()
             } else {
@@ -286,5 +307,24 @@ mod tests {
         });
         assert_eq!(fetched("status pages", Some(run)), "status pages: 1 stored, 0 unchanged, 0 missing, 61 settled", "an older run parses");
         assert_eq!((thousands(0), thousands(999), thousands(1_016_840)), ("0".to_owned(), "999".to_owned(), "1,016,840".to_owned()));
+    }
+
+    #[test]
+    fn the_scram_check_reads_as_one_sentence_once_a_build_has_it() {
+        let older: Summary = serde_json::from_str(
+            r#"{"days":1,"first":null,"last":null,"compared":0,"disagreed":0,"unknown_tags":{},"unknown_units":{},"lost_kwh":0,"without_capacity":0,"dates":{"reasons":0,"held":0,"eia":0,"missing":0}}"#,
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(scrams(older.scrams), None, "a build from before the check parses and says nothing");
+
+        let counts: Counts =
+            serde_json::from_str(r#"{"events":{"dropped":1200,"named":51,"no_report":7,"low_power":121,"missed":20},"reports":{"event":1208,"retracted":8,"no_scram_code":50,"missed":529}}"#)
+                .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            scrams(counts).as_deref(),
+            Some(
+                "The NRC's two sources on scrams: the status reports show 1,251 of 1,271 scrams an event report lists (98.4%), and an event report lists 1,208 of 1,787 scrams the status reports mark (67.6%)."
+            )
+        );
     }
 }
