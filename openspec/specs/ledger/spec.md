@@ -83,12 +83,16 @@ A tag SHALL be known by, in order, its exact key in `catalog/tags.toml`, the fir
 - **THEN** the earlier rule in `catalog/tags.toml` labels it
 
 ### Requirement: A scram tag names a trip
-The committed table SHALL label `scram` a tag naming a reactor, manual, automatic, turbine or generator trip or scram, and SHALL give its own cause to a tripped pump, line or breaker, a test of a trip system or of scram times, and work on scram valves, the scram discharge volume or trip solenoids. `catalog/tags.toml` is the authority for the spellings. (PRD-0003 T-007)
+The committed table SHALL label `scram` a tag naming a reactor, manual or automatic trip or a scram, and SHALL give its own cause to a tripped pump, line or breaker, a turbine or generator trip, a test of a trip system or of scram times, and work on scram valves, the scram discharge volume or trip solenoids. `catalog/tags.toml` is the authority for the spellings and its keys for the exceptions. (PRD-0003 T-007)
 
 #### Scenario: A pump trip and a trip test
 - **WHEN** `one recirc pump tripped`, `turbine trip testing in progress` and `isolating leaking scram outlet valve` are classified
 - **THEN** they are `recirculation_pump`, `testing` and `maintenance`
 - **AND** `rx scram during turbine trip testing. see en#45265` is `scram`
+
+#### Scenario: A turbine trip
+- **WHEN** `turbine trip due to ehc rupture` and `automatic reactor shutdown due to main turbine trip - see en #45789.` are classified
+- **THEN** they are `turbine_generator` and `scram`
 
 ### Requirement: Tag table checks
 The tag table SHALL fail to load when a label names an undefined cause or flag, a key or listed tag isn't normalized or appears twice, a flag appears twice, a pattern doesn't compile, `no_lost_output` names an unknown cause, or `catalog/unclassified.tsv` doesn't start with its `tag` header. (PRD-0002 T-005 T-009)

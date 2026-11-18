@@ -311,10 +311,13 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
     - **Internally:** each EN scram against the status reports' drop on that unit, and each
       status-report scram outage against an EN, matched within 2 days or by a citation anywhere
       in the reason. Over the archive the reports show 99.7% of EN scrams, and an EN reports
-      96.4% of report scrams (PRD-0003.log.md#t-007, revised 2026-11-17).
-    - A `scram` tag names a reactor, turbine or generator trip. Tripped pumps, lines and
-      breakers, tests of a trip system and work on its parts take their own causes, which the
-      check found the scram rule catching (revised 2026-11-17).
+      97.5% of report scrams (PRD-0003.log.md#t-007, revised 2026-11-17).
+    - A `scram` tag names a reactor trip. Tripped pumps, lines and breakers, tests of a trip
+      system and work on its parts take their own causes, which the check found the scram rule
+      catching. A turbine or generator trip naming no reactor trip is `turbine_generator`, or the
+      cause the tag names: a turbine trip scrams the reactor only above a power interlock, and the
+      event's SCRAM Code says whether it did. A tag whose unit's event reports a scram is a key
+      (revised 2026-11-17).
     - **Against the NRC's scram dataset** (`scram-event-notifications.xlsx`, CC0): stored in the
       raw store, rechecked weekly, and reconciled by event number over its span (2011 to early
       2025). A retracted scram the NRC still counts is a known difference.

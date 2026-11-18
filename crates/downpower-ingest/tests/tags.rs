@@ -176,6 +176,39 @@ fn work_on_trip_system_parts_is_maintenance_not_a_scram() {
     assert_eq!(label(&tags, "see event #35753, reactor scram due to high level in the scram discharge volume"), "scram/Forced");
 }
 
+/// The scram check (PRD-0003 T-007) found turbine and generator trips on units no Event Notification
+/// reports a reactor scram on. A trip that names no reactor trip takes the cause the tag names, else
+/// `turbine_generator`; a tag whose unit's event reports a reactor scram is a key.
+#[test]
+fn a_turbine_or_generator_trip_is_not_a_reactor_scram() {
+    let tags = Tags::catalog().unwrap();
+    let cases = [
+        ("turbine trip", "turbine_generator/Equipment"),
+        ("investigating turbine trip", "turbine_generator/Equipment"),
+        ("turbine tripped due to lightning strike", "turbine_generator/Equipment"),
+        ("turbine trip due to ehc rupture", "turbine_generator/Equipment"),
+        ("main generator trip shortly after syncing to grid. investigation in progress", "turbine_generator/Equipment"),
+        ("turbine trip due to transformer issue. see en#46025.", "transformer/Equipment"),
+        ("holding power for troubleshooting feedwater turbine trip", "feedwater/Equipment"),
+        ("3b recirc motor generator tripped", "recirculation_pump/Equipment"),
+        ("maintenance outage - turbine trip", "maintenance/Maintenance"),
+    ];
+    for (tag, expected) in cases {
+        assert_eq!(label(&tags, tag), expected, "{tag}");
+    }
+    let scrams = [
+        "automatic reactor shutdown due to main turbine trip - see en #45789.",
+        "scram due to turbine trip from high vibration - see event #42180",
+        "starting up after turbine trip and scram - increasing power. see event #41832",
+        "turbine trip. see event 42966",
+        "en56478 - control system power failure and turbine trip",
+        "investigate cause of main generator trip",
+    ];
+    for tag in scrams {
+        assert_eq!(label(&tags, tag), "scram/Forced", "{tag}");
+    }
+}
+
 #[test]
 fn uat_reasons_snapshot_only_full_electrical_output_books_no_lost_output() {
     let tags = Tags::catalog().unwrap();

@@ -114,6 +114,16 @@ outage_unspecified = "unattributed"
 "scram time testing" = "cause:testing"
 "switch yard work - high reactor trip risk, line 383 oos ( 1 of 4 offsite sources)" = "flag:offsite_power"
 
+# Turbine and generator trips naming no reactor trip whose unit's Event Notification, cited or within
+# two days, reports a reactor scram (PRD-0003.log.md#t-007). The rules give such a trip to the turbine.
+"turbine trip. see event 42966" = "cause:scram"
+'turbine trip due to lighting strike on electrical grid - en #45183 - "a" rcp seal repair' = "cause:scram"
+"forced outage - investigation in progress to identify cause of turbine trip - see en #51762" = "cause:scram"
+"control system power failure and turbine trip" = "cause:scram"
+"en56478 - control system power failure and turbine trip" = "cause:scram"
+"investigate cause of main generator trip" = "cause:scram"
+"generator offline- investigating a turbine trip." = "cause:scram"
+
 # Tried in order on every tag no key matches; the first match wins. Causes come first, most specific
 # to least, so a tag that names its cause keeps it. Flags, transitions and EN references follow.
 [[rules]]
@@ -125,7 +135,8 @@ pattern = 'permanent(ly)? (plant )?(shut ?down|cessation|ceased|defueled)|decomm
 label = "cause:permanent_shutdown"
 
 # The scram rules below (PRD-0003.log.md#t-007) give `scram` only to a reactor trip. Tests and parts
-# of a trip system come first or after, as the order needs; turbine and generator trips still count.
+# of a trip system come first or after, as the order needs. A turbine or generator trip naming no
+# reactor trip falls through to the cause it names, else to `turbine_generator`.
 #
 # Control rod scram time tests, single rods scrammed in them, and reactor trip tests are planned
 # derates, not scrams.
@@ -136,7 +147,7 @@ label = "cause:testing"
 # A reactor trip: the reactor or a manual or automatic trip is named. A tripped pump, line or
 # breaker is not one, so `tripped` counts only after the reactor, `manually`, or as the whole tag.
 [[rules]]
-pattern = '\b(reactor|rx|unit|plant) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|\b(reactor|rx|unit|plant)( was| has)?( manually| automatically)? tripped|\bmanually tripped|tripped (the )?(reactor|rx|unit) (for|@|at|on|due) |^tripped(\.|$)'
+pattern = '\b(reactor|rx|unit|plant) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|\bautomatic reactor shutdown|\b(reactor|rx|unit|plant)( was| has)?( manually| automatically)? tripped|\bmanually tripped|tripped (the )?(reactor|rx|unit) (for|@|at|on|due) |^tripped(\.|$)'
 label = "cause:scram"
 
 # A test of a turbine or pump trip, once no reactor trip is named.
@@ -150,7 +161,7 @@ pattern = 'scram (discharge|outlet|inlet|solenoid|pilot|valve)|trip solenoid|tri
 label = "cause:maintenance"
 
 [[rules]]
-pattern = '\b(turbine|generator) (trip|scram)|\bscram'
+pattern = '\bscram'
 label = "cause:scram"
 
 [[rules]]
