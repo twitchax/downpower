@@ -22,7 +22,7 @@ docket,kind,name,state,en_names,unit,license,source
 04003392,fuel_cycle,Honeywell Metropolis Works,IL,"Allied-Signal Inc.;Honeywell International, Inc.",,,https://www.govinfo.gov/content/pkg/FR-2020-04-15/html/2020-07946.htm; AlliedSignal: https://www.govinfo.gov/content/pkg/FR-1995-05-17/html/95-12103.htm
 07000008,fuel_cycle,Battelle West Jefferson,OH,Battelle Memorial Institute,,,https://www.govinfo.gov/content/pkg/FR-2008-05-08/html/E8-10281.htm (license SNM-7)
 07000027,fuel_cycle,BWXT Nuclear Operations Group Lynchburg,VA,"BWX Technologies;BWX Technologies, Inc.;BWX Technologies Inc.;B&W Nuclear Operating Group, Inc.",,,"https://www.govinfo.gov/content/pkg/FR-2007-04-06/html/E7-6480.htm (license SNM-42, which the event texts cite)"
-07000036,fuel_cycle,Hematite,MO,CE Nuclear Power;Westinghouse Hematite,,,https://www.govinfo.gov/content/pkg/FR-2011-10-31/html/2011-28073.htm; Combustion Engineering: https://www.govinfo.gov/content/pkg/FR-1994-03-28/html/94-7209.htm
+07000036,fuel_cycle,Hematite,MO,CE Nuclear Power;Westinghouse Hematite;Combustion Engineering Inc.,,,https://www.govinfo.gov/content/pkg/FR-2011-10-31/html/2011-28073.htm; Combustion Engineering: https://www.govinfo.gov/content/pkg/FR-1994-03-28/html/94-7209.htm
 07000143,fuel_cycle,Nuclear Fuel Services Erwin,TN,Nuclear Fuel Services Inc.;Nuclear Fuels Services,,,https://www.govinfo.gov/content/pkg/FR-2003-07-16/html/03-17962.htm
 07000754,fuel_cycle,GE Vallecitos Nuclear Center,CA,General Electric Co.,,,https://www.govinfo.gov/content/pkg/FR-1994-01-20/html/94-1324.htm (license SNM-960)
 07001113,fuel_cycle,Global Nuclear Fuel-Americas Wilmington,NC,GE Nuclear Energy;Global Nuclear Fuel - Americas;Global Laser Enrichment,,,https://www.govinfo.gov/content/pkg/FR-2023-11-01/html/2023-24060.htm; the GLE test loop runs under its license SNM-1097: https://www.govinfo.gov/content/pkg/FR-2024-04-29/html/2024-09097.htm
@@ -40,6 +40,7 @@ docket,kind,name,state,en_names,unit,license,source
 05000005,non_power_reactor,Penn State University,PA,,,R-2,Event Notification pages print this docket with license R-2 (EN 40411)
 05000020,non_power_reactor,Massachusetts Institute of Technology,MA,,,R-37,Event Notification pages print this docket with license R-37 (EN 39969)
 05000027,non_power_reactor,Washington State University,WA,,,R-76,Event Notification pages print this docket with license R-76 (EN 38633)
+05000057,non_power_reactor,State University of New York at Buffalo,NY,,,R-77,Event Notification pages print this docket with license R-77 (EN 35520)
 05000059,non_power_reactor,Texas A&M University (AGN),TX,,,R-23,Event Notification pages print this docket with license R-23 (EN 50749)
 05000073,non_power_reactor,General Electric Hitachi,CA,,,R-33,Event Notification pages print this docket with license R-33 (EN 51789)
 05000083,non_power_reactor,University of Florida,FL,,,R-56,Event Notification pages print this docket with license R-56 (EN 47979)

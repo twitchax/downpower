@@ -570,6 +570,27 @@ mod unit {
         );
     }
 
+    /// The weekend Event Notification pages (PRD-0003 T-006) name two facilities the weekday pages never did.
+    #[test]
+    fn the_weekend_pages_facilities_are_catalogued() {
+        let facilities = Facilities::catalog(&Units::catalog().unwrap()).unwrap();
+
+        assert_eq!(
+            facilities.identify(&fuel_cycle("COMBUSTION ENGINEERING INC.", "MO")),
+            Ok(Some(Identity::Facility {
+                docket: docket("07000036"),
+                name: "Hematite".to_owned()
+            }))
+        );
+        assert_eq!(
+            facilities.identify(&licensee(35520, Category::NonPowerReactor, Some("NY"), Some("SUNY Buffalo"), Some("R-77"))),
+            Ok(Some(Identity::Facility {
+                docket: docket("05000057"),
+                name: "State University of New York at Buffalo".to_owned()
+            }))
+        );
+    }
+
     #[test]
     fn non_power_reactors_match_on_their_license_whatever_the_docket_field_says() {
         let facilities = facilities();
