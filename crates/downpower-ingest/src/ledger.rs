@@ -18,6 +18,7 @@ use crate::eia::NucStatus;
 use crate::events::EventSet;
 use crate::facilities::Facilities;
 use crate::raw::{RawStore, Series};
+use crate::scram_dataset;
 use crate::scrams::{self, Check};
 use crate::status::{self, Row, StatusPage};
 use crate::tags::{Family, Tags};
@@ -472,13 +473,14 @@ fn repeats(copy: &Row, previous: &Row) -> bool {
 
 /// Builds the ledger from the newest capture of every status page and the newest `NUC_STATUS`,
 /// resolving `See EN#` references against `events`, and hands `emit` each day's rows from the
-/// first page through the last day either source covers.
+/// first page through the last day either source covers. The summary carries both scram checks,
+/// the dataset's against the newest stored scram dataset.
 ///
 /// # Errors
 ///
 /// When the raw store can't be read, a page or the `NUC_STATUS` doesn't parse, a day fails (see
 /// [`Builder::day`]), or `emit` fails. Under [`Unknowns::Fail`], also when a `NUC_STATUS` generator
-/// is missing from the catalog.
+/// is missing from the catalog or the scram dataset doesn't parse.
 pub fn build(store: &RawStore, catalog: &Catalog, events: &EventSet, unknowns: Unknowns, mut emit: impl FnMut(Vec<UnitDay>) -> Void) -> Res<Summary> {
     let pages = store.latest(Series::PowerStatus)?;
     let nuc_status = match store.latest(Series::NucStatus)?.into_values().next_back() {
@@ -504,5 +506,25 @@ pub fn build(store: &RawStore, catalog: &Catalog, events: &EventSet, unknowns: U
         };
         emit(builder.day(date, page.as_ref())?)?;
     }
-    Ok(builder.finish())
+    let mut summary = builder.finish();
+    summary.scrams.dataset = dataset(store, events, unknowns)?;
+    Ok(summary)
+}
+
+/// The newest stored scram dataset reconciled against `events`. One that doesn't parse fails the
+/// backfill but is skipped on the server's paths: it is a cross-check, so a change to its format
+/// mustn't hold the ledger back.
+fn dataset(store: &RawStore, events: &EventSet, unknowns: Unknowns) -> Res<Option<scrams::DatasetCounts>> {
+    let newest = store.latest(Series::ScramDataset)?.into_values().rev().find_map(|record| Some((record.date, record.sha256?)));
+    let Some((date, hash)) = newest else {
+        return Ok(None);
+    };
+    match scram_dataset::parse(&store.get(&hash)?).with_context(|| format!("the scram dataset fetched {date}")) {
+        Ok(rows) => Ok(scram_dataset::reconcile(&rows, events).map(|reconciled| reconciled.counts())),
+        Err(error) if unknowns == Unknowns::Quarantine => {
+            tracing::warn!(error = format!("{error:#}"), "skipping the scram dataset");
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }

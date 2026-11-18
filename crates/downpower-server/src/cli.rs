@@ -68,16 +68,18 @@ pub enum SeriesArg {
     Events,
     /// EIA's daily nuclear outage bulk file, in one request; the dates and interval don't apply.
     NucStatus,
+    /// The NRC's scram dataset, in one request; the dates don't apply.
+    ScramDataset,
 }
 
 impl SeriesArg {
-    /// The NRC report fetched page by page, or `None` for EIA's bulk file.
+    /// The NRC report fetched page by page, or `None` for a series that is one file.
     #[must_use]
     pub const fn report(self) -> Option<Report> {
         match self {
             Self::Status => Some(Report::PowerStatus),
             Self::Events => Some(Report::EventNotifications),
-            Self::NucStatus => None,
+            Self::NucStatus | Self::ScramDataset => None,
         }
     }
 }
@@ -87,22 +89,33 @@ impl SeriesArg {
 /// # Errors
 ///
 /// When the raw store cannot be opened, the fetcher stops (see [`Fetcher::run`]), or the
-/// `NUC_STATUS` just stored doesn't parse or names a generator the units catalog lacks.
+/// `NUC_STATUS` or scram dataset just stored doesn't parse (or the `NUC_STATUS` names a generator
+/// the units catalog lacks).
 pub async fn fetch(args: &FetchArgs, data_dir: &Path) -> anyhow::Result<Summary> {
     let store = RawStore::open(data_dir)?;
     let to = args.to.unwrap_or_else(|| Utc::now().date_naive());
-    match args.series.report() {
-        Some(report) => fetch_report(store, &args.pace, report, args.from, to).await,
-        None => fetch_nuc_status(&store).await,
+    match (args.series, args.series.report()) {
+        (_, Some(report)) => fetch_report(store, &args.pace, report, args.from, to).await,
+        (SeriesArg::ScramDataset, None) => fetch_scram_dataset(store, &args.pace).await,
+        (_, None) => fetch_nuc_status(&store).await,
+    }
+}
+
+fn config(pace: &Pace) -> Config {
+    Config {
+        interval: Duration::from_secs(pace.interval_secs),
+        ..Config::nrc()
     }
 }
 
 async fn fetch_report(store: RawStore, pace: &Pace, report: Report, from: NaiveDate, to: NaiveDate) -> anyhow::Result<Summary> {
-    let config = Config {
-        interval: Duration::from_secs(pace.interval_secs),
-        ..Config::nrc()
-    };
-    Fetcher::new(config, store)?.run(report, from, to).await
+    Fetcher::new(config(pace), store)?.run(report, from, to).await
+}
+
+async fn fetch_scram_dataset(store: RawStore, pace: &Pace) -> anyhow::Result<Summary> {
+    let mut fetcher = Fetcher::new(config(pace), store.clone())?;
+    daily::fetch_scram_dataset(&mut fetcher, &store, Utc::now().date_naive()).await?;
+    Ok(Summary { stored: 1, ..Summary::default() })
 }
 
 async fn fetch_nuc_status(store: &RawStore) -> anyhow::Result<Summary> {
@@ -111,7 +124,7 @@ async fn fetch_nuc_status(store: &RawStore) -> anyhow::Result<Summary> {
 }
 
 /// Runs `downpower backfill`: every status and Event Notification page from 1999 through today,
-/// a fresh `NUC_STATUS`, then [`rebuild`].
+/// a fresh `NUC_STATUS` and scram dataset, then [`rebuild`].
 ///
 /// # Errors
 ///
@@ -123,6 +136,7 @@ pub async fn backfill(pace: &Pace, data_dir: &Path) -> anyhow::Result<ledger::Bu
         tracing::info!(?report, summary.stored, summary.missing, summary.skipped, "fetched");
     }
     fetch_nuc_status(&RawStore::open(data_dir)?).await?;
+    fetch_scram_dataset(RawStore::open(data_dir)?, pace).await?;
     rebuild(data_dir).await
 }
 
@@ -169,12 +183,15 @@ mod unit {
     }
 
     #[test]
-    fn fetch_takes_nuc_status_as_one_bulk_file() {
-        let Some(Command::Fetch(args)) = parse(&["fetch", "--series", "nuc-status"]).unwrap().command else {
-            panic!("not a fetch")
-        };
+    fn fetch_takes_nuc_status_and_the_scram_dataset_as_one_file_each() {
+        for (series, expected) in [("nuc-status", SeriesArg::NucStatus), ("scram-dataset", SeriesArg::ScramDataset)] {
+            let Some(Command::Fetch(args)) = parse(&["fetch", "--series", series]).unwrap().command else {
+                panic!("not a fetch")
+            };
 
-        assert_eq!(args.series.report(), None);
+            assert_eq!(args.series, expected);
+            assert_eq!(args.series.report(), None);
+        }
     }
 
     #[test]

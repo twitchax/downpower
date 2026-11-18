@@ -319,8 +319,10 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
       event's SCRAM Code says whether it did. A tag whose unit's event reports a scram is a key
       (revised 2026-11-17).
     - **Against the NRC's scram dataset** (`scram-event-notifications.xlsx`, CC0): stored in the
-      raw store, rechecked weekly, and reconciled by event number over its span (2011 to early
-      2025). A retracted scram the NRC still counts is a known difference.
+      raw store, rechecked weekly, and reconciled by event number and docket over its span (2011
+      to 2025-05-12). Known differences: a retraction on either side, and a scram of ours from a
+      reactor not critical that the dataset lacks, since it counts scrams of a critical reactor
+      (701 of its 708 matches). 97.7% agree (revised 2026-11-18).
     - Both agreement rates go on `/status`, with the detail from a `cargo xtask` command.
     - Rejected: the NRC's IE01 performance-indicator rates. They are a rate per 7,000 critical
       hours, last updated 2023.

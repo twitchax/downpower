@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::Context as _;
+use anyhow::{Context as _, ensure};
 use chrono::{DateTime, Days, NaiveDate, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use surrealdb::types::SerdeWrapper;
@@ -16,6 +16,7 @@ use downpower_ingest::eia::{self, NucStatus};
 use downpower_ingest::fetch::{self, Config, Fetcher, Summary};
 use downpower_ingest::nrc::Report;
 use downpower_ingest::raw::{RawStore, Record, Series};
+use downpower_ingest::scram_dataset;
 use downpower_ingest::status::{self, StatusPage};
 use downpower_ingest::units::Units;
 
@@ -32,6 +33,10 @@ pub const FETCH_VAR: &str = "DOWNPOWER_FETCH";
 /// How old the newest `NUC_STATUS` may get before a run fetches another. A copy is about 6 MB, and
 /// EIA's numbers repeat the NRC's (PRD-0002.log.md, T-007).
 const NUC_STATUS_AGE: TimeDelta = TimeDelta::days(7);
+
+/// How old the newest scram dataset may get before a run fetches it again. The NRC last changed it
+/// 2025-05-13, so a weekly look is plenty (DESIGN.md Decision 33).
+const SCRAM_DATASET_AGE: TimeDelta = TimeDelta::days(7);
 
 /// How far behind the newest page past its hold a run looks for pages it hasn't settled, which
 /// catches up after downtime.
@@ -80,6 +85,9 @@ pub struct Run {
     pub events: Option<Summary>,
     /// The last day a `NUC_STATUS` fetched this run covers.
     pub nuc_status: Option<NaiveDate>,
+    /// The last day a scram dataset fetched this run covers.
+    #[serde(default)]
+    pub scram_dataset: Option<NaiveDate>,
     /// The table a rebuild made current or an update wrote into.
     pub rebuilt: Option<String>,
     /// What went wrong. A failed fetch still lets the rebuild run over what the store holds.
@@ -109,6 +117,7 @@ pub async fn run_once(store: &Store, data_dir: &Path, sources: Option<&Sources>,
         status: None,
         events: None,
         nuc_status: None,
+        scram_dataset: None,
         rebuilt: None,
         errors: Vec::new(),
     };
@@ -126,7 +135,7 @@ pub async fn run_once(store: &Store, data_dir: &Path, sources: Option<&Sources>,
 }
 
 /// Decision 12's fetches: the status and Event Notification pages [`fetch_report`] names, and a
-/// `NUC_STATUS` once the stored one is a week old.
+/// `NUC_STATUS` and the scram dataset once the stored copy is a week old.
 async fn fetch(data_dir: &Path, sources: &Sources, today: NaiveDate, run: &mut Run) -> anyhow::Result<()> {
     let raw = RawStore::open(data_dir)?;
     let mut fetcher = Fetcher::new(sources.nrc.clone(), raw.clone())?;
@@ -136,7 +145,33 @@ async fn fetch(data_dir: &Path, sources: &Sources, today: NaiveDate, run: &mut R
     if newest_nuc_status.is_none_or(|fetched_at| Utc::now() - fetched_at >= NUC_STATUS_AGE) {
         run.nuc_status = fetch_nuc_status(&raw, &sources.nuc_status_url).await?;
     }
+    let newest_dataset = raw.latest(Series::ScramDataset)?.into_values().map(|record| record.fetched_at).max();
+    if newest_dataset.is_none_or(|fetched_at| Utc::now() - fetched_at >= SCRAM_DATASET_AGE) {
+        run.scram_dataset = Some(fetch_scram_dataset(&mut fetcher, &raw, today).await?);
+    }
     Ok(())
+}
+
+/// Fetches the scram dataset into `raw` under `today`, then parses the stored copy, so a format
+/// change fails here, with what the NRC served already on record. Returns the last day it covers.
+///
+/// # Errors
+///
+/// When the fetch fails (see [`Fetcher::file`]), nrc.gov no longer has the file, or it doesn't
+/// parse or has no rows.
+pub async fn fetch_scram_dataset(fetcher: &mut Fetcher, raw: &RawStore, today: NaiveDate) -> anyhow::Result<NaiveDate> {
+    let summary = fetcher.file(Series::ScramDataset, scram_dataset::PATH, today).await?;
+    ensure!(summary.missing == 0, "the scram dataset is gone from {}", scram_dataset::PATH);
+    let hash = raw
+        .latest(Series::ScramDataset)?
+        .into_values()
+        .next_back()
+        .and_then(|record| record.sha256)
+        .context("a stored scram dataset has a hash")?;
+    let rows = scram_dataset::parse(&raw.get(&hash)?).context("parsing the scram dataset just stored")?;
+    let last = rows.iter().map(|row| row.date).max().context("the scram dataset just stored has no rows")?;
+    tracing::info!(rows = rows.len(), %last, "the scram dataset checks out");
+    Ok(last)
 }
 
 /// One report's pages: every unsettled page from [`CATCH_UP`] before the hold's edge through the

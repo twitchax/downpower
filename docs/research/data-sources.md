@@ -307,8 +307,9 @@ Counted with a throwaway Python parser over the newest 200 of each of the 7,271 
 
 - **Scram dataset** (`/cdn/legacy/reactors/operating/dataset/scram-event-notifications.xlsx`):
   - Columns: `Year|Scram #|Plant Name|Docket|Site|PWR/BWR|Auto/Manual|Date|Event_Notification_Number|NRC_retract_flag|Link`.
-  - 726 rows from 2011 to 2025-03, 37–69 a year. Last modified 2025-05-13 (checked 2026-11-15),
-    so it isn't kept current. PRD-0003 reconciles our scram events against it by event number.
+  - 728 rows from 2011-01-19 to 2025-05-12, 37–69 a year. Last modified 2025-05-13 (checked
+    2026-11-18), so it isn't kept current. `Date` is the event date. PRD-0003 reconciles our scram
+    events against it by event number and docket (PRD-0003.log.md#t-008).
   - Use it as a cross-check, never as a substitute.
 - **Operating reactors** (`/reading-rm/doc-collections/datasets/reactors-operating.xlsx`; the capture
   is the 2022 update):

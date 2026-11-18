@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 
-pub use downpower_core::scrams::{Counts, EventCounts, ReportCounts};
+pub use downpower_core::scrams::{Counts, DatasetCounts, EventCounts, ReportCounts};
 
 use crate::events::{EventSet, Scram};
 use crate::facilities::Identity;

@@ -1,24 +1,26 @@
-//! `cargo xtask scrams`: the internal scram check over the stored archive (PRD-0003 T-007), with
-//! both directions' agreement by year and the cases where the two NRC sources disagree.
+//! `cargo xtask scrams`: both scram checks over the stored archive (PRD-0003 T-007 and T-008). The
+//! internal one gives both directions' agreement by year and the cases where the two NRC sources
+//! disagree; the dataset's gives its agreement by year and the scrams one side lacks.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use anyhow::ensure;
+use anyhow::{Context as _, ensure};
 use chrono::Datelike as _;
 
 use downpower_ingest::events::EventSet;
 use downpower_ingest::ledger::{self, Catalog, Unknowns};
-use downpower_ingest::raw::RawStore;
+use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::scram_dataset::{self, Agreement};
 use downpower_ingest::scrams::{Check, Found, Shown};
 
 pub fn run(data_dir: &Path, examples: usize) -> anyhow::Result<()> {
     ensure!(data_dir.join("raw/manifest.jsonl").exists(), "no raw store under {}; run `downpower fetch` first", data_dir.display());
     let store = RawStore::open(data_dir)?;
     let catalog = Catalog::embedded()?;
-    let events = EventSet::build(&store, &catalog.facilities, Unknowns::Fail)?;
-    let mut check = Check::new(&events);
-    ledger::build(&store, &catalog, &events, Unknowns::Fail, |days| {
+    let set = EventSet::build(&store, &catalog.facilities, Unknowns::Fail)?;
+    let mut check = Check::new(&set);
+    ledger::build(&store, &catalog, &set, Unknowns::Fail, |days| {
         check.observe(&days);
         Ok(())
     })?;
@@ -75,6 +77,63 @@ pub fn run(data_dir: &Path, examples: usize) -> anyhow::Result<()> {
                 case.reported,
                 case.events,
                 case.reason.as_deref().unwrap_or_default()
+            );
+        }
+    }
+    dataset(&store, &set, &name, examples)
+}
+
+/// The newest stored scram dataset against our EN scrams.
+fn dataset(store: &RawStore, events: &EventSet, name: &dyn Fn(&str) -> String, examples: usize) -> anyhow::Result<()> {
+    let Some(record) = store.latest(Series::ScramDataset)?.into_values().rev().find(|record| record.sha256.is_some()) else {
+        println!("no scram dataset stored; run `downpower fetch --series scram-dataset`");
+        return Ok(());
+    };
+    let hash = record.sha256.context("the record was chosen for its hash")?;
+    let rows = scram_dataset::parse(&store.get(&hash)?)?;
+    let reconciled = scram_dataset::reconcile(&rows, events).context("the scram dataset has no rows")?;
+    let counts = reconciled.counts();
+    println!(
+        "NRC scram dataset (fetched {}, {} rows, {} to {}), scrams both list: {}",
+        record.date,
+        rows.len(),
+        counts.first,
+        counts.last,
+        agreement(counts.agreed(), counts.checked())
+    );
+    println!("  {counts:?}");
+    let mut years: BTreeMap<i32, (u64, u64)> = BTreeMap::new();
+    for case in &reconciled.cases {
+        let year = years.entry(case.date.year()).or_default();
+        year.0 += u64::from(case.outcome == Agreement::Agree);
+        year.1 += u64::from(matches!(case.outcome, Agreement::Agree | Agreement::DatasetOnly | Agreement::OursOnly));
+    }
+    println!("by year (scrams both list):");
+    for (year, (agreed, checked)) in &years {
+        println!("  {year}  {}", agreement(*agreed, *checked));
+    }
+    for (outcomes, label) in [
+        (&[Agreement::DatasetOnly][..], "only the dataset lists"),
+        (&[Agreement::OursOnly][..], "only our Event Notifications hold"),
+        (&[Agreement::NrcRetracted, Agreement::WeRetracted, Agreement::NotCritical][..], "known differences"),
+    ] {
+        let listed: Vec<_> = reconciled.cases.iter().filter(|case| outcomes.contains(&case.outcome)).collect();
+        println!("scrams {label}, the first {examples} of {}:", listed.len());
+        for case in listed.iter().take(examples) {
+            let codes = events.events.get(&case.event).map(|event| {
+                let units = event
+                    .units
+                    .iter()
+                    .map(|unit| format!("{:?} {}from {}%", unit.scram, if unit.critical { "" } else { "not critical " }, unit.initial_power));
+                units.collect::<Vec<_>>().join(", ")
+            });
+            println!(
+                "  EN {} {} {:<20} {:?} ours: {}",
+                case.event,
+                case.date,
+                name(&case.docket),
+                case.outcome,
+                codes.as_deref().unwrap_or("no such event")
             );
         }
     }

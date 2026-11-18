@@ -28,6 +28,9 @@ why the version moved the way it did.
 - The internal scram check in every build: EN scrams against the status reports' drops, and
   status-report scrams against the events, on `/status`, `/api/status` and `cargo xtask scrams`.
 - Event Notification pages fetched on weekends too, and held 28 days like the status pages.
+- The NRC's scram dataset, fetched weekly into the raw store and reconciled with our EN scrams by
+  event number and docket in every build (`downpower fetch --series scram-dataset`,
+  `cargo xtask scrams`, `/api/status`).
 
 ### Changed
 

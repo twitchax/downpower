@@ -54,7 +54,7 @@ impl TryFrom<Series> for Report {
         match series {
             Series::PowerStatus => Ok(Self::PowerStatus),
             Series::EventNotifications => Ok(Self::EventNotifications),
-            Series::NucStatus => bail!("{series:?} is not an NRC report"),
+            Series::NucStatus | Series::ScramDataset => bail!("{series:?} is not an NRC report"),
         }
     }
 }

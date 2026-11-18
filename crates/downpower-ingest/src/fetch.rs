@@ -162,7 +162,8 @@ impl Fetcher {
                 summary.skipped += 1;
                 continue;
             }
-            match self.fetch(report, date, newest.get(&date)).await? {
+            let url = format!("{}{}", self.config.base_url, report.path(date));
+            match self.fetch(series, date, &url, newest.get(&date)).await? {
                 Outcome::Stored => summary.stored += 1,
                 Outcome::Unchanged => summary.unchanged += 1,
                 Outcome::Missing => summary.missing += 1,
@@ -174,12 +175,30 @@ impl Fetcher {
         Ok(summary)
     }
 
-    async fn fetch(&mut self, report: Report, date: NaiveDate, newest: Option<&(Hash, Option<u64>)>) -> Res<Outcome> {
-        let url = format!("{}{}", self.config.base_url, report.path(date));
+    /// Fetches `path`, one file holding all of `series` (the scram dataset), and records it under
+    /// `date`, the fetch date. A body matching the newest stored one is recorded against its blob,
+    /// so a weekly refetch of an unchanged file stores nothing. It shares the pacing with the pages.
+    ///
+    /// # Errors
+    ///
+    /// As for [`Fetcher::run`].
+    pub async fn file(&mut self, series: Series, path: &str, date: NaiveDate) -> Res<Summary> {
+        let newest = self.store.latest(series)?.into_values().rev().find_map(|record| Some((record.sha256?, record.len)));
+        let url = format!("{}{path}", self.config.base_url);
+        let mut summary = Summary::default();
+        match self.fetch(series, date, &url, newest.as_ref()).await? {
+            Outcome::Stored => summary.stored += 1,
+            Outcome::Unchanged => summary.unchanged += 1,
+            Outcome::Missing => summary.missing += 1,
+        }
+        Ok(summary)
+    }
+
+    async fn fetch(&mut self, series: Series, date: NaiveDate, url: &str, newest: Option<&(Hash, Option<u64>)>) -> Res<Outcome> {
         let mut backoff = self.config.backoff;
         for attempt in 1..=self.config.attempts {
             self.pacer.wait().await;
-            match self.attempt(report, date, &url, newest).await? {
+            match self.attempt(series, date, url, newest).await? {
                 Attempt::Done(outcome) => return Ok(outcome),
                 Attempt::Retry(retry_after) if attempt < self.config.attempts => {
                     let wait = retry_after.map_or(backoff, |asked| asked.max(backoff));
@@ -193,7 +212,7 @@ impl Fetcher {
         bail!("{url} failed {} times in a row, so the run stops here", self.config.attempts)
     }
 
-    async fn attempt(&self, report: Report, date: NaiveDate, url: &str, newest: Option<&(Hash, Option<u64>)>) -> Res<Attempt> {
+    async fn attempt(&self, series: Series, date: NaiveDate, url: &str, newest: Option<&(Hash, Option<u64>)>) -> Res<Attempt> {
         let fetched_at = Utc::now();
         let response = match self.client.get(url).send().await {
             Ok(response) => response,
@@ -205,7 +224,7 @@ impl Fetcher {
         let status = response.status();
         let record = |sha256, len| Record {
             source: Source::Nrc,
-            series: report.into(),
+            series,
             date,
             url: url.to_owned(),
             status: status.as_u16(),
@@ -217,7 +236,7 @@ impl Fetcher {
         match status {
             StatusCode::OK => {
                 let body = match response.bytes().await {
-                    Ok(body) if looks_complete(&body) => body,
+                    Ok(body) if complete(series, &body) => body,
                     Ok(body) => {
                         tracing::warn!(%url, len = body.len(), "truncated body");
                         return Ok(Attempt::Retry(None));
@@ -233,17 +252,17 @@ impl Fetcher {
                     && nrc::same_page(&self.store.get(hash)?, &body)
                 {
                     self.store.append(&record(Some(hash.clone()), *len))?;
-                    tracing::info!(?report, %date, "unchanged");
+                    tracing::info!(?series, %date, "unchanged");
                     return Ok(Attempt::Done(Outcome::Unchanged));
                 }
                 let hash = self.store.put(&body)?;
                 self.store.append(&record(Some(hash), u64::try_from(body.len()).ok()))?;
-                tracing::info!(?report, %date, len = body.len(), "stored");
+                tracing::info!(?series, %date, len = body.len(), "stored");
                 Ok(Attempt::Done(Outcome::Stored))
             }
             StatusCode::NOT_FOUND => {
                 self.store.append(&record(None, None))?;
-                tracing::info!(?report, %date, "no page");
+                tracing::info!(?series, %date, "no page");
                 Ok(Attempt::Done(Outcome::Missing))
             }
             StatusCode::FORBIDDEN => bail!("{url} returned 403. The NRC's bot block may be back, so the run stops here (docs/research/data-sources.md, \"The access problem\")"),
@@ -260,7 +279,21 @@ fn retry_after(response: &Response) -> Option<Duration> {
     Some(Duration::from_secs(seconds))
 }
 
-/// Whether a 200 body ends its document. A connection cut mid-page still arrives as a 200.
+/// Whether a 200 body is whole. A connection cut mid-page still arrives as a 200.
+fn complete(series: Series, body: &[u8]) -> bool {
+    match series {
+        Series::ScramDataset => ends_its_zip(body),
+        Series::PowerStatus | Series::EventNotifications | Series::NucStatus => looks_complete(body),
+    }
+}
+
+/// Whether a workbook ends in its zip's end-of-central-directory record: the signature, 18 bytes,
+/// and a comment of at most 64 KiB.
+fn ends_its_zip(body: &[u8]) -> bool {
+    body[body.len().saturating_sub(22 + usize::from(u16::MAX))..].windows(4).any(|window| window == b"PK\x05\x06")
+}
+
+/// Whether a page ends its document.
 fn looks_complete(body: &[u8]) -> bool {
     body[body.len().saturating_sub(4096)..].windows(7).any(|window| window.eq_ignore_ascii_case(b"</html>"))
 }
@@ -276,6 +309,16 @@ mod unit {
     #[test]
     fn the_user_agent_is_the_one_the_nrc_email_names() {
         assert_eq!(USER_AGENT, "downpower/0.1 (+https://github.com/twitchax/downpower)");
+    }
+
+    #[test]
+    fn a_workbook_is_complete_only_when_it_ends_its_central_directory() {
+        let mut zip = b"PK\x03\x04 the members PK\x01\x02 the directory ".to_vec();
+        assert!(!ends_its_zip(&zip));
+        zip.extend_from_slice(b"PK\x05\x06");
+        zip.extend_from_slice(&[0; 18]);
+        assert!(ends_its_zip(&zip));
+        assert!(!ends_its_zip(b""));
     }
 
     #[test]

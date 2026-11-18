@@ -243,3 +243,36 @@ async fn uat_fetch_polite_gives_up_after_its_attempts() {
     assert!(error.to_string().contains("failed 3 times"), "{error}");
     assert_eq!(log.lock().unwrap().len(), 3);
 }
+
+/// The scram dataset, cut off once.
+fn dataset(_: &str, nth: usize) -> Response {
+    let workbook = include_bytes!("fixtures/scrams/scram-event-notifications.xlsx").as_slice();
+    if nth == 1 { workbook[..workbook.len() / 2].to_vec() } else { workbook.to_vec() }.into_response()
+}
+
+#[tokio::test]
+async fn fetch_a_dataset_is_one_file_paced_with_the_pages_and_recorded_against_its_blob_when_unchanged() {
+    use downpower_ingest::raw::Series;
+    use downpower_ingest::scram_dataset;
+
+    let (base, log) = fake(dataset).await;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = RawStore::open(tmp.path()).unwrap();
+    let mut fetcher = Fetcher::new(config(base), store.clone()).unwrap();
+
+    let first = fetcher.file(Series::ScramDataset, scram_dataset::PATH, day("2026-11-18")).await.unwrap();
+    let second = fetcher.file(Series::ScramDataset, scram_dataset::PATH, day("2026-11-25")).await.unwrap();
+
+    // The cut-off body is retried, not stored.
+    assert_eq!(first, Summary { stored: 1, ..Summary::default() });
+    assert_eq!(second, Summary { unchanged: 1, ..Summary::default() });
+    let log = log.lock().unwrap();
+    assert_eq!(log.len(), 3);
+    assert!(log.iter().all(|(_, path, agent)| path == scram_dataset::PATH && agent == fetch::USER_AGENT));
+    assert!(log.windows(2).all(|pair| pair[1].0 - pair[0].0 >= Duration::from_millis(100)));
+    let records = store.records().unwrap();
+    assert_eq!(records.iter().map(|record| record.date).collect::<Vec<_>>(), [day("2026-11-18"), day("2026-11-25")]);
+    assert_eq!(records[0].sha256, records[1].sha256);
+    let rows = scram_dataset::parse(&store.get(records[1].sha256.as_ref().unwrap()).unwrap()).unwrap();
+    assert_eq!(rows.len(), 728);
+}

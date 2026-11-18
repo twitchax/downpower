@@ -12,6 +12,7 @@ pub mod fetch;
 pub mod ledger;
 pub mod nrc;
 pub mod raw;
+pub mod scram_dataset;
 pub mod scrams;
 pub mod status;
 pub mod tags;

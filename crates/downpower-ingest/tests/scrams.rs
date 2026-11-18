@@ -1,5 +1,6 @@
-//! The internal scram check (PRD-0003 uat-007, its internal half) through the ledger builder,
-//! against the events on the fixture page for 2009-08-24:
+//! Both scram checks (PRD-0003 uat-007): the internal one through the ledger builder, and the
+//! NRC's scram dataset (a committed copy, last modified 2025-05-13) reconciled by event number. Both
+//! run against the events on the fixture page for 2009-08-24:
 //!
 //! - EN 45286, Crystal River 3: SCRAM Code `M/R` from 100% at 11:00.
 //! - EN 45290, Browns Ferry 3: `M/R` from 100% at 18:50.
@@ -14,6 +15,8 @@ use pretty_assertions::assert_eq;
 
 use downpower_ingest::events::{self, Archive, EventSet};
 use downpower_ingest::ledger::{Builder, Catalog, Unknowns};
+use downpower_ingest::raw::{RawStore, Record, Series, Source};
+use downpower_ingest::scram_dataset::{self, Agreement, DatasetCounts, Row as DatasetRow};
 use downpower_ingest::scrams::{Check, EventCounts, Found, ReportCounts, Shown};
 use downpower_ingest::status::{Detail, Row, StatusPage};
 
@@ -227,4 +230,169 @@ fn uat_scram_check_a_citation_counts_inside_a_tag_with_another_label() {
     let (cases, _, _) = check(|_| {}, &[&[line(BF3, 100)], &[line(BF3, 100)], &[line(BF3, 95).reason("Forced outage - see EN #45290")]]);
 
     assert_eq!(shown(&cases), [(45286, Shown::NoReport, [None, None]), (45290, Shown::Named, [Some(100), Some(95)])]);
+}
+
+const DATASET: &[u8] = include_bytes!("fixtures/scrams/scram-event-notifications.xlsx");
+
+/// An automatic scram's dataset row; `retracted` is its `NRC_retract_flag`.
+fn row(event: u32, docket: &str, date: &str, retracted: bool) -> DatasetRow {
+    DatasetRow {
+        event,
+        docket: docket.to_owned(),
+        date: day(date),
+        automatic: true,
+        retracted,
+    }
+}
+
+fn agreements(rows: &[DatasetRow], edit: impl FnOnce(&mut EventSet)) -> (Vec<(u32, String, Agreement)>, DatasetCounts) {
+    let catalog = Catalog::embedded().unwrap();
+    let events = events(&catalog, edit);
+    let reconciled = scram_dataset::reconcile(rows, &events).unwrap();
+    let cases = reconciled.cases.iter().map(|case| (case.event, case.docket.clone(), case.outcome)).collect();
+    (cases, reconciled.counts())
+}
+
+#[test]
+fn uat_scram_check_the_nrc_dataset_parses_from_its_xlsx() {
+    let rows = scram_dataset::parse(DATASET).unwrap();
+
+    assert_eq!(rows.len(), 728);
+    assert_eq!(rows[0], row(46556, "05000530", "2011-01-19", false));
+    assert_eq!(rows.iter().filter(|row| row.retracted).count(), 9);
+    assert_eq!(rows.iter().filter(|row| !row.automatic).count(), 290);
+    assert_eq!(rows.iter().map(|row| row.date).min(), Some(day("2011-01-19")));
+    assert_eq!(rows.iter().map(|row| row.date).max(), Some(day("2025-05-12")));
+    assert!(rows.iter().any(|row| row.docket == "05200025"), "Vogtle 3 keeps its 052 docket");
+}
+
+/// The dataset with its `Docket` column renamed, as a format change would leave it.
+fn renamed_column() -> Vec<u8> {
+    use std::io::{Read as _, Write as _};
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(DATASET)).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).unwrap();
+        let name = file.name().unwrap().into_owned();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).unwrap();
+        if name == "xl/sharedStrings.xml" {
+            bytes = String::from_utf8(bytes).unwrap().replacen(">Docket<", ">Docket No<", 1).into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&bytes).unwrap();
+    }
+    out.finish().unwrap().into_inner()
+}
+
+#[test]
+fn uat_scram_check_a_dataset_with_another_column_set_fails_to_parse() {
+    assert!(scram_dataset::parse(b"not a workbook").is_err());
+    let error = scram_dataset::parse(&renamed_column()).unwrap_err();
+    assert!(format!("{error:#}").contains("Docket No"), "{error:#}");
+}
+
+#[test]
+fn uat_scram_check_the_dataset_reconciles_by_event_and_docket() {
+    let rows = [
+        row(45286, "05000302", "2009-08-24", false),
+        // Peach Bottom 2's line in EN 45289 has SCRAM Code `N`.
+        row(45289, "05000277", "2009-08-24", false),
+        row(45300, "05000296", "2009-08-24", true),
+    ];
+    let (cases, counts) = agreements(&rows, |_| {});
+
+    assert_eq!(
+        cases,
+        [
+            (45286, "05000302".to_owned(), Agreement::Agree),
+            (45289, "05000277".to_owned(), Agreement::DatasetOnly),
+            (45290, "05000296".to_owned(), Agreement::OursOnly),
+            (45300, "05000296".to_owned(), Agreement::NrcRetracted),
+        ]
+    );
+    assert_eq!((counts.agree, counts.dataset_only, counts.ours_only, counts.known), (1, 1, 1, 1));
+    assert_eq!((counts.first, counts.last), (day("2009-01-01"), day("2009-08-24")));
+}
+
+#[test]
+fn uat_scram_check_a_dataset_scram_we_hold_retracted_is_a_known_difference() {
+    let retracted = |set: &mut EventSet| set.events.get_mut(&45290).unwrap().retracted = true;
+    let (cases, counts) = agreements(&[row(45286, "05000302", "2009-08-24", false), row(45290, "05000296", "2009-08-24", false)], retracted);
+
+    assert_eq!(cases, [(45286, "05000302".to_owned(), Agreement::Agree), (45290, "05000296".to_owned(), Agreement::WeRetracted)]);
+    assert_eq!((counts.agree, counts.known), (1, 1));
+}
+
+#[test]
+fn uat_scram_check_a_scram_the_nrc_flags_retracted_is_known_though_we_hold_it_live() {
+    let (cases, counts) = agreements(&[row(45286, "05000302", "2009-08-24", true)], |_| {});
+
+    assert_eq!(cases, [(45286, "05000302".to_owned(), Agreement::NrcRetracted), (45290, "05000296".to_owned(), Agreement::OursOnly)]);
+    assert_eq!((counts.known, counts.ours_only), (1, 1));
+}
+
+#[test]
+fn uat_scram_check_a_scram_from_a_reactor_not_critical_the_dataset_lacks_is_a_known_difference() {
+    let shut_down = |set: &mut EventSet| set.events.get_mut(&45290).unwrap().units[0].critical = false;
+    let (cases, counts) = agreements(&[row(45286, "05000302", "2009-08-24", false)], shut_down);
+
+    assert_eq!(cases, [(45286, "05000302".to_owned(), Agreement::Agree), (45290, "05000296".to_owned(), Agreement::NotCritical)]);
+    assert_eq!((counts.agree, counts.ours_only, counts.known), (1, 0, 1));
+}
+
+#[test]
+fn uat_scram_check_our_scrams_outside_the_datasets_span_are_not_compared() {
+    // The dataset ends the day before the fixture's scrams.
+    let (cases, _) = agreements(&[row(45200, "05000296", "2009-08-23", false)], |_| {});
+
+    assert_eq!(cases, [(45200, "05000296".to_owned(), Agreement::DatasetOnly)]);
+}
+
+/// A raw store holding the 2025-07-15 status page and `dataset` as the scram dataset.
+fn store_with_dataset(dir: &std::path::Path, dataset: &[u8]) -> RawStore {
+    let store = RawStore::open(dir).unwrap();
+    let at = "2026-11-14T00:00:00Z".parse().unwrap();
+    let record = |series, date: &str, bytes: &[u8]| Record {
+        source: Source::Nrc,
+        series,
+        date: day(date),
+        url: String::new(),
+        status: 200,
+        captured_at: at,
+        fetched_at: at,
+        sha256: Some(store.put(bytes).unwrap()),
+        len: Some(bytes.len() as u64),
+    };
+    store.append(&record(Series::PowerStatus, "2025-07-15", include_bytes!("fixtures/status/2025-07-15.html"))).unwrap();
+    store.append(&record(Series::ScramDataset, "2025-05-13", dataset)).unwrap();
+    store
+}
+
+#[test]
+fn uat_scram_check_the_build_reconciles_the_newest_stored_dataset() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store_with_dataset(tmp.path(), DATASET);
+    let catalog = Catalog::embedded().unwrap();
+    let events = events(&catalog, |_| {});
+
+    let summary = downpower_ingest::ledger::build(&store, &catalog, &events, Unknowns::Fail, |_| Ok(())).unwrap();
+
+    // The fixture's events are from 2009, before the dataset begins, so every row is the dataset's.
+    let counts = summary.scrams.dataset.unwrap();
+    assert_eq!((counts.agree, counts.dataset_only, counts.ours_only, counts.known), (0, 719, 0, 9));
+    assert_eq!((counts.first, counts.last), (day("2011-01-01"), day("2025-05-12")));
+}
+
+#[test]
+fn uat_scram_check_a_dataset_that_does_not_parse_fails_the_backfill_and_is_skipped_on_the_server() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store_with_dataset(tmp.path(), b"not a workbook");
+    let catalog = Catalog::embedded().unwrap();
+    let events = events(&catalog, |_| {});
+
+    assert!(downpower_ingest::ledger::build(&store, &catalog, &events, Unknowns::Fail, |_| Ok(())).is_err());
+    let summary = downpower_ingest::ledger::build(&store, &catalog, &events, Unknowns::Quarantine, |_| Ok(())).unwrap();
+    assert_eq!(summary.scrams.dataset, None);
+    assert!(summary.days > 0);
 }

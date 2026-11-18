@@ -43,6 +43,8 @@ pub enum Series {
     EventNotifications,
     /// EIA's `NUC_STATUS` bulk file, every daily series in one body (`eia`).
     NucStatus,
+    /// The NRC's scram dataset, every scram since 2011 in one workbook (`scram_dataset`).
+    ScramDataset,
 }
 
 /// The lowercase hex sha256 of a body's uncompressed bytes, which names its blob.
@@ -88,8 +90,8 @@ impl From<Hash> for String {
 pub struct Record {
     pub source: Source,
     pub series: Series,
-    /// The day the page reports on. A `NUC_STATUS` body covers every day, so its record carries the
-    /// day it was fetched.
+    /// The day the page reports on. A `NUC_STATUS` or scram dataset body covers every day, so its
+    /// record carries the day it was fetched.
     pub date: NaiveDate,
     pub url: String,
     /// The HTTP status of the final response.

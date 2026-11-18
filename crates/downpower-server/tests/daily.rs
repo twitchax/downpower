@@ -17,18 +17,20 @@ use pretty_assertions::assert_eq;
 
 use downpower_ingest::fetch::Config;
 use downpower_ingest::raw::{RawStore, Record, Series, Source};
+use downpower_ingest::scram_dataset;
 use downpower_server::daily::{self, Sources};
 use downpower_server::tests::{block_on, fixture, raw_store};
 use downpower_server::{db, ledger};
 
 /// The fake site's pages: the 2025-07-15 status page for every status path, a stub for every Event
-/// Notification path, and the `NUC_STATUS` fixture zipped.
+/// Notification path, the scram dataset fixture, and the `NUC_STATUS` fixture zipped.
 fn site() -> impl Fn(&str) -> Response + Clone + Send + Sync + 'static {
     let page = fixture("status/2025-07-15.html");
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     zip.start_file("NUC_STATUS.txt", zip::write::SimpleFileOptions::default()).unwrap();
     zip.write_all(&fixture("eia/nuc_status.txt")).unwrap();
     let zip = zip.finish().unwrap().into_inner();
+    let dataset = fixture("scrams/scram-event-notifications.xlsx");
     move |path: &str| {
         if path.contains("power-reactor-status-reports") {
             page.clone().into_response()
@@ -36,6 +38,8 @@ fn site() -> impl Fn(&str) -> Response + Clone + Send + Sync + 'static {
             "<html><body>No events.</body></html>".into_response()
         } else if path.ends_with("NUC_STATUS.zip") {
             zip.clone().into_response()
+        } else if path == scram_dataset::PATH {
+            dataset.clone().into_response()
         } else {
             StatusCode::NOT_FOUND.into_response()
         }
@@ -116,7 +120,9 @@ fn daily_a_run_fetches_rebuilds_and_records_itself() {
         // The same for Event Notification pages, but for the newest week in place of two days.
         assert_eq!(first.events.unwrap().stored, 61 + 20 + 8);
         assert!(first.nuc_status.is_some());
+        assert_eq!(first.scram_dataset, Some(NaiveDate::from_ymd_opt(2025, 5, 12).unwrap()));
         let current = ledger::current(&store).await.unwrap().unwrap();
+        assert!(current.summary.scrams.dataset.is_some());
         assert_eq!(first.rebuilt, Some(current.table));
         assert!(current.summary.days > 0);
         assert_eq!(daily::runs(&store, 10).await.unwrap(), [first]);
@@ -126,9 +132,10 @@ fn daily_a_run_fetches_rebuilds_and_records_itself() {
         assert_eq!(second.errors, Vec::<String>::new());
         assert_eq!(held.len(), 2, "{held:?}");
         assert!(held[1].ends_with(&format!("{}ps", today.format("%Y%m%d"))));
-        assert_eq!((second.nuc_status, second.rebuilt), (None, None));
+        assert_eq!((second.nuc_status, second.scram_dataset, second.rebuilt), (None, None, None));
         let raw = RawStore::open(tmp.path()).unwrap();
         assert_eq!(raw.latest(Series::NucStatus).unwrap().len(), 1);
+        assert_eq!(raw.latest(Series::ScramDataset).unwrap().len(), 1);
         assert!(raw.latest(Series::PowerStatus).unwrap().contains_key(&(today - Days::new(28))));
     });
 }
@@ -145,6 +152,23 @@ fn daily_a_failed_fetch_still_rebuilds_from_the_store() {
 
         assert_eq!(run.errors.len(), 1);
         assert!(run.errors[0].contains("403"), "{:?}", run.errors);
+        assert!(run.rebuilt.is_some());
+    });
+}
+
+#[test]
+fn daily_a_scram_dataset_gone_from_nrc_gov_is_an_error_and_the_run_rebuilds() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = db::open(tmp.path()).await.unwrap();
+        let site = site();
+        let (base, _) = serve(move |path| if path == scram_dataset::PATH { StatusCode::NOT_FOUND.into_response() } else { site(path) }).await;
+
+        let run = daily::run_once(&store, tmp.path(), Some(&sources(&base)), Utc::now().date_naive()).await;
+
+        assert_eq!(run.errors.len(), 1);
+        assert!(run.errors[0].contains("scram dataset"), "{:?}", run.errors);
+        assert!(run.nuc_status.is_some());
         assert!(run.rebuilt.is_some());
     });
 }
