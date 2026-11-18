@@ -34,6 +34,12 @@ why the version moved the way it did.
 - `/status` shows the Event Notification archive (pages, events by category, parse failures and
   quarantined facility names) and the scram dataset's agreement beside the internal check.
 - `cargo xtask oracle` and a parser test against the NRC's raw data file of 54 events.
+- The events explorer (PRD-0004): `/events` filters every Event Notification by date, category,
+  state, place, unit, 10 CFR section, emergency class, scram and text, with a counts-per-month
+  chart, and `/events/{number}` shows one event in full with its NRC link and each unit's barcode
+  strip. `/api/events`, `/api/events/counts`, `/api/events/{number}` and `/api/markers` serve them.
+- Event markers on the barcode, off by default (`events=1`), a diamond for a scram; the barcode
+  readout names the event a day's cause came from, and a click opens it.
 
 ### Changed
 
