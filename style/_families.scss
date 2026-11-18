@@ -22,5 +22,5 @@ $families: refueling, fuel-cycle, maintenance, equipment, environmental, grid, f
 
 @each $family in $families {
   .family-#{$family} { background: var(--family-#{$family}); }
-  path.family-#{$family} { fill: var(--family-#{$family}); }
+  path.family-#{$family}, rect.family-#{$family} { fill: var(--family-#{$family}); }
 }

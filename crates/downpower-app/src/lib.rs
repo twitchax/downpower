@@ -9,6 +9,7 @@ pub mod area;
 pub mod barcode;
 #[cfg(feature = "hydrate")]
 mod browser;
+pub mod event;
 pub mod explorer;
 pub mod filters;
 mod icon;
@@ -21,12 +22,13 @@ mod tooltip;
 use leptos::prelude::*;
 use leptos_meta::{HashedStylesheet, MetaTags, Title, provide_meta_context};
 use leptos_router::{
-    StaticSegment,
+    ParamSegment, StaticSegment,
     components::{Route, Router, Routes},
     hooks::use_query_map,
 };
 
 use crate::barcode::BarcodeView;
+use crate::event::EventPage;
 use crate::explorer::EventsExplorer;
 use crate::filters::Filters;
 pub use crate::icon::Icon;
@@ -79,6 +81,7 @@ pub fn App() -> impl IntoView {
                 <Routes fallback=|| view! { <p class="muted">"Page not found."</p> }>
                     <Route path=StaticSegment("") view=HomePage />
                     <Route path=StaticSegment("events") view=EventsExplorer />
+                    <Route path=(StaticSegment("events"), ParamSegment("number")) view=EventPage />
                     <Route path=StaticSegment("status") view=StatusPage />
                 </Routes>
             </main>

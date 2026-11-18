@@ -141,3 +141,35 @@ fn e2e_event_ingest_serve_resolves_a_reference_and_reports_the_archive_and_both_
         assert_eq!((dataset.agree, dataset.dataset_only, dataset.ours_only, dataset.known), (0, 719, 0, 9));
     });
 }
+
+#[test]
+fn e2e_explorer_serves_the_list_page_an_event_and_a_404() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = raw_store(tmp.path(), None);
+    put(&store, Series::EventNotifications, "2009-08-24", Some(&fixture("events/2009-08-24.html")));
+    let (_server, base) = serve(tmp.path());
+
+    block_on(async move {
+        let client = reqwest::Client::new();
+        get_ok(&client, &format!("{base}/api/barcode/attributed"), Duration::from_secs(60)).await;
+
+        // The page renders its filters from the URL; the list and chart load in the browser.
+        let page = String::from_utf8(get_ok(&client, &format!("{base}/events?state=AL&scram=1"), Duration::from_secs(5)).await).unwrap();
+        assert!(page.contains("<h1>Events</h1>"), "{page}");
+        assert!(page.contains(r#"aria-pressed="true""#), "the scram toggle reads the URL");
+        assert!(page.contains(r#"href="/events""#), "the nav links the explorer");
+
+        let list: serde_json::Value = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/events?state=AL&scram=1"), Duration::from_secs(5)).await).unwrap();
+        assert_eq!(list["rows"][0]["number"].as_u64(), Some(45290), "{list}");
+
+        let shell = String::from_utf8(get_ok(&client, &format!("{base}/events/45290"), Duration::from_secs(5)).await).unwrap();
+        assert!(shell.contains("downpower"), "the event page's shell");
+        let event: serde_json::Value = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/events/45290"), Duration::from_secs(5)).await).unwrap();
+        assert_eq!(event["units"][0]["scram"].as_str(), Some("manual_reactor"), "the unit table");
+        assert!(event["updates"].is_array(), "the update timeline");
+        assert!(event["nrc"].as_str().is_some_and(|nrc| nrc.ends_with("/2009/20090824en#en45290")), "{event}");
+
+        let missing = client.get(format!("{base}/api/events/99999")).send().await.unwrap();
+        assert_eq!(missing.status(), reqwest::StatusCode::NOT_FOUND);
+    });
+}

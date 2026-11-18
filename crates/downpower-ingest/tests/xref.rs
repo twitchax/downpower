@@ -36,6 +36,7 @@ fn events(catalog: &Catalog) -> EventSet {
     EventSet {
         events,
         identities,
+        pages: BTreeMap::new(),
         archive: Archive::default(),
     }
 }

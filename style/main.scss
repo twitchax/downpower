@@ -169,3 +169,15 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 @media (max-width: 720px) {
   .event-row { grid-template-columns: 1fr; gap: var(--s-1); }
 }
+
+// /events/{number}: the facts, the unit strips and the text.
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s-1) var(--s-4); margin: 0; align-items: baseline; }
+.facts dd { margin: 0; }
+.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
+.plain a { color: var(--text-1); }
+.struck { text-decoration: line-through; color: var(--text-2); }
+.event-text { white-space: pre-wrap; margin: 0; max-width: 88ch; color: var(--text-1); }
+.strip { margin: 0; display: grid; gap: var(--s-1); }
+.strip svg { display: block; width: 100%; height: 48px; background: var(--bg-0); }
+.strip rect { shape-rendering: crispEdges; }
+.strip a { color: var(--text-3); }

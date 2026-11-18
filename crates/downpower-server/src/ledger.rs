@@ -77,6 +77,9 @@ pub struct StoredEvent {
     pub event: Event,
     /// `None` for a Part 21 vendor, a licensee with no license number, or a quarantined facility.
     pub identity: Option<Identity>,
+    /// The date of the page the event came from; `None` in a build from before PRD-0004 T-005.
+    #[serde(default)]
+    pub page: Option<NaiveDate>,
 }
 
 /// An event as stored, under its number.
@@ -332,8 +335,9 @@ fn send_events(set: &EventSet, old: Option<&EventHashes>, sender: &tokio::sync::
     let mut moved = 0;
     for (number, event) in &set.events {
         let identity = set.identities.get(number);
+        let page = set.pages.get(number).copied();
         // The unit rows follow from the event and its identity, so this hash covers them too.
-        let hash = chunks::hash(&(event, identity));
+        let hash = chunks::hash(&(event, identity, page));
         hashes.0.insert(*number, hash);
         let rows = || EventRows {
             event: KeyedEvent {
@@ -341,6 +345,7 @@ fn send_events(set: &EventSet, old: Option<&EventHashes>, sender: &tokio::sync::
                 stored: StoredEvent {
                     event: event.clone(),
                     identity: identity.cloned(),
+                    page,
                 },
             },
             units: facilities::event_units(event, identity).into_iter().map(|row| KeyedUnit { id: (row.event, row.unit), row }).collect(),

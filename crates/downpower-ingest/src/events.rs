@@ -263,6 +263,9 @@ pub struct EventSet {
     /// Every identified event's identity: all but Part 21 vendors, licensees with no license
     /// number, and quarantined facilities.
     pub identities: BTreeMap<u32, Identity>,
+    /// The date of the page each event came from, which its NRC link names. The NRC files a page
+    /// under neither date an event carries alone (PRD-0004.log.md#t-005).
+    pub pages: BTreeMap<u32, NaiveDate>,
     pub archive: Archive,
 }
 
@@ -325,13 +328,14 @@ impl EventSet {
                 }
             }
         }
+        let pages: BTreeMap<u32, NaiveDate> = newest.iter().map(|(number, ((_, date), _))| (*number, *date)).collect();
         let events: BTreeMap<u32, Event> = newest.into_iter().map(|(number, (_, event))| (number, event)).collect();
         archive.events = events.len() as u64;
         for event in events.values() {
             *archive.categories.entry(event.category.label().to_owned()).or_default() += 1;
         }
         let identities = facilities.identify_all(&events, unknowns, &mut archive.unknown_facilities)?;
-        Ok(Self { events, identities, archive })
+        Ok(Self { events, identities, pages, archive })
     }
 }
 

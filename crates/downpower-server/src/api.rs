@@ -21,12 +21,14 @@ use sha2::{Digest as _, Sha256};
 
 use downpower_core::barcode::Layer;
 use downpower_core::explorer::{EventsState, PAGE};
+use downpower_ingest::facilities::Identity;
+use downpower_ingest::nrc::{self, Report};
 use downpower_ingest::units::Units;
 
 use crate::daily::{self, Run};
 use crate::db::Store;
 use crate::explorer::Explorer;
-use crate::ledger::{self, Build, Packed};
+use crate::ledger::{self, Build, Packed, StoredEvent};
 
 /// The store; the barcode last served per layer, reused while the stored tag matches it; and the
 /// explorer's copy of the serving build's events, reused while the build is the same.
@@ -184,8 +186,20 @@ async fn event_counts(State(api): State<Api>, uri: Uri, headers: HeaderMap) -> R
     tagged(&headers, &tag, explorer.counts(&state))
 }
 
-/// One event from the serving build, as stored: 400 for a number that isn't one, 404 for an event
-/// it doesn't hold.
+/// An event as `/api/events/{number}` answers it: as stored, with the NRC page that shows it, its
+/// category's published label, and a reactor event's units by catalog name.
+#[derive(Serialize)]
+struct EventDetail {
+    #[serde(flatten)]
+    stored: StoredEvent,
+    /// The event's anchor on the NRC page it came from.
+    nrc: Option<String>,
+    label: &'static str,
+    unit_names: Vec<String>,
+}
+
+/// One event from the serving build, as stored, with its NRC link: 400 for a number that isn't
+/// one, 404 for an event it doesn't hold.
 async fn event(State(api): State<Api>, Path(number): Path<String>) -> Response {
     let Ok(number) = number.parse::<u32>() else {
         return (StatusCode::BAD_REQUEST, "an event number is digits").into_response();
@@ -196,7 +210,32 @@ async fn event(State(api): State<Api>, Path(number): Path<String>) -> Response {
         Err(error) => return failed(&error),
     };
     match ledger::event(&api.store, &table, number).await {
-        Ok(Some(event)) => Json(event).into_response(),
+        Ok(Some(stored)) => {
+            let units = match Units::catalog() {
+                Ok(units) => units,
+                Err(error) => return failed(&error),
+            };
+            let unit_names = match &stored.identity {
+                Some(Identity::Reactor { dockets }) => dockets
+                    .iter()
+                    .map(|docket| {
+                        units
+                            .all()
+                            .iter()
+                            .find(|unit| unit.docket == *docket)
+                            .map_or_else(|| docket.as_str().to_owned(), |unit| unit.name.clone())
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            Json(EventDetail {
+                nrc: stored.page.map(|page| format!("{}{}#en{number}", nrc::BASE_URL, Report::EventNotifications.path(page))),
+                label: stored.event.category.label(),
+                unit_names,
+                stored,
+            })
+            .into_response()
+        }
         Ok(None) => (StatusCode::NOT_FOUND, "no such event").into_response(),
         Err(error) => failed(&error),
     }

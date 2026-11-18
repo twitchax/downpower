@@ -35,6 +35,7 @@ fn events(catalog: &Catalog, edit: impl FnOnce(&mut EventSet)) -> EventSet {
     let mut set = EventSet {
         events,
         identities,
+        pages: BTreeMap::new(),
         archive: Archive::default(),
     };
     edit(&mut set);

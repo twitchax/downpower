@@ -41,6 +41,7 @@ fn explorer() -> Explorer {
     let set = EventSet::build(&store, &Catalog::embedded().unwrap().facilities, Unknowns::Fail).unwrap();
     let events = set.events.into_iter().map(|(number, event)| StoredEvent {
         identity: set.identities.get(&number).cloned(),
+        page: set.pages.get(&number).copied(),
         event,
     });
     Explorer::new("event_1", events, &Units::catalog().unwrap())
@@ -182,12 +183,19 @@ fn uat_events_query_routes_answer_from_the_serving_build() {
         assert_eq!(counts.months.iter().flatten().sum::<u64>(), 2);
 
         let event = json(get(&router, "/api/events/45290", &[]).await).await;
+        assert_eq!(
+            event["nrc"].as_str(),
+            Some("https://www.nrc.gov/documents-reports/document-collections/events-reports-associated-with/event-notification-reports/2009/20090824en#en45290"),
+            "{event}"
+        );
         assert_eq!((event["number"].as_u64(), event["category"].as_str()), (Some(45290), Some("power_reactor")), "{event}");
         assert_eq!(
             (event["identity"]["kind"].as_str(), event["identity"]["dockets"][0].as_str()),
             (Some("reactor"), Some("05000296")),
             "{event}"
         );
+        assert_eq!((event["label"].as_str(), event["unit_names"][0].as_str()), (Some("Power Reactor"), Some("Browns Ferry 3")), "{event}");
+        assert_eq!(event["units"][0]["scram"].as_str(), Some("manual_reactor"), "{event}");
         assert_eq!(get(&router, "/api/events/99999", &[]).await.status(), StatusCode::NOT_FOUND);
         assert_eq!(get(&router, "/api/events/zebra", &[]).await.status(), StatusCode::BAD_REQUEST);
     });

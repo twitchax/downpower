@@ -358,6 +358,9 @@ fn event_set_holds_every_event_once_with_the_archive_counts() {
     let set = EventSet::build(&store, &facilities(), Unknowns::Fail).unwrap();
 
     assert_eq!(set.events.keys().copied().collect::<Vec<_>>(), [54959, 54960, 54962, 54964, 54965, 55027, 58149, 58151, 58160]);
+    // Each event keeps the date of the page it came from: EN 58149 happened 2026-01-12.
+    assert_eq!(set.pages.get(&58149), Some(&NaiveDate::from_ymd_opt(2026, 2, 11).unwrap()));
+    assert_eq!(set.pages.len(), 9);
     assert!(set.events.iter().all(|(number, event)| *number == event.number));
     assert_eq!(
         set.archive,

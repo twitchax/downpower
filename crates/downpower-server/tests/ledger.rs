@@ -318,6 +318,7 @@ fn all_stored(set: &EventSet) -> Vec<stored::StoredEvent> {
         .map(|(number, event)| stored::StoredEvent {
             event: event.clone(),
             identity: set.identities.get(number).cloned(),
+            page: set.pages.get(number).copied(),
         })
         .collect()
 }
