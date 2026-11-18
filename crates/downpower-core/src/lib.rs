@@ -3,6 +3,7 @@
 //! counts (DESIGN.md Decisions 17, 23, 24 and 33). Pure, and built for wasm.
 
 pub mod barcode;
+pub mod explorer;
 pub mod family;
 pub mod scrams;
 pub mod series;
