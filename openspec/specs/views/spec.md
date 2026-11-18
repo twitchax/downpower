@@ -79,6 +79,13 @@ Hovering the barcode, or moving a cursor over it with the arrow keys (starting a
 - **WHEN** the row is a transition by `inherit_14d` with no cause in the 14 days before
 - **THEN** the readout says `a transition, with no cause in the 14 days before`, not that it inherited
 
+### Requirement: The readout's event
+When a day's cause came from an event, the barcode readout SHALL name it and the field that decided it (`from EN 57537: scram, SCRAM Code A/R`), and a click on the day or Enter SHALL open `/events/{number}` for that event, or for the first event the day's reason cites when none decided it. (PRD-0004 T-007)
+
+#### Scenario: A scram from its event
+- **WHEN** the readout rests on Browns Ferry 3 on 2025-02-09, `See EN 57537`, a scram from SCRAM Code `A/R`
+- **THEN** it reads `from EN 57537: scram, SCRAM Code A/R`, and a click opens `/events/57537`
+
 ### Requirement: A pixel spanning several days
 When one pixel spans several days, the readout SHALL point at the span's deepest cut, or its middle day when nothing is cut, and SHALL say `1 of N days in this pixel`. (PRD-0002 T-013)
 

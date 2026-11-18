@@ -18,7 +18,7 @@ use crate::state::{ViewState, year_ticks};
 pub const ROW: f64 = 4.0;
 
 /// One unit-day as `/api/unit-day` serves it: the fields the tooltip shows.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Detail {
     pub docket: String,
     pub date: NaiveDate,
@@ -27,6 +27,63 @@ pub struct Detail {
     pub cause: Option<String>,
     pub family: Family,
     pub method: String,
+    /// What the cause rests on, as the ledger records it; read here for an event's number.
+    #[serde(default)]
+    pub evidence: Evidence,
+    /// The EN numbers the reason cites, `None` for a citation with no number.
+    #[serde(default)]
+    pub xrefs: Vec<Option<u32>>,
+}
+
+/// A day's evidence, as far as the readout reads it: the event its cause came from, or anything
+/// else.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Evidence {
+    Event { event: Resolved },
+    Other(serde::de::IgnoredAny),
+}
+
+impl Default for Evidence {
+    fn default() -> Self {
+        Self::Other(serde::de::IgnoredAny)
+    }
+}
+
+/// A resolved reference: the event, and the field that decided its cause.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Resolved {
+    pub number: u32,
+    pub decided_by: Option<Decider>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Decider {
+    /// The unit's SCRAM Code, as the ledger spells it (`auto_reactor`).
+    Scram(String),
+    /// A 10 CFR code as written.
+    Section(String),
+}
+
+/// The event a day's cause came from and the field that decided it, in words: `from EN 57813:
+/// scram, 10 CFR 50.72(b)(2)(iv)(B)`.
+fn from_event(row: &Detail) -> Option<String> {
+    let Evidence::Event { event } = &row.evidence else { return None };
+    let cause = row.cause.as_deref().unwrap_or_default().replace('_', " ");
+    Some(match &event.decided_by {
+        Some(Decider::Scram(scram)) => format!("from EN {}: {cause}, SCRAM Code {}", event.number, crate::event::scram_code(Some(scram))),
+        Some(Decider::Section(section)) => format!("from EN {}: {cause}, 10 CFR {section}", event.number),
+        None => format!("from EN {}: {cause}", event.number),
+    })
+}
+
+/// The event a click on the day opens: the one its cause came from, else the first it cites.
+fn opens(row: &Detail) -> Option<u32> {
+    match &row.evidence {
+        Evidence::Event { event } => Some(event.number),
+        Evidence::Other(_) => row.xrefs.iter().flatten().next().copied(),
+    }
 }
 
 /// What the pointer (or the arrow keys) points at, in CSS pixels within the plot.
@@ -147,6 +204,15 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
     #[cfg(feature = "hydrate")]
     fetch_detail(target, detail);
 
+    // A day whose cause came from an event, or whose reason cites one, opens it.
+    let navigate = leptos_router::hooks::use_navigate();
+    let open = move || {
+        let Some(target) = target.get_untracked() else { return };
+        let number = detail.with_untracked(|detail| detail.as_ref().filter(|row| row.docket == target.docket && row.date == target.date).and_then(opens));
+        if let Some(number) = number {
+            navigate(&format!("/events/{number}"), leptos_router::NavigateOptions::default());
+        }
+    };
     let rows = move || barcode.get().map_or(0, |barcode| u32::try_from(barcode.units().len()).unwrap_or(0));
     let status = move || match data.get() {
         None => Some("loading the ledger…".to_owned()),
@@ -165,10 +231,16 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
                     on:pointermove=move |event| pointer.set(Some(Pointer { x: f64::from(event.offset_x()), y: f64::from(event.offset_y()) }))
                     on:pointerleave=move |_| pointer.set(None)
                     on:blur=move |_| pointer.set(None)
+                    on:click={
+                        let open = open.clone();
+                        move |_| open()
+                    }
                     on:keydown=move |event| {
                         let key = event.key();
                         if key == "Escape" {
                             pointer.set(None);
+                        } else if key == "Enter" {
+                            open();
                         } else if let Some(step) = step(&key) {
                             event.prevent_default();
                             let bounds = (f64::from(width.get_untracked().saturating_sub(1)), (f64::from(rows()) * ROW - 1.0).max(0.0));
@@ -286,6 +358,8 @@ fn Tooltip(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>, width
                 {row.map(|row| view! {
                     <div class="reason">{row.reason.clone().unwrap_or_else(|| "(no reason text)".to_owned())}</div>
                     <div class="meta">{provenance(&row)}</div>
+                    {from_event(&row).map(|line| view! { <div class="meta">{line}</div> })}
+                    {opens(&row).map(|number| view! { <div class="meta">{format!("click or press Enter to open EN {number}")}</div> })}
                 })}
             </div>
         })
@@ -341,12 +415,43 @@ mod tests {
             cause: cause.map(str::to_owned),
             family: Family::Forced,
             method: method.to_owned(),
+            evidence: Evidence::default(),
+            xrefs: Vec::new(),
         };
         assert_eq!(provenance(&row(Some("reactor_trip"), "precedence_v1")), "reactor trip · named on the day");
         assert_eq!(provenance(&row(None, "no_cause")), "no cause given");
         assert_eq!(provenance(&row(Some("refueling"), "inherit_14d")), "refueling · inherited from an earlier day");
         assert_eq!(provenance(&row(None, "inherit_14d")), "a transition, with no cause in the 14 days before");
         assert_eq!(provenance(&row(Some("scram"), "xref_en_v1")), "scram · from the event report it cites");
+    }
+
+    /// A unit-day as `/api/unit-day` answers it, with `evidence` and `xrefs` as given.
+    fn day(cause: &str, evidence: &str, xrefs: &str) -> Detail {
+        serde_json::from_str(&format!(
+            r#"{{"docket":"05000296","date":"2025-02-09","power":0,"reason":"See EN 57537","cause":"{cause}","family":"forced","method":"xref_en_v1","evidence":{evidence},"xrefs":{xrefs}}}"#
+        ))
+        .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    #[test]
+    fn a_day_from_an_event_says_which_and_what_decided_it() {
+        let scram = day("scram", r#"{"event":{"number":57537,"decided_by":{"scram":"auto_reactor"}}}"#, "[57537]");
+        assert_eq!(from_event(&scram).as_deref(), Some("from EN 57537: scram, SCRAM Code A/R"));
+        assert_eq!(opens(&scram), Some(57537));
+
+        let section = day("required_shutdown", r#"{"event":{"number":57517,"decided_by":{"section":"50.72(b)(2)(i)"}}}"#, "[57517]");
+        assert_eq!(from_event(&section).as_deref(), Some("from EN 57517: required shutdown, 10 CFR 50.72(b)(2)(i)"));
+
+        let fallback = day("en_reported", r#"{"event":{"number":57000,"decided_by":null}}"#, "[57000]");
+        assert_eq!(from_event(&fallback).as_deref(), Some("from EN 57000: en reported"));
+    }
+
+    #[test]
+    fn a_cited_event_opens_though_it_decided_nothing() {
+        let unresolved = day("", r#"{"xrefs":[{"number":58999,"reason":"missing"}]}"#, "[null, 58999]");
+        assert_eq!(from_event(&unresolved), None);
+        assert_eq!(opens(&unresolved), Some(58999));
+        assert_eq!(opens(&day("", r#""none""#, "[]")), None);
     }
 
     #[test]
