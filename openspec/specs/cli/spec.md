@@ -112,6 +112,13 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** it prints `UNKNOWN Power Reactor "<name>" unit <n>` with its events
 - **AND** exits non-zero, saying to add it to `catalog/units.csv` or `catalog/facilities.csv`
 
+### Requirement: xtask events rewrites the facility fixture
+`cargo xtask events` SHALL rewrite `crates/downpower-ingest/tests/fixtures/events/facilities.tsv` with one sorted line per facility the stored events name: category, state, name, and a power reactor's unit or a non-power reactor's license, the field blank otherwise. The identity test holds the catalogs against it. (PRD-0003 T-004)
+
+#### Scenario: A new spelling on a fetched page
+- **WHEN** a newly stored page lists Hematite as `Combustion Engineering Inc.` in MO
+- **THEN** the fixture gains a `Fuel Cycle Facility` line for `COMBUSTION ENGINEERING INC.` in MO, and the identity test fails until `catalog/facilities.csv` names it
+
 ### Requirement: xtask capacity
 `cargo xtask capacity <dir>` SHALL rewrite `catalog/capacity.csv` from the EIA-860 zips in `<dir>` (`eia860a1999.zip`, `eia860a2000.zip`, `eia8602001.zip` to `eia8602006.zip`), rating each unit-year from its own year's file or else the nearest later one, and SHALL fail when a year's file lists a unit twice. (PRD-0002 T-009)
 

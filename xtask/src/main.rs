@@ -73,8 +73,8 @@ enum Command {
         dir: PathBuf,
     },
     /// Parses every stored Event Notification page and prints the archive's counts: pages, empty
-    /// pages, events by category, repeats across pages, and unused event numbers. Fails if any page
-    /// fails to parse.
+    /// pages, events by category, repeats across pages, and unused event numbers. Rewrites the facility
+    /// fixture the identity test reads. Fails if any page fails to parse or names an unknown facility.
     Events,
     /// Builds the ledger and runs the internal scram check (DESIGN.md Decision 33): how many EN
     /// scrams the status reports show and how many status-report scrams an EN reports, by year, with

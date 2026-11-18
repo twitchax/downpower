@@ -1,12 +1,14 @@
 //! `cargo xtask events`: parses every stored Event Notification page and prints what the archive
 //! holds, so a template change or a new label shows up before a rebuild meets it (PRD-0003 T-001),
 //! how well the update markers parse (T-002), and who the events are about, with every facility the
-//! catalogs don't know (T-004).
+//! catalogs don't know (T-004). It rewrites the facility fixture the identity test reads.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::fmt::Write as _;
+use std::fs;
 use std::path::Path;
 
-use anyhow::{bail, ensure};
+use anyhow::{Context as _, bail, ensure};
 use chrono::Datelike as _;
 
 use downpower_ingest::events::{Category, Event, Parser, Site, UpdateKind};
@@ -17,6 +19,9 @@ use downpower_ingest::units::Units;
 
 /// Failures printed in full; the rest are counted.
 const SHOWN: usize = 20;
+
+/// Every facility the archive names, which `uat_event_identity_knows_every_facility_the_archive_names_and_uses_every_catalog_name` holds the catalogs against.
+const FACILITIES: &str = "crates/downpower-ingest/tests/fixtures/events/facilities.tsv";
 
 pub fn run(data_dir: &Path) -> anyhow::Result<()> {
     ensure!(data_dir.join("raw/manifest.jsonl").exists(), "no raw store under {}; run `downpower fetch` first", data_dir.display());
@@ -94,6 +99,7 @@ pub fn run(data_dir: &Path) -> anyhow::Result<()> {
     }
 
     timeline(&events);
+    facilities(&events)?;
     let unknown = identity(&events)?;
 
     for failure in failures.iter().take(SHOWN) {
@@ -105,6 +111,39 @@ pub fn run(data_dir: &Path) -> anyhow::Result<()> {
     if !unknown.is_empty() {
         bail!("{} facilities the catalogs don't know; add them to catalog/units.csv or catalog/facilities.csv", unknown.len());
     }
+    Ok(())
+}
+
+/// Rewrites [`FACILITIES`], one sorted line per facility the catalogs match on: category, state,
+/// name, and a reactor's unit (blank for a site event) or a non-power reactor's license (blank for
+/// a fuel cycle facility).
+fn facilities(events: &[&Event]) -> anyhow::Result<()> {
+    let mut lines = BTreeSet::new();
+    for event in events {
+        let (label, state) = (event.category.label(), event.state.as_deref().unwrap_or_default());
+        match (event.category, &event.site) {
+            (Category::PowerReactor, Site::Facility(facility)) if event.units.is_empty() => {
+                lines.insert(format!("{label}\t{state}\t{}\t", facility.name));
+            }
+            (Category::PowerReactor, Site::Facility(facility)) => {
+                lines.extend(event.units.iter().map(|info| format!("{label}\t{state}\t{}\t{}", facility.name, info.unit)));
+            }
+            (Category::FuelCycleFacility, Site::Facility(facility)) => {
+                lines.insert(format!("{label}\t{state}\t{}\t", facility.name));
+            }
+            (Category::NonPowerReactor | Category::ResearchReactor, Site::Licensee(licensee)) => {
+                let (name, license) = (licensee.name.as_deref().unwrap_or_default(), licensee.license.as_deref().unwrap_or_default());
+                lines.insert(format!("{label}\t{state}\t{name}\t{license}"));
+            }
+            _ => {}
+        }
+    }
+    let mut text = String::new();
+    for line in &lines {
+        writeln!(text, "{line}")?;
+    }
+    fs::write(FACILITIES, text).with_context(|| format!("writing {FACILITIES}"))?;
+    println!("{} facility lines in {FACILITIES}", lines.len());
     Ok(())
 }
 
