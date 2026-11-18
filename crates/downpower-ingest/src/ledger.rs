@@ -30,8 +30,8 @@ use crate::{Res, Void};
 /// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
 /// 5: events carry their identity, and reactor events a row per unit (T-004). 6: `See EN#` days
 /// resolve through `catalog/xref.toml` (T-005). 7: an event with a blank Last Update Date parses.
-/// 8: builds record the internal scram check (T-007).
-pub const LEDGER_VERSION: u32 = 8;
+/// 8: builds record the internal scram check (T-007). 9: the check reads a citation inside any tag.
+pub const LEDGER_VERSION: u32 = 9;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]

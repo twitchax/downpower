@@ -103,12 +103,77 @@ fn a_scram_time_test_is_testing_not_a_scram() {
         "testing control rod scram times",
         "power ascension on hold for scram timing",
         "reduced power for turbine test, scram test and rod sequence exchange",
+        "single control rod scram during rps testing",
+        "downpower manuever to 60% to perform single rod scrams and planned 345 kv line outage on line #381",
     ];
     for tag in tests {
         assert_eq!(label(&tags, tag), "testing/Maintenance", "{tag}");
     }
     assert_eq!(label(&tags, "automatic reactor scram. see event # 41243"), "scram/Forced");
-    assert_eq!(label(&tags, "single control rod scram during rps testing"), "scram/Forced");
+}
+
+/// The scram check (PRD-0003 T-007) found the scram rule's bare `tripped` catching pumps, lines and
+/// breakers. A reactor trip names the reactor, or is a manual trip, or opens the tag.
+#[test]
+fn a_tripped_pump_line_or_breaker_is_not_a_reactor_scram() {
+    let tags = Tags::catalog().unwrap();
+    let cases = [
+        ("one recirc pump tripped", "recirculation_pump/Equipment"),
+        ("tripped 1 of 5 recirc pumps", "recirculation_pump/Equipment"),
+        ("reduced power due to a tripped reactor feed pump", "feedwater/Equipment"),
+        ("rfp tripped. increasing to 90% power to hold and troubleshoot.", "feedwater/Equipment"),
+        ("reducing power to 15 percent rtp where turbine will be tripped for maintenance on turbine.", "maintenance/Maintenance"),
+        ("reactor manually tripped from 100% power - see event # 39720", "scram/Forced"),
+        ("manually tripped due to high rcp motor bearing temp - see en#48475", "scram/Forced"),
+        ("tripped. see en #44318.", "scram/Forced"),
+        ("tripped reactor for startup testing", "scram/Forced"),
+    ];
+    for (tag, expected) in cases {
+        assert_eq!(label(&tags, tag), expected, "{tag}");
+    }
+}
+
+/// The scram check (PRD-0003 T-007) found the scram rule catching tests of the turbine and reactor
+/// trip systems. A reactor that scrams during one is still a scram.
+#[test]
+fn a_trip_system_test_is_testing_not_a_scram() {
+    let tags = Tags::catalog().unwrap();
+    let tests = [
+        "turbine trip testing in progress",
+        "turbine overspeed trip testing",
+        "holding power for scram rod testing",
+        "reactor trip testing",
+        "prepare for planned plant trip test",
+    ];
+    for tag in tests {
+        assert_eq!(label(&tags, tag), "testing/Maintenance", "{tag}");
+    }
+    let scrams = [
+        "rx scram during turbine trip testing. see en#45265",
+        "reactor scrammed during the oil trip test portion of the turbine weekly surveillance test. see event # 36501.",
+        "reactor trip during turbine trip system testing - see event #36148",
+    ];
+    for tag in scrams {
+        assert_eq!(label(&tags, tag), "scram/Forced", "{tag}");
+    }
+}
+
+/// The scram check (PRD-0003 T-007) found the scram rule catching work on scram valves, the scram
+/// discharge volume and turbine trip solenoids, which are parts of a trip system, not trips.
+#[test]
+fn work_on_trip_system_parts_is_maintenance_not_a_scram() {
+    let tags = Tags::catalog().unwrap();
+    let parts = [
+        "isolating leaking scram outlet valve",
+        "emergent load drop to repair scram discharge volume valves",
+        "reduced power for planned crd scram solenoid pilot valve repair",
+        "holding for turbine trip system maintenance",
+        "holding power at this level with the unit off line as part of a maintenance outage to repair a turbine trip solenoid",
+    ];
+    for tag in parts {
+        assert_eq!(label(&tags, tag), "maintenance/Maintenance", "{tag}");
+    }
+    assert_eq!(label(&tags, "see event #35753, reactor scram due to high level in the scram discharge volume"), "scram/Forced");
 }
 
 #[test]

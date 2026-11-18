@@ -212,3 +212,19 @@ fn uat_scram_check_a_report_citing_its_event_finds_it_outside_the_window() {
 
     assert_eq!(found(&cases), [("05000302", day("2009-09-02"), Found::Event, vec![45286])]);
 }
+
+#[test]
+fn uat_scram_check_a_citation_counts_inside_a_tag_with_another_label() {
+    // The scram tag itself cites the event, nine days on, so no `xref` tag carries the number.
+    let mut pages: Vec<Vec<Line>> = vec![vec![line(CR3, 100)]; 10];
+    pages.push(vec![line(CR3, 0).reason("Reactor Trip - See EN #45286")]);
+    let pages: Vec<&[Line]> = pages.iter().map(Vec::as_slice).collect();
+    let (cases, _, _) = check(|_| {}, &pages);
+
+    assert_eq!(found(&cases), [("05000302", day("2009-09-02"), Found::Event, vec![45286])]);
+
+    // Browns Ferry 3 shows no drop, but its forced outage tag cites the event.
+    let (cases, _, _) = check(|_| {}, &[&[line(BF3, 100)], &[line(BF3, 100)], &[line(BF3, 95).reason("Forced outage - see EN #45290")]]);
+
+    assert_eq!(shown(&cases), [(45286, Shown::NoReport, [None, None]), (45290, Shown::Named, [Some(100), Some(95)])]);
+}

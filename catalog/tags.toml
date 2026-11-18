@@ -124,13 +124,33 @@ label = "cause:coastdown"
 pattern = 'permanent(ly)? (plant )?(shut ?down|cessation|ceased|defueled)|decommission'
 label = "cause:permanent_shutdown"
 
-# Control rod scram time tests are planned derates, not scrams (PRD-0003.log.md#t-007).
+# The scram rules below (PRD-0003.log.md#t-007) give `scram` only to a reactor trip. Tests and parts
+# of a trip system come first or after, as the order needs; turbine and generator trips still count.
+#
+# Control rod scram time tests, single rods scrammed in them, and reactor trip tests are planned
+# derates, not scrams.
 [[rules]]
-pattern = 'scram tim|scram test'
+pattern = 'scram tim|scram test|single (control )?(rod|crd) scram|rod scrams|(reactor|plant) trip test'
 label = "cause:testing"
 
+# A reactor trip: the reactor or a manual or automatic trip is named. A tripped pump, line or
+# breaker is not one, so `tripped` counts only after the reactor, `manually`, or as the whole tag.
 [[rules]]
-pattern = '\bscram|\b(reactor|rx|unit|plant|turbine|generator) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|tripped'
+pattern = '\b(reactor|rx|unit|plant) (trip|scram)|\b(automatic|manual|auto) (reactor |rx )?(trip|scram)|\b(reactor|rx|unit|plant)( was| has)?( manually| automatically)? tripped|\bmanually tripped|tripped (the )?(reactor|rx|unit) (for|@|at|on|due) |^tripped(\.|$)'
+label = "cause:scram"
+
+# A test of a turbine or pump trip, once no reactor trip is named.
+[[rules]]
+pattern = 'trip test|scram rod test'
+label = "cause:testing"
+
+# Scram valves, the scram discharge volume and turbine trip solenoids are parts of a trip system.
+[[rules]]
+pattern = 'scram (discharge|outlet|inlet|solenoid|pilot|valve)|trip solenoid|trip system maint'
+label = "cause:maintenance"
+
+[[rules]]
+pattern = '\b(turbine|generator) (trip|scram)|\bscram'
 label = "cause:scram"
 
 [[rules]]

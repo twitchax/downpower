@@ -143,6 +143,29 @@ impl Listed {
     }
 }
 
+/// The EN numbers a reason cites, whatever its tags were labelled: a tag takes one label, so "REACTOR
+/// TRIP - SEE EN #45286" is a scram tag that records no reference. A citation is five digits after
+/// `en` or `event` and any `no` or `number` ("SEE EVENT #51895", "TRIP-EN#46387"), or `en` and the
+/// digits run together ("EN57928").
+fn cited(reason: &str) -> Vec<u32> {
+    let words: Vec<&str> = reason.split(|c: char| !c.is_ascii_alphanumeric()).filter(|word| !word.is_empty()).collect();
+    let number = |word: &str| -> Option<u32> { (word.len() == 5 && word.bytes().all(|byte| byte.is_ascii_digit())).then(|| word.parse().ok()).flatten() };
+    let mut numbers = Vec::new();
+    for (index, word) in words.iter().enumerate() {
+        let cited = if word.eq_ignore_ascii_case("en") || word.eq_ignore_ascii_case("event") {
+            words[index + 1..]
+                .iter()
+                .find(|next| !next.eq_ignore_ascii_case("no") && !next.eq_ignore_ascii_case("number"))
+                .and_then(|next| number(next))
+        } else {
+            // Words hold ASCII alphanumerics only, so any byte index is a char boundary.
+            word.get(..2).filter(|prefix| prefix.eq_ignore_ascii_case("en")).and_then(|_| number(&word[2..]))
+        };
+        numbers.extend(cited);
+    }
+    numbers
+}
+
 /// An EN scram, waiting on the unit's reports for the day of its event and the next.
 #[derive(Debug, Clone)]
 struct Pending<'a> {
@@ -216,24 +239,31 @@ impl<'a> Check<'a> {
     pub fn observe(&mut self, days: &[UnitDay]) {
         for day in days.iter().filter(|day| day.source == Source::NrcPage) {
             let names_scram = day.scrams > 0 || day.causes.iter().any(|cause| cause.cause == SCRAM);
-            for &(index, slot) in self.wanted.get(&(day.docket.as_str(), day.date)).into_iter().flatten() {
+            let wanted = self.wanted.get(&(day.docket.as_str(), day.date));
+            if wanted.is_none() && !names_scram {
+                continue;
+            }
+            let citations = day.reason.as_deref().map(cited).unwrap_or_default();
+            let cites = |number: u32| day.xrefs.contains(&Some(number)) || citations.contains(&number);
+            for &(index, slot) in wanted.into_iter().flatten() {
                 let pending = &mut self.scrams[index];
-                pending.seen[slot] = Some((day.power, names_scram || day.xrefs.contains(&Some(pending.number))));
+                pending.seen[slot] = Some((day.power, names_scram || cites(pending.number)));
             }
             if names_scram {
                 let previous = self.marked.insert(day.docket.clone(), day.date);
                 if previous.is_none_or(|previous| previous + Days::new(1) != day.date) {
-                    let report = self.report(day);
+                    let report = self.report(day, cites);
                     self.reports.push(report);
                 }
             }
         }
     }
 
-    /// Classifies a report scram by the events on its unit.
-    fn report(&self, day: &UnitDay) -> ReportScram {
+    /// Classifies a report scram by the events on its unit: those within [`WINDOW`] days, and those
+    /// its reason cites.
+    fn report(&self, day: &UnitDay, cites: impl Fn(u32) -> bool) -> ReportScram {
         let date = day.down.filter(|down| *down <= day.date && day.date - DOWN_BACK <= *down).unwrap_or(day.date);
-        let near = |line: &&Listed| (date - WINDOW <= line.date && line.date <= date + WINDOW) || day.xrefs.contains(&Some(line.number));
+        let near = |line: &&Listed| (date - WINDOW <= line.date && line.date <= date + WINDOW) || cites(line.number);
         let lines: Vec<&Listed> = self.listed.get(day.docket.as_str()).into_iter().flatten().filter(near).collect();
         let outcome = if lines.iter().any(|line| line.scrammed() && !line.retracted) {
             Found::Event
@@ -290,5 +320,30 @@ impl<'a> Check<'a> {
         let mut reports = self.reports;
         reports.sort_by(|a, b| (&a.docket, a.date).cmp(&(&b.docket, b.date)));
         Cases { events, reports }
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use pretty_assertions::assert_eq;
+
+    use super::cited;
+
+    #[test]
+    fn a_reason_cites_the_five_digit_numbers_after_en_or_event() {
+        let cases: [(&str, &[u32]); 9] = [
+            ("SCRAM-SEE EVENT #51895", &[51895]),
+            ("MAINTENANCE OUTAGE- REF: REACTOR TRIP-EN#46387", &[46387]),
+            ("See EN57928 Forced Outage", &[57928]),
+            ("(Refer to event #38993)", &[38993]),
+            ("see event no. 35209; see en number 35210", &[35209, 35210]),
+            ("Reactor trip from 100%. See EN # 49184.", &[49184]),
+            ("see en # pending", &[]),
+            ("1/2 SCRAM INSERTED DUE TO LCO STATEMENT", &[]),
+            ("open 12345, events 23456, en 1250 mwe, encore45678", &[]),
+        ];
+        for (reason, expected) in cases {
+            assert_eq!(cited(reason), expected, "{reason}");
+        }
     }
 }

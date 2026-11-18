@@ -304,11 +304,17 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
     - `RPS ACTUATION - CRITICAL` is not a rule: sections belong to the whole event, and on a
       multi-unit event it names only the unit that scrammed. The unit's own SCRAM Code decides.
     - Unresolved references carried 58 TWh, 2.4% of all lost output and half of Unattributed.
-      Resolution attributes 42.6 TWh and leaves 18.6, of which 16.4 cite events the archive
-      lacks (revised 2026-11-17).
+      Resolution attributed 42.6 TWh and left 18.6, of which 16.4 cited events the archive
+      lacked; with the weekend Event Notification pages (Decision 10) it attributes 60.3 TWh and
+      leaves 2.7 (revised 2026-11-17).
 33. **Scrams are checked twice, never rebuilt into a tracker.**
     - **Internally:** each EN scram against the status reports' drop on that unit, and each
-      status-report scram outage against an EN.
+      status-report scram outage against an EN, matched within 2 days or by a citation anywhere
+      in the reason. Over the archive the reports show 99.7% of EN scrams, and an EN reports
+      96.4% of report scrams (PRD-0003.log.md#t-007, revised 2026-11-17).
+    - A `scram` tag names a reactor, turbine or generator trip. Tripped pumps, lines and
+      breakers, tests of a trip system and work on its parts take their own causes, which the
+      check found the scram rule catching (revised 2026-11-17).
     - **Against the NRC's scram dataset** (`scram-event-notifications.xlsx`, CC0): stored in the
       raw store, rechecked weekly, and reconciled by event number over its span (2011 to early
       2025). A retracted scram the NRC still counts is a known difference.
