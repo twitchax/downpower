@@ -20,3 +20,17 @@ why the version moved the way it did.
 - The fleet barcode and the stacked area of lost output by cause on the home page, sharing
   `?from&to&layer&families`, and `/status` with coverage, agreement and quarantine.
 - The Fly deploy at downpower.twitchax.com.
+- Event Notifications (PRD-0003): every stored page parsed into events with their 10 CFR sections,
+  unit tables (SCRAM Code and power) and update timelines, retracted by the page's banner, each
+  facility identified by docket, and the event set stored beside every build.
+- `See EN#` references on status days resolve to a cause (`scram`, `required_shutdown` or
+  `en_reported`) through `catalog/xref.toml`, with the event as evidence on the unit-day.
+- The internal scram check in every build: EN scrams against the status reports' drops, and
+  status-report scrams against the events, on `/status`, `/api/status` and `cargo xtask scrams`.
+- Event Notification pages fetched on weekends too, and held 28 days like the status pages.
+
+### Changed
+
+- The tag table gives `scram` only to a reactor trip. Scram time tests, tripped pumps, lines and
+  breakers, trip-system tests and parts, and turbine or generator trips that tripped no reactor
+  take their own causes.
