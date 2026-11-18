@@ -170,7 +170,7 @@ fn timeline(events: &[&Event]) {
             named += usize::from(update.from.is_some() && update.to.is_some());
             if let Some(date) = update.date {
                 // Allow a day either side for time zones and late typing.
-                outside += usize::from(date < event.notified.date.pred_opt().unwrap_or(date) || date > event.updated.succ_opt().unwrap_or(date));
+                outside += usize::from(date < event.notified.date.pred_opt().unwrap_or(date) || date > event.updated.and_then(|updated| updated.succ_opt()).unwrap_or(date));
             } else if undated.len() < SHOWN {
                 undated.push(update.marker.clone());
             }

@@ -445,7 +445,7 @@ mod unit {
             ops_officer: None,
             notified: stamp("2020-01-02"),
             occurred: stamp("2020-01-01"),
-            updated: "2020-01-02".parse().unwrap(),
+            updated: Some("2020-01-02".parse().unwrap()),
             class: None,
             sections: Vec::new(),
             persons: Vec::new(),

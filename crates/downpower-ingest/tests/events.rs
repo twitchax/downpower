@@ -62,7 +62,10 @@ fn uat_events_parse_every_page_in_page_order() {
         let events = events::parse(bytes).unwrap();
 
         assert_eq!(events.iter().map(|event| event.number).collect::<Vec<_>>(), numbers, "{date}");
-        assert!(events.iter().all(|event| !event.text.is_empty() && event.notified.date <= event.updated), "{date}");
+        assert!(
+            events.iter().all(|event| !event.text.is_empty() && event.updated.is_none_or(|updated| event.notified.date <= updated)),
+            "{date}"
+        );
     }
 }
 
@@ -111,7 +114,7 @@ fn uat_events_parse_a_1999_fuel_cycle_facility_with_comments() {
             ops_officer: Some("STEVE SANDIN".to_owned()),
             notified: stamp("1999-01-15", "18:08", "ET"),
             occurred: stamp("1999-01-15", "14:10", "EST"),
-            updated: NaiveDate::from_ymd_opt(1999, 1, 25).unwrap(),
+            updated: NaiveDate::from_ymd_opt(1999, 1, 25),
             class: Some(EmergencyClass::NonEmergency),
             sections: vec![],
             persons: strings(&["JIM GAVULA (R3)", "JOHN SURMEIER (NMSS)", "FRANK CONGEL (IRO)"]),

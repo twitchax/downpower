@@ -28,8 +28,8 @@ use crate::{Res, Void};
 /// rows changes, so the deployed server rebuilds (Decision 15). The catalog files are hashed in
 /// beside it. 3: builds pack the barcode buffers. 4: builds store the event set (PRD-0003 T-003).
 /// 5: events carry their identity, and reactor events a row per unit (T-004). 6: `See EN#` days
-/// resolve through `catalog/xref.toml` (T-005).
-pub const LEDGER_VERSION: u32 = 6;
+/// resolve through `catalog/xref.toml` (T-005). 7: an event with a blank Last Update Date parses.
+pub const LEDGER_VERSION: u32 = 7;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]

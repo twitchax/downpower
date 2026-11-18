@@ -101,8 +101,8 @@ pub struct Event {
     pub ops_officer: Option<String>,
     pub notified: Stamp,
     pub occurred: Stamp,
-    /// The Last Update Date.
-    pub updated: NaiveDate,
+    /// The Last Update Date; `None` when the page leaves it blank (EN 39258).
+    pub updated: Option<NaiveDate>,
     /// `None` when the page leaves it blank.
     pub class: Option<EmergencyClass>,
     pub sections: Vec<Section>,
@@ -521,7 +521,7 @@ fn parse_event(number: u32, grid: ElementRef<'_>, table: Option<ElementRef<'_>>,
     let mut fields = Fields::of(dates)?;
     let notified = stamp(&mut fields, "Notification")?;
     let occurred = stamp(&mut fields, "Event")?;
-    let updated = date("Last Update Date", &fields.take("Last Update Date")?)?;
+    let updated = blank(fields.take("Last Update Date")?).map(|value| date("Last Update Date", &value)).transpose()?;
     fields.end()?;
 
     let mut fields = Fields::of(class)?;
@@ -1258,7 +1258,7 @@ mod unit {
                 ops_officer: Some("Adam Koziol".to_owned()),
                 notified: stamp("2026-11-10", "09:45", Some("ET")),
                 occurred: stamp("2026-11-09", "05:12", Some("CST")),
-                updated: day("2026-11-12"),
+                updated: Some(day("2026-11-12")),
                 class: Some(EmergencyClass::NonEmergency),
                 sections: vec![Section {
                     code: Some("50.72(b)(2)(iv)(B)".to_owned()),
@@ -1440,6 +1440,15 @@ mod unit {
         let dates = DATES.replace("05:12 [CST]", "00:00 []");
 
         assert_eq!(one(Parts { dates: dates.leak(), ..Parts::reactor() }).occurred, stamp("2026-11-09", "00:00", None));
+    }
+
+    /// EN 39258 (2002-10-05) leaves the Last Update Date blank.
+    #[test]
+    fn a_blank_last_update_date_reads_as_none() {
+        let dates = DATES.replace("11/12/2026", "");
+
+        assert_eq!(one(Parts { dates: dates.leak(), ..Parts::reactor() }).updated, None);
+        assert_eq!(one(Parts::reactor()).updated, Some(day("2026-11-12")));
     }
 
     #[test]
