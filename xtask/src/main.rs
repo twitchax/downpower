@@ -22,6 +22,7 @@ use downpower_ingest::units::Units;
 mod capacity;
 mod crosscheck;
 mod events;
+mod oracle;
 mod scrams;
 
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
@@ -76,6 +77,10 @@ enum Command {
     /// pages, events by category, repeats across pages, and unused event numbers. Rewrites the facility
     /// fixture the identity test reads. Fails if any page fails to parse or names an unknown facility.
     Events,
+    /// Rewrites the oracle fixture: the events of the NRC's raw data file (committed beside it),
+    /// each cut from the newest stored page that holds it. Fails if a page is missing or a cut
+    /// event parses differently from its page.
+    Oracle,
     /// Builds the ledger and runs the internal scram check (DESIGN.md Decision 33): how many EN
     /// scrams the status reports show and how many status-report scrams an EN reports, by year, with
     /// the cases where the two disagree.
@@ -97,6 +102,7 @@ fn main() -> anyhow::Result<()> {
         Command::Capacity { dir } => capacity::run(&dir, Path::new(CAPACITY)),
         Command::Crosscheck { dir } => crosscheck::run(&cli.data_dir, &dir),
         Command::Events => events::run(&cli.data_dir),
+        Command::Oracle => oracle::run(&cli.data_dir),
         Command::Scrams { examples } => scrams::run(&cli.data_dir, examples),
     }
 }

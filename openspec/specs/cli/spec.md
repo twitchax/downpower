@@ -119,6 +119,13 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **WHEN** a newly stored page lists Hematite as `Combustion Engineering Inc.` in MO
 - **THEN** the fixture gains a `Fuel Cycle Facility` line for `COMBUSTION ENGINEERING INC.` in MO, and the identity test fails until `catalog/facilities.csv` names it
 
+### Requirement: xtask oracle rewrites the oracle fixture
+`cargo xtask oracle` SHALL rewrite `crates/downpower-ingest/tests/fixtures/events/oracle/events.html` with the events of the NRC raw data file committed beside it, in the file's order, each cut byte for byte from the stored page the event set would take it from (the newest fetch, then the later date), and SHALL fail when no stored page holds one of them or a cut event parses differently from its whole page. The oracle test holds the file's columns against it. (PRD-0003 T-009)
+
+#### Scenario: An event no stored page holds
+- **WHEN** `cargo xtask oracle` runs over a raw store missing the page of one of the file's events
+- **THEN** it exits non-zero, naming the event, and leaves the fixture as it was
+
 ### Requirement: xtask capacity
 `cargo xtask capacity <dir>` SHALL rewrite `catalog/capacity.csv` from the EIA-860 zips in `<dir>` (`eia860a1999.zip`, `eia860a2000.zip`, `eia8602001.zip` to `eia8602006.zip`), rating each unit-year from its own year's file or else the nearest later one, and SHALL fail when a year's file lists a unit twice. (PRD-0002 T-009)
 
