@@ -156,10 +156,10 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
             </label>
         }
     };
-    let words = text("search", "words in the text", "16ch", |state| state.q.clone(), |state, value| state.q = value);
-    let place = text("place", "facility or licensee", "16ch", |state| state.facility.clone(), |state, value| state.facility = value);
-    let us_state = text("state", "TX", "5ch", |state| state.state.clone(), |state, value| state.state = value);
-    let cfr = text("10 CFR", "50.72(b)(2)", "12ch", |state| state.cfr.clone(), |state, value| state.cfr = value);
+    let words = text("search", "words in the text", "22ch", |state| state.q.clone(), |state, value| state.q = value);
+    let place = text("place", "facility or licensee", "22ch", |state| state.facility.clone(), |state, value| state.facility = value);
+    let us_state = text("state", "TX", "6ch", |state| state.state.clone(), |state, value| state.state = value);
+    let cfr = text("10 CFR", "50.72(b)(2)", "16ch", |state| state.cfr.clone(), |state, value| state.cfr = value);
     let from = date("from", |state| state.from, |state, date| state.from = date);
     let to = date("to", |state| state.to, |state, date| state.to = date);
     let classes = Class::ALL
@@ -229,7 +229,8 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
     }
 }
 
-/// The category groups, each a toggle: none pressed lists them all.
+/// The category groups, each a toggle. With none chosen every group is listed, so every toggle reads
+/// pressed; pressing one then lists it alone.
 #[component]
 fn Groups(state: Memo<EventsState>) -> impl IntoView {
     let go = navigator();
@@ -239,7 +240,10 @@ fn Groups(state: Memo<EventsState>) -> impl IntoView {
             view! {
                 <button
                     class="legend-item"
-                    aria-pressed=move || state.get().groups.contains(&group).to_string()
+                    aria-pressed=move || {
+                        let groups = state.get().groups;
+                        (groups.is_empty() || groups.contains(&group)).to_string()
+                    }
                     on:click=move |_| {
                         let mut next = state.get_untracked();
                         if let Some(at) = next.groups.iter().position(|selected| *selected == group) {

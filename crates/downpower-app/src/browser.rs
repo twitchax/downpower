@@ -68,11 +68,12 @@ pub fn palette(root: &Element) -> Option<Palette> {
     for family in downpower_core::Family::ALL {
         families[usize::from(family.index())] = color(&probe, root, &format!("[data-paint='{}']", family.slug()))?;
     }
+    let [track, hidden, marker] = paint::SWATCHES.map(|name| color(&probe, root, &format!("[data-paint='{name}']")));
     Some(Palette {
         families,
-        track: color(&probe, root, "[data-paint='track']")?,
-        hidden: color(&probe, root, "[data-paint='hidden']")?,
-        marker: color(&probe, root, "[data-paint='marker']")?,
+        track: track?,
+        hidden: hidden?,
+        marker: marker?,
     })
 }
 

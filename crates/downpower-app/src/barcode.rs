@@ -293,8 +293,7 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
             // The colors the canvas paints with, read off the stylesheet at each draw.
             <div class="swatches" node_ref=swatches aria-hidden="true">
                 {Family::ALL.map(|family| view! { <span data-paint=family.slug() class=format!("family-{}", family.slug())></span> }).collect_view()}
-                <span data-paint="track"></span>
-                <span data-paint="hidden"></span>
+                {paint::SWATCHES.map(|name| view! { <span data-paint=name></span> }).collect_view()}
             </div>
         </figure>
     }

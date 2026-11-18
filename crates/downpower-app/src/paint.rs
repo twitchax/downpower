@@ -55,6 +55,11 @@ pub struct Grid {
     pub gap: u32,
 }
 
+/// The swatches the view renders and [`Palette`] reads its colors from besides the families': the
+/// in-service track, the gray a hidden family recedes to, and the event markers. One list for both,
+/// so a color the palette needs can't be missing from the page.
+pub const SWATCHES: [&str; 3] = ["track", "hidden", "marker"];
+
 /// Colors resolved from the stylesheet: each family's, the in-service track's, the gray a
 /// filtered-out family recedes to, and the event markers'.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,10 +149,22 @@ pub fn placed(markers: &Markers, barcode: &Barcode, window: Window, width: u32) 
         let Some(offset) = barcode.index(marker.date).and_then(|index| index.checked_sub(window.start)).filter(|offset| *offset < window.days) else {
             continue;
         };
-        let x = u32::try_from(u64::from(offset) * u64::from(width) / u64::from(window.days)).unwrap_or(u32::MAX);
-        *cells.entry((x, *row)).or_default() |= marker.scram;
+        *cells.entry((column(offset, window.days, width), *row)).or_default() |= marker.scram;
     }
     cells.into_iter().map(|((x, row), scram)| (x, row, scram)).collect()
+}
+
+/// The device column of day `day` of `days` spanning `width` columns, the inverse of
+/// [`barcode::span`]: the middle of the columns that read as the day when a day spans several, and
+/// the one column holding it when a column spans several days.
+fn column(day: u32, days: u32, width: u32) -> u32 {
+    let (day, days, width) = (u64::from(day), u64::from(days.max(1)), u64::from(width.max(1)));
+    // The last column whose span starts at or before the day, which holds it.
+    let last = ((day + 1) * width - 1) / days;
+    // The first column whose span starts at the day.
+    let first = (day * width).div_ceil(days);
+    let column = if first <= last { u64::midpoint(first, last) } else { last };
+    u32::try_from(column.min(width - 1)).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -264,5 +281,19 @@ mod tests {
         let late = Window::new(&barcode, Some(date("2024-01-03")), None);
         assert_eq!(placed(&markers, &barcode, late, 4), [(2, 1, true)], "outside the window drops; columns follow the window");
         Ok(())
+    }
+
+    #[test]
+    fn uat_event_markers_sit_in_a_column_the_pointer_reads_as_their_day() {
+        // Zoomed in, a day spans several columns; zoomed out, a column several days.
+        for (days, width) in [(4, 10), (171, 1216), (10, 4), (9_800, 1216), (7, 7)] {
+            for day in 0..days {
+                let x = column(day, days, width);
+                assert!(
+                    barcode::span(x, width, days).contains(&usize::try_from(day).unwrap_or_default()),
+                    "day {day} of {days} over {width} lands at {x}"
+                );
+            }
+        }
     }
 }
