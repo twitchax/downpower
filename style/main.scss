@@ -81,6 +81,8 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .legend-item[aria-pressed="false"] { color: var(--text-3); }
 .legend-item[aria-pressed="false"] .swatch { opacity: 0.25; }
 .swatch { width: 10px; height: 10px; flex: none; }
+// The event markers' legend key: the scram diamond.
+.marker-key { width: 7px; height: 7px; flex: none; margin: 0 2px; background: var(--text-1); transform: rotate(45deg); }
 
 // The barcode: the canvas paints itself; the tooltip and axis are HTML over and under it.
 .barcode { margin: 0; display: grid; gap: var(--s-1); }
@@ -116,6 +118,7 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .swatches { display: none; }
 [data-paint="track"] { background: var(--bg-2); }
 [data-paint="hidden"] { background: var(--text-3); }
+[data-paint="marker"] { background: var(--text-1); }
 
 // The stacked area: paths in a stretched viewBox, every label in HTML beside it.
 .area { margin: 0; display: grid; gap: var(--s-2); }

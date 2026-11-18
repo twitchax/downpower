@@ -8,6 +8,7 @@ use web_sys::{CanvasRenderingContext2d, ContextAttributes2d, Element, HtmlCanvas
 
 use downpower_core::Families;
 use downpower_core::barcode::Barcode;
+use downpower_core::markers::Markers;
 
 use crate::paint::{self, Grid, Palette, Window};
 
@@ -71,6 +72,7 @@ pub fn palette(root: &Element) -> Option<Palette> {
         families,
         track: color(&probe, root, "[data-paint='track']")?,
         hidden: color(&probe, root, "[data-paint='hidden']")?,
+        marker: color(&probe, root, "[data-paint='marker']")?,
     })
 }
 
@@ -79,7 +81,7 @@ pub fn palette(root: &Element) -> Option<Palette> {
 /// # Errors
 ///
 /// When the canvas has no 2D context or refuses the pixels.
-pub fn draw(canvas: &HtmlCanvasElement, barcode: &Barcode, window: Window, visible: Families, palette: &Palette, row: f64) -> Result<(), String> {
+pub fn draw(canvas: &HtmlCanvasElement, barcode: &Barcode, window: Window, visible: Families, palette: &Palette, row: f64, markers: Option<&Markers>) -> Result<(), String> {
     let ratio = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio()).max(1.0);
     let device = |css: f64| {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a positive pixel count")]
@@ -100,5 +102,35 @@ pub fn draw(canvas: &HtmlCanvasElement, barcode: &Barcode, window: Window, visib
     let pixels = paint::paint(barcode, window, grid, visible, palette);
     let image = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&pixels), grid.width, height).map_err(|error| js(&error))?;
     let context: CanvasRenderingContext2d = canvas.get_context("2d").map_err(|error| js(&error))?.ok_or("no 2D context")?.dyn_into().map_err(|object| js(&object))?;
-    context.put_image_data(&image, 0.0, 0.0).map_err(|error| js(&error))
+    context.put_image_data(&image, 0.0, 0.0).map_err(|error| js(&error))?;
+    if let Some(markers) = markers {
+        draw_markers(&context, &paint::placed(markers, barcode, window, grid.width), grid, palette.marker);
+    }
+    Ok(())
+}
+
+/// Each placed marker over its cell (Decision 35): an event a one-pixel tick the row's height, a
+/// scram a diamond, so the two read apart by shape alone.
+fn draw_markers(context: &CanvasRenderingContext2d, placed: &[(u32, usize, bool)], grid: Grid, color: [u8; 3]) {
+    let [red, green, blue] = color;
+    context.set_fill_style_str(&format!("rgb({red}, {green}, {blue})"));
+    let pitch = f64::from(grid.pitch);
+    let height = f64::from(grid.pitch.saturating_sub(grid.gap)).max(1.0);
+    for (x, row, scram) in placed {
+        #[allow(clippy::cast_precision_loss, reason = "a few hundred rows")]
+        let top = *row as f64 * pitch;
+        let x = f64::from(*x);
+        if *scram {
+            let (center, middle, half) = (x + 0.5, top + height / 2.0, (height * 0.9).max(2.0));
+            context.begin_path();
+            context.move_to(center, middle - half);
+            context.line_to(center + half, middle);
+            context.line_to(center, middle + half);
+            context.line_to(center - half, middle);
+            context.close_path();
+            context.fill();
+        } else {
+            context.fill_rect(x, top, 1.0, height);
+        }
+    }
 }

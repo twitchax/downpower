@@ -3,12 +3,14 @@
 //! is the visible family that lost the most in its span, and its opacity the mean depth of the cut.
 //! A unit in service at full power shows a faint track, and an out-of-service span shows nothing.
 
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
 use chrono::NaiveDate;
 
 use downpower_core::Families;
 use downpower_core::barcode::{self, Barcode, Mark};
+use downpower_core::markers::Markers;
 
 /// The days shown: `days` days from index `start` of the barcode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,13 +55,14 @@ pub struct Grid {
     pub gap: u32,
 }
 
-/// Colors resolved from the stylesheet: each family's, the in-service track's, and the gray a
-/// filtered-out family recedes to.
+/// Colors resolved from the stylesheet: each family's, the in-service track's, the gray a
+/// filtered-out family recedes to, and the event markers'.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     pub families: [[u8; 3]; 8],
     pub track: [u8; 3],
     pub hidden: [u8; 3],
+    pub marker: [u8; 3],
 }
 
 /// A mark's RGBA. A shallow cut stays visible: opacity runs from 0.3 at no depth to 1 at a full
@@ -124,6 +127,29 @@ pub fn deepest(barcode: &Barcode, row: usize, days: Range<u32>) -> Option<u32> {
     Some(if cell.bucket < barcode::FULL { index } else { cells[cells.len() / 2].0 })
 }
 
+/// Where `markers` land in `window` of `barcode` drawn `width` device columns wide: each marked
+/// cell's column and row once, a scram winning its cell, by column then row. A marker on a unit or
+/// day the barcode doesn't hold, or outside the window, drops.
+#[must_use]
+pub fn placed(markers: &Markers, barcode: &Barcode, window: Window, width: u32) -> Vec<(u32, usize, bool)> {
+    if window.days == 0 || width == 0 {
+        return Vec::new();
+    }
+    let rows: HashMap<&str, usize> = barcode.units().iter().enumerate().map(|(row, unit)| (unit.docket.as_str(), row)).collect();
+    let mut cells: BTreeMap<(u32, usize), bool> = BTreeMap::new();
+    for marker in markers.markers() {
+        let Some(row) = markers.dockets().get(usize::from(marker.unit)).and_then(|docket| rows.get(docket.as_str())) else {
+            continue;
+        };
+        let Some(offset) = barcode.index(marker.date).and_then(|index| index.checked_sub(window.start)).filter(|offset| *offset < window.days) else {
+            continue;
+        };
+        let x = u32::try_from(u64::from(offset) * u64::from(width) / u64::from(window.days)).unwrap_or(u32::MAX);
+        *cells.entry((x, *row)).or_default() |= marker.scram;
+    }
+    cells.into_iter().map(|((x, row), scram)| (x, row, scram)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Context as _;
@@ -137,6 +163,7 @@ mod tests {
         families: [[1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0], [6, 0, 0], [7, 0, 0], [8, 0, 0]],
         track: [9, 9, 9],
         hidden: [7, 7, 7],
+        marker: [5, 5, 5],
     };
 
     fn date(text: &str) -> NaiveDate {
@@ -213,5 +240,29 @@ mod tests {
         let full = rgba(Mark::Reduced { family: Family::Grid, depth: 1.0 }, &PALETTE);
         assert_eq!((shallow[3], full[3]), (77, 255));
         assert_eq!(rgba(Mark::Empty, &PALETTE), [0; 4]);
+    }
+
+    #[test]
+    fn uat_event_markers_land_on_their_unit_row_and_column() -> anyhow::Result<()> {
+        let barcode = barcode()?;
+        let markers = downpower_core::markers::Markers::new([
+            ("05000323".to_owned(), date("2024-01-04"), 2, false),
+            ("05000323".to_owned(), date("2024-01-04"), 3, true),
+            ("05000275".to_owned(), date("2024-01-01"), 1, false),
+            ("05000275".to_owned(), date("2023-12-31"), 0, true),
+            ("05000999".to_owned(), date("2024-01-02"), 4, true),
+        ])?;
+
+        // Four days over two columns: two days to a column.
+        let window = Window::new(&barcode, None, None);
+        assert_eq!(
+            placed(&markers, &barcode, window, 2),
+            [(0, 0, false), (1, 1, true)],
+            "a scram wins its cell; days and units off the barcode drop"
+        );
+
+        let late = Window::new(&barcode, Some(date("2024-01-03")), None);
+        assert_eq!(placed(&markers, &barcode, late, 4), [(2, 1, true)], "outside the window drops; columns follow the window");
+        Ok(())
     }
 }

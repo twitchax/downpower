@@ -1,5 +1,6 @@
 //! The one row of filters above the charts (DESIGN.md Decision 24): the layer, the date range, and
-//! the family legend, which filters too. Every control writes the URL, so each view is a permalink.
+//! the family legend, which filters too and turns the barcode's event markers on (Decision 35).
+//! Every control writes the URL, so each view is a permalink.
 
 use chrono::{Datelike as _, NaiveDate};
 use leptos::prelude::*;
@@ -141,6 +142,23 @@ fn Legend(state: Memo<ViewState>) -> impl IntoView {
             }
         })
         .collect_view();
+    let markers = {
+        let go = go.clone();
+        view! {
+            <button
+                class="legend-item"
+                aria-pressed=move || state.get().events.to_string()
+                title="Mark every reactor event on its unit's row and day: a tick for an event, a diamond for a scram"
+                on:click=move |_| {
+                    let view = state.get_untracked();
+                    go(ViewState { events: !view.events, ..view });
+                }
+            >
+                <span class="marker-key" aria-hidden="true"></span>
+                "Events"
+            </button>
+        }
+    };
     let reset = move || {
         let go = go.clone();
         (state.get().families != Families::ALL).then(|| {
@@ -150,6 +168,7 @@ fn Legend(state: Memo<ViewState>) -> impl IntoView {
     view! {
         <div class="legend" role="group" aria-label="Cause families: press one to hide or show it">
             {items}
+            {markers}
             {reset}
         </div>
     }

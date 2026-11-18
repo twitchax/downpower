@@ -86,6 +86,13 @@ When a day's cause came from an event, the barcode readout SHALL name it and the
 - **WHEN** the readout rests on Browns Ferry 3 on 2025-02-09, `See EN 57537`, a scram from SCRAM Code `A/R`
 - **THEN** it reads `from EN 57537: scram, SCRAM Code A/R`, and a click opens `/events/57537`
 
+### Requirement: Event markers
+With `events=1` in the URL, which the legend's `Events` toggle sets and clears and which is off by default, the barcode SHALL mark each unit-day a mapped, unretracted reactor event names, a one-pixel tick for an event and a diamond for a scram, and the readout SHALL list the events on the hovered cell, a scram first, a click or Enter opening the first. (PRD-0004 T-006)
+
+#### Scenario: A scram marked
+- **WHEN** markers are on and the pointer rests on Browns Ferry 3 on 2009-08-24
+- **THEN** a diamond marks the cell and the readout lists `EN 45290 (scram)`
+
 ### Requirement: A pixel spanning several days
 When one pixel spans several days, the readout SHALL point at the span's deepest cut, or its middle day when nothing is cut, and SHALL say `1 of N days in this pixel`. (PRD-0002 T-013)
 

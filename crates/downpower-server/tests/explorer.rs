@@ -16,6 +16,7 @@ use pretty_assertions::assert_eq;
 use tower::ServiceExt as _;
 
 use downpower_core::explorer::{EventCounts, EventsPage, EventsState, Group, PAGE};
+use downpower_core::markers::Markers;
 use downpower_ingest::events::EventSet;
 use downpower_ingest::ledger::{Catalog, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
@@ -197,6 +198,33 @@ fn uat_events_query_routes_answer_from_the_serving_build() {
         assert_eq!((event["label"].as_str(), event["unit_names"][0].as_str()), (Some("Power Reactor"), Some("Browns Ferry 3")), "{event}");
         assert_eq!(event["units"][0]["scram"].as_str(), Some("manual_reactor"), "{event}");
         assert_eq!(get(&router, "/api/events/99999", &[]).await.status(), StatusCode::NOT_FOUND);
+    });
+}
+
+#[test]
+fn uat_event_markers_the_endpoint_marks_every_unretracted_reactor_event_and_flags_scrams() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        put_pages(&raw_store(tmp.path(), None));
+        let store = db::open(tmp.path()).await.unwrap();
+        let router = router(options(), store.clone());
+        assert_eq!(get(&router, "/api/markers", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
+        ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+
+        let response = get(&router, "/api/markers", &[]).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let tag = response.headers()[ETAG].to_str().unwrap().to_owned();
+        let markers = Markers::decode(&axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+        let day = |text: &str| text.parse::<chrono::NaiveDate>().unwrap();
+        let browns_ferry = markers.at("05000296", day("1999-01-01")..=day("2026-12-31"));
+        assert_eq!(
+            browns_ferry.iter().map(|marker| (marker.number, marker.date, marker.scram)).collect::<Vec<_>>(),
+            [(45290, day("2009-08-24"), true)],
+            "EN 35269 is retracted"
+        );
+        assert_eq!(markers.at("05000302", day("2009-08-24")..=day("2009-08-24")).len(), 1, "Crystal River 3's scram");
+        assert_eq!(markers.markers().len(), 15, "the 13 reactor events' 17 units, less EN 35269's two");
+        assert_eq!(get(&router, "/api/markers", &[(IF_NONE_MATCH.as_str(), &tag)]).await.status(), StatusCode::NOT_MODIFIED);
         assert_eq!(get(&router, "/api/events/zebra", &[]).await.status(), StatusCode::BAD_REQUEST);
     });
 }

@@ -21,6 +21,8 @@ use sha2::{Digest as _, Sha256};
 
 use downpower_core::barcode::Layer;
 use downpower_core::explorer::{EventsState, PAGE};
+use downpower_core::markers::Markers;
+use downpower_ingest::events::Scram;
 use downpower_ingest::facilities::Identity;
 use downpower_ingest::nrc::{self, Report};
 use downpower_ingest::units::Units;
@@ -31,12 +33,21 @@ use crate::explorer::Explorer;
 use crate::ledger::{self, Build, Packed, StoredEvent};
 
 /// The store; the barcode last served per layer, reused while the stored tag matches it; and the
-/// explorer's copy of the serving build's events, reused while the build is the same.
+/// explorer's copy of the serving build's events and its packed markers, reused while the build is
+/// the same.
 #[derive(Clone)]
 struct Api {
     store: Store,
     barcodes: Arc<Mutex<HashMap<Layer, Packed>>>,
     explorer: Arc<Mutex<Option<Arc<Explorer>>>>,
+    markers: Arc<Mutex<Option<Arc<PackedMarkers>>>>,
+}
+
+/// The serving build's markers, packed, with the build they came from and the tag of their bytes.
+struct PackedMarkers {
+    key: String,
+    tag: String,
+    bytes: Vec<u8>,
 }
 
 /// The `/api` routes over `store`.
@@ -45,12 +56,14 @@ pub fn router(store: Store) -> Router {
         store,
         barcodes: Arc::default(),
         explorer: Arc::default(),
+        markers: Arc::default(),
     };
     Router::new()
         .route("/api/barcode/{layer}", get(barcode))
         .route("/api/events", get(events))
         .route("/api/events/counts", get(event_counts))
         .route("/api/events/{number}", get(event))
+        .route("/api/markers", get(markers))
         .route("/api/lost/{layer}", get(lost))
         .route("/api/status", get(status))
         .route("/api/unit-day/{docket}/{date}", get(unit_day))
@@ -132,11 +145,9 @@ fn not_modified(tag: &str) -> Response {
 /// and `built_at` are, so an update in place, which rewrites events in the same table, reads them
 /// again.
 async fn explorer(api: &Api) -> anyhow::Result<Option<Arc<Explorer>>> {
-    let Some(table) = ledger::serving(&api.store).await? else {
+    let Some((table, key)) = build_key(&api.store).await? else {
         return Ok(None);
     };
-    let built_at = ledger::current(&api.store).await?.filter(|build| build.table == table).map(|build| build.built_at.to_rfc3339());
-    let key = format!("{table}@{}", built_at.unwrap_or_default());
     let cached = api.explorer.lock().unwrap_or_else(PoisonError::into_inner).as_ref().filter(|explorer| explorer.key() == key).cloned();
     if let Some(explorer) = cached {
         return Ok(Some(explorer));
@@ -144,6 +155,59 @@ async fn explorer(api: &Api) -> anyhow::Result<Option<Arc<Explorer>>> {
     let explorer = Arc::new(Explorer::new(key, ledger::events(&api.store, &table).await?, &Units::catalog()?));
     *api.explorer.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&explorer));
     Ok(Some(explorer))
+}
+
+/// The serving table, and a key naming the build in it: the table and its `built_at`, which an
+/// update in place moves. `None` before any build.
+async fn build_key(store: &Store) -> anyhow::Result<Option<(String, String)>> {
+    let Some(table) = ledger::serving(store).await? else {
+        return Ok(None);
+    };
+    let built_at = ledger::current(store).await?.filter(|build| build.table == table).map(|build| build.built_at.to_rfc3339());
+    let key = format!("{table}@{}", built_at.unwrap_or_default());
+    Ok(Some((table, key)))
+}
+
+/// The serving build's markers, packed: cached while the build is the same.
+async fn packed_markers(api: &Api) -> anyhow::Result<Option<Arc<PackedMarkers>>> {
+    let Some((table, key)) = build_key(&api.store).await? else {
+        return Ok(None);
+    };
+    let cached = api.markers.lock().unwrap_or_else(PoisonError::into_inner).as_ref().filter(|packed| packed.key == key).cloned();
+    if let Some(packed) = cached {
+        return Ok(Some(packed));
+    }
+    let units = ledger::event_units(&api.store, &table).await?;
+    let entries = units
+        .into_iter()
+        .filter(|unit| !unit.retracted)
+        .map(|unit| (unit.docket.as_str().to_owned(), unit.occurred, unit.event, unit.scram.is_some_and(|scram| scram != Scram::No)));
+    let bytes = Markers::new(entries)?.encode();
+    let tag = hex::encode(&Sha256::digest(&bytes)[..8]);
+    let packed = Arc::new(PackedMarkers { key, tag, bytes });
+    *api.markers.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&packed));
+    Ok(Some(packed))
+}
+
+/// The barcode's event markers (`downpower_core::markers`), as `application/octet-stream` under a
+/// weak `ETag` from their bytes.
+async fn markers(State(api): State<Api>, headers: HeaderMap) -> Response {
+    let packed = match packed_markers(&api).await {
+        Ok(Some(packed)) => packed,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    if revalidated(&headers, &packed.tag) {
+        return not_modified(&packed.tag);
+    }
+    match weak(&packed.tag) {
+        Ok(etag) => (
+            [(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream")), (header::ETAG, etag)],
+            Body::from(packed.bytes.clone()),
+        )
+            .into_response(),
+        Err(error) => failed(&error),
+    }
 }
 
 /// A tag for the answer to `query` from `explorer`'s build.

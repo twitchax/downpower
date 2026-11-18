@@ -5,7 +5,7 @@ The HTTP surface of `downpower serve` beyond the rendered pages: the `/api/*` ro
 
 ## Requirements
 ### Requirement: Routes
-The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003)
+The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}`, `/api/markers` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003 T-006)
 
 #### Scenario: Health
 - **WHEN** a client GETs `/healthz`
@@ -146,6 +146,13 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 #### Scenario: An unknown number
 - **WHEN** a client GETs `/api/events/99999` or `/api/events/zebra`
 - **THEN** they answer 404 and 400
+
+### Requirement: Event markers buffer
+`/api/markers` SHALL answer `application/octet-stream`: `DPM1`, a table of dockets, and one marker per unit of each mapped, unretracted reactor event in the serving build (a docket index, its day from 1999-01-01, a scram flag and the event number), under a weak `ETag` from the bytes, 304 to a request holding it. (PRD-0004 T-006)
+
+#### Scenario: The fixture's reactor events
+- **WHEN** the build holds the eight fixture event pages
+- **THEN** the buffer holds 15 markers, EN 45290 on Browns Ferry 3 on 2009-08-24 a scram, and retracted EN 35269 none
 
 ### Requirement: Event tags
 The list and the counts SHALL carry a weak `ETag` from the serving build's table and `built_at` and the query, and SHALL answer 304 to a request whose `If-None-Match` holds it. An update in place moves `built_at`, so it moves the tag. (PRD-0004 T-003)

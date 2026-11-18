@@ -1,5 +1,5 @@
 //! The views' shared filter state, kept in the URL query so every view is a permalink (DESIGN.md
-//! Decisions 23 and 24): `?from=2010-01-01&to=2020-12-31&layer=observed&families=forced,grid`.
+//! Decisions 23 and 24): `?from=2010-01-01&to=2020-12-31&layer=observed&families=forced,grid&events=1`.
 //! A parameter at its default is left out.
 
 use chrono::{Datelike as _, NaiveDate};
@@ -16,6 +16,8 @@ pub struct ViewState {
     pub layer: Layer,
     /// The families drawn in color; the rest recede to gray.
     pub families: Families,
+    /// Whether the barcode draws the event markers, off by default (Decision 35).
+    pub events: bool,
 }
 
 impl Default for ViewState {
@@ -25,6 +27,7 @@ impl Default for ViewState {
             to: None,
             layer: Layer::default(),
             families: Families::ALL,
+            events: false,
         }
     }
 }
@@ -40,6 +43,7 @@ impl ViewState {
             to: date("to"),
             layer: param("layer").and_then(|slug| Layer::from_slug(&slug)).unwrap_or_default(),
             families: param("families").map_or(Families::ALL, |param| Families::from_param(&param)),
+            events: param("events").as_deref() == Some("1"),
         }
     }
 
@@ -58,6 +62,9 @@ impl ViewState {
         }
         if self.families != Families::ALL {
             params.push(format!("families={}", self.families.to_param()));
+        }
+        if self.events {
+            params.push("events=1".to_owned());
         }
         if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) }
     }
@@ -117,11 +124,20 @@ mod tests {
             to: "2020-12-31".parse().ok(),
             layer: Layer::Observed,
             families: Families::NONE.with(Family::Forced).with(Family::Grid),
+            events: true,
         };
         let query = state.to_query();
-        assert_eq!(query, "?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced");
+        assert_eq!(query, "?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced&events=1");
         let pairs: Vec<(&str, &str)> = query.trim_start_matches('?').split('&').filter_map(|pair| pair.split_once('=')).collect();
         assert_eq!(parse(&pairs), state);
+    }
+
+    #[test]
+    fn uat_event_markers_ride_in_the_url_only_when_on() {
+        assert!(parse(&[("events", "1")]).events);
+        assert!(!parse(&[("events", "yes")]).events);
+        assert!(!ViewState::default().events);
+        assert_eq!(ViewState { events: true, ..ViewState::default() }.to_query(), "?events=1");
     }
 
     #[test]

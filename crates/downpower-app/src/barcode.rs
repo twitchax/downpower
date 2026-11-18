@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use downpower_core::Family;
 use downpower_core::barcode::{Barcode, Cell, Layer};
+use downpower_core::markers::Markers;
 
 use crate::paint::{self, Window};
 use crate::state::{ViewState, year_ticks};
@@ -100,8 +101,10 @@ struct Target {
     name: String,
     date: NaiveDate,
     cell: Cell,
-    /// Days the pixel column spans, more than one when zoomed out.
+    /// Days the pixel column spans, more than one when zoomed out, and the first and last of them.
     span: u32,
+    first: NaiveDate,
+    last: NaiveDate,
     pointer: Pointer,
 }
 
@@ -160,11 +163,44 @@ async fn load(_layer: Layer) -> Result<Arc<Barcode>, String> {
 /// The decoded buffer, once loaded.
 type Loaded = Signal<Option<Arc<Barcode>>>;
 
+/// The event markers, once loaded while they are on.
+type LoadedMarkers = Signal<Option<Arc<Markers>>>;
+
+#[cfg(feature = "hydrate")]
+async fn load_markers(on: bool) -> Result<Option<Arc<Markers>>, String> {
+    if !on {
+        return Ok(None);
+    }
+    let bytes = crate::browser::fetch("/api/markers").await?.ok_or("no markers yet")?;
+    Markers::decode(&bytes).map(|markers| Some(Arc::new(markers))).map_err(|error| format!("{error:#}"))
+}
+
+#[cfg(not(feature = "hydrate"))]
+#[allow(clippy::unused_async, reason = "the browser's version awaits")]
+async fn load_markers(_on: bool) -> Result<Option<Arc<Markers>>, String> {
+    Ok(None)
+}
+
+/// The events marked on `target`'s unit and days, a scram first, then by number.
+fn marked(markers: Option<&Markers>, target: &Target) -> Vec<(u32, bool)> {
+    let mut marked: Vec<(u32, bool)> = markers
+        .map_or(&[][..], |markers| markers.at(&target.docket, target.first..=target.last))
+        .iter()
+        .map(|marker| (marker.number, marker.scram))
+        .collect();
+    marked.sort_by_key(|(number, scram)| (!*scram, *number));
+    marked.dedup();
+    marked
+}
+
 #[component]
 pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
     let layer = Memo::new(move |_| state.get().layer);
     let data = LocalResource::new(move || load(layer.get()));
     let barcode: Loaded = Signal::derive(move || data.get().and_then(Result::ok));
+    let events = Memo::new(move |_| state.get().events);
+    let marker_data = LocalResource::new(move || load_markers(events.get()));
+    let markers: LoadedMarkers = Signal::derive(move || marker_data.get().and_then(Result::ok).flatten());
     let canvas = NodeRef::<leptos::html::Canvas>::new();
     let swatches = NodeRef::<leptos::html::Div>::new();
     let pointer = RwSignal::new(None::<Pointer>);
@@ -192,7 +228,8 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
         };
         width.set(u32::try_from(canvas.client_width()).unwrap_or(0));
         let window = Window::new(&barcode, view.from, view.to);
-        if let Err(error) = crate::browser::draw(&canvas, &barcode, window, view.families, &palette, ROW) {
+        let markers = markers.get();
+        if let Err(error) = crate::browser::draw(&canvas, &barcode, window, view.families, &palette, ROW, markers.as_deref()) {
             leptos::logging::error!("drawing the barcode: {error}");
         }
     });
@@ -204,11 +241,12 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
     #[cfg(feature = "hydrate")]
     fetch_detail(target, detail);
 
-    // A day whose cause came from an event, or whose reason cites one, opens it.
+    // A marked event opens, a scram first; else the event a day's cause came from or its reason cites.
     let navigate = leptos_router::hooks::use_navigate();
     let open = move || {
         let Some(target) = target.get_untracked() else { return };
-        let number = detail.with_untracked(|detail| detail.as_ref().filter(|row| row.docket == target.docket && row.date == target.date).and_then(opens));
+        let marked = marked(markers.get_untracked().as_deref(), &target).first().map(|(number, _)| *number);
+        let number = marked.or_else(|| detail.with_untracked(|detail| detail.as_ref().filter(|row| row.docket == target.docket && row.date == target.date).and_then(opens)));
         if let Some(number) = number {
             navigate(&format!("/events/{number}"), leptos_router::NavigateOptions::default());
         }
@@ -248,7 +286,7 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
                         }
                     }
                 ></canvas>
-                <Tooltip target detail width />
+                <Tooltip target detail width markers />
                 {move || status().map(|status| view! { <p class="plot-status meta">{status}</p> })}
             </div>
             <Axis barcode state />
@@ -276,6 +314,8 @@ fn aim(pointer: Pointer, barcode: &Barcode, view: &ViewState, width: u32) -> Opt
         date: barcode.date(index),
         cell: barcode.cell(row, index)?,
         span: days.end - days.start,
+        first: barcode.date(days.start),
+        last: barcode.date(days.end.saturating_sub(1).max(days.start)),
         pointer,
     })
 }
@@ -332,9 +372,10 @@ fn fetch_detail(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>) 
 
 /// The hover readout: the value first, then the unit and day, then the reason once its row loads.
 #[component]
-fn Tooltip(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>, width: RwSignal<u32>) -> impl IntoView {
+fn Tooltip(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>, width: RwSignal<u32>, markers: LoadedMarkers) -> impl IntoView {
     move || {
         let target = target.get()?;
+        let marked = marked(markers.get().as_deref(), &target);
         let row = detail.get().filter(|detail| detail.docket == target.docket && detail.date == target.date);
         let family = row.as_ref().map_or(target.cell.family, |row| row.family);
         let value = row.as_ref().map_or_else(|| power(target.cell), |row| format!("{}%", row.power));
@@ -355,6 +396,10 @@ fn Tooltip(target: Memo<Option<Target>>, detail: RwSignal<Option<Detail>>, width
                     {target.name.clone()} " · " {target.date.to_string()}
                     {(target.span > 1).then(|| format!(" · 1 of {} days in this pixel", target.span))}
                 </div>
+                {(!marked.is_empty()).then(|| {
+                    let events = marked.iter().map(|(number, scram)| format!("EN {number}{}", if *scram { " (scram)" } else { "" })).collect::<Vec<_>>().join(", ");
+                    view! { <div class="meta">{format!("events: {events}; click or press Enter to open the first")}</div> }
+                })}
                 {row.map(|row| view! {
                     <div class="reason">{row.reason.clone().unwrap_or_else(|| "(no reason text)".to_owned())}</div>
                     <div class="meta">{provenance(&row)}</div>
