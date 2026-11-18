@@ -99,7 +99,7 @@ pub fn StackedArea(state: Memo<ViewState>) -> impl IntoView {
         let bands = area::bands(&area::stack(&shown.months, state.get().families), top);
         let fills = bands
             .iter()
-            .map(|band| view! { <path class=format!("band family-{}", band.family.slug()) d=band.path.clone()></path> })
+            .map(|band| view! { <path class=format!("band family-{}", band.key.slug()) d=band.path.clone()></path> })
             .collect_view();
         let seams = area::seamed(shown.months.len()).then(|| bands.into_iter().map(|band| view! { <path class="seam" d=band.top></path> }).collect_view());
         Some(view! { {fills} {seams} })

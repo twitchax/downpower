@@ -3,6 +3,7 @@
 // size and duration below is one of its tokens.
 @use "tokens";
 @use "families";
+@use "series";
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -144,3 +145,27 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .runs .state { color: var(--pass); }
 .runs li.failed .state { color: var(--fault); }
 .runs .errors { flex-basis: 100%; padding-left: var(--s-3); border-left: 1px solid var(--fault); color: var(--text-2); }
+
+// /events: the list under the counts chart, a row per event.
+.events { display: grid; gap: var(--s-2); }
+.event-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.event-row {
+  display: grid;
+  grid-template-columns: 11ch 24ch minmax(0, 1fr) auto;
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.event-row .row-label { display: inline-flex; align-items: center; gap: var(--s-2); }
+.event-main { display: grid; gap: 2px; min-width: 0; }
+.event-main a { color: var(--text-1); text-decoration: none; overflow-wrap: anywhere; }
+.event-main a:hover, .event-main a:focus-visible { color: var(--accent-mid); }
+.event-row.retracted .event-main a { color: var(--text-3); text-decoration: line-through; }
+.chip { font-size: var(--text-xs); padding: 0 var(--s-1); border: 1px solid var(--line); background: var(--bg-2); color: var(--text-2); }
+.pager { justify-content: space-between; }
+.filters input[type="search"], .filters select { font: inherit; font-size: var(--text-sm); color: var(--text-1); background: var(--bg-1); border: 1px solid var(--line); padding: 2px var(--s-1); }
+
+@media (max-width: 720px) {
+  .event-row { grid-template-columns: 1fr; gap: var(--s-1); }
+}

@@ -1,6 +1,7 @@
 //! The stacked area's geometry, apart from the view so it tests natively (DESIGN.md Decision 23):
-//! months along x, reported power reduction stacked by family along y, in a fixed viewBox the SVG
-//! stretches to its width. Only the paths live in that box; text sits in HTML beside it, so nothing
+//! months along x, eight series stacked along y (reported power reduction by family on the home
+//! page, events by category group in the explorer), in a fixed viewBox the SVG stretches to its
+//! width. Only the paths live in that box; text sits in HTML beside it, so nothing
 //! stretches with it.
 
 use std::fmt::Write as _;
@@ -11,11 +12,11 @@ use downpower_core::{Families, Family};
 pub const WIDTH: f64 = 1000.0;
 pub const HEIGHT: f64 = 240.0;
 
-/// One family's band: its outline as an SVG path, and its top edge alone, where a surface-colored
+/// One series' band: its outline as an SVG path, and its top edge alone, where a surface-colored
 /// seam separates it from the band above.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Band {
-    pub family: Family,
+pub struct Band<K = Family> {
+    pub key: K,
     pub path: String,
     pub top: String,
 }
@@ -27,38 +28,50 @@ pub const fn seamed(months: usize) -> bool {
     months <= 120
 }
 
-/// The months to draw, in terawatt-hours, each indexed by [`Family::index`].
+/// The months to draw, each month's eight series values (terawatt-hours by [`Family::index`] on the
+/// home page, events by series in the explorer).
 pub type Months = [[f64; 8]];
 
-/// The visible families stacked bottom up in [`Family::STACK`] order: per family, each month's
-/// lower and upper edge. A hidden family is left out, so the visible ones sit on the baseline.
+/// `series` stacked bottom up in the order given, each a key and its index in a month: per series,
+/// each month's lower and upper edge.
 #[must_use]
-pub fn stack(months: &Months, visible: Families) -> Vec<(Family, Vec<(f64, f64)>)> {
+pub fn stack_series<K: Copy>(months: &Months, series: impl IntoIterator<Item = (K, usize)>) -> Vec<(K, Vec<(f64, f64)>)> {
     let mut floor = vec![0.0; months.len()];
-    visible
-        .iter()
-        .map(|family| {
+    series
+        .into_iter()
+        .map(|(key, index)| {
             let edges = months
                 .iter()
                 .zip(floor.iter_mut())
                 .map(|(month, floor)| {
                     let lower = *floor;
-                    *floor += month[usize::from(family.index())];
+                    *floor += month[index];
                     (lower, *floor)
                 })
                 .collect();
-            (family, edges)
+            (key, edges)
         })
         .collect()
 }
 
-/// The tallest stacked month.
+/// The visible families stacked bottom up in [`Family::STACK`] order. A hidden family is left out,
+/// so the visible ones sit on the baseline.
+#[must_use]
+pub fn stack(months: &Months, visible: Families) -> Vec<(Family, Vec<(f64, f64)>)> {
+    stack_series(months, visible.iter().map(|family| (family, usize::from(family.index()))))
+}
+
+/// The tallest month, summing the series at `indexes`.
+#[must_use]
+pub fn peak_series(months: &Months, indexes: &[usize]) -> f64 {
+    months.iter().map(|month| indexes.iter().map(|index| month[*index]).sum::<f64>()).fold(0.0, f64::max)
+}
+
+/// The tallest stacked month of the visible families.
 #[must_use]
 pub fn peak(months: &Months, visible: Families) -> f64 {
-    months
-        .iter()
-        .map(|month| visible.iter().map(|family| month[usize::from(family.index())]).sum::<f64>())
-        .fold(0.0, f64::max)
+    let indexes: Vec<usize> = visible.iter().map(|family| usize::from(family.index())).collect();
+    peak_series(months, &indexes)
 }
 
 /// The x of month `index` of `count`: each month is a step as wide as the box over the count.
@@ -78,10 +91,10 @@ pub fn y(value: f64, top: f64) -> f64 {
 /// The bands for `stack`, drawn as steps (each month holds its value across its width, since the
 /// data is monthly totals), on a scale topping out at `top`.
 #[must_use]
-pub fn bands(stack: &[(Family, Vec<(f64, f64)>)], top: f64) -> Vec<Band> {
+pub fn bands<K: Copy>(stack: &[(K, Vec<(f64, f64)>)], top: f64) -> Vec<Band<K>> {
     stack
         .iter()
-        .map(|(family, edges)| {
+        .map(|(key, edges)| {
             let count = edges.len();
             let mut path = String::new();
             for (index, (_, upper)) in edges.iter().enumerate() {
@@ -95,7 +108,7 @@ pub fn bands(stack: &[(Family, Vec<(f64, f64)>)], top: f64) -> Vec<Band> {
             if !path.is_empty() {
                 path.push('Z');
             }
-            Band { family: *family, path, top: seam }
+            Band { key: *key, path, top: seam }
         })
         .collect()
 }
@@ -168,6 +181,15 @@ mod tests {
         assert_eq!(bands.len(), 1);
         assert_eq!(bands[0].path, "M0.0,120.00L500.0,120.00L500.0,0.00L1000.0,0.00L1000.0,240.00L500.0,240.00L500.0,240.00L0.0,240.00Z");
         assert_eq!(bands[0].top, "M0.0,120.00L500.0,120.00L500.0,0.00L1000.0,0.00");
+    }
+
+    #[test]
+    fn any_series_stacks_in_the_order_given() {
+        let months = [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0], [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]];
+        let stacked = stack_series(&months, [("Power Reactor", 0), ("Other", 7)]);
+        assert_eq!(stacked, [("Power Reactor", vec![(0.0, 1.0), (0.0, 2.0)]), ("Other", vec![(1.0, 5.0), (2.0, 3.0)])]);
+        assert!((peak_series(&months, &[0, 7]) - 5.0).abs() < 1e-9);
+        assert_eq!(bands(&stacked, 5.0)[1].key, "Other");
     }
 
     #[test]

@@ -1,0 +1,12 @@
+// The events explorer's eight series (PRD-0004 T-004): the seven largest category groups and
+// Other. They take the cause families' hues in the families' own order (`_families.scss`), so
+// every neighboring pair keeps the checks that palette passed on both chart surfaces, and Other
+// takes Unattributed's cool gray, since it names no one group. The explorer is its own page, so a
+// hue never means a family and a category at once.
+$series-hues: refueling, fuel-cycle, maintenance, equipment, environmental, grid, forced, unattributed;
+
+@for $index from 0 through 7 {
+  $hue: nth($series-hues, $index + 1);
+  .series-#{$index} { background: var(--family-#{$hue}); }
+  path.series-#{$index} { fill: var(--family-#{$hue}); }
+}
