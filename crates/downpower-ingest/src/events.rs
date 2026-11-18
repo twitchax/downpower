@@ -275,6 +275,9 @@ pub struct Archive {
     pub empty: u64,
     /// Distinct events.
     pub events: u64,
+    /// Distinct events by their category's label, as the page writes it.
+    #[serde(default)]
+    pub categories: BTreeMap<String, u64>,
     /// Dates whose page failed to parse and was skipped, under [`Unknowns::Quarantine`].
     pub failed: Vec<NaiveDate>,
     /// Facilities the catalogs don't know, with their events, under [`Unknowns::Quarantine`].
@@ -324,6 +327,9 @@ impl EventSet {
         }
         let events: BTreeMap<u32, Event> = newest.into_iter().map(|(number, (_, event))| (number, event)).collect();
         archive.events = events.len() as u64;
+        for event in events.values() {
+            *archive.categories.entry(event.category.label().to_owned()).or_default() += 1;
+        }
         let identities = facilities.identify_all(&events, unknowns, &mut archive.unknown_facilities)?;
         Ok(Self { events, identities, archive })
     }

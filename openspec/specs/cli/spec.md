@@ -35,14 +35,14 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **AND** `/`, `/status` and `/api/status` answer, with one recorded run
 
 ### Requirement: fetch
-`downpower fetch --series status` or `--series events` SHALL fetch every unsettled page of that series as `raw-store` describes, from `--from` (default 1999-01-01) through `--to` (default today, UTC), starting requests `--interval-secs` apart (default 5). `--series nuc-status` SHALL fetch `NUC_STATUS` in one request, ignoring the dates and interval. (PRD-0002 T-002 T-007)
+`downpower fetch --series status` or `--series events` SHALL fetch every unsettled page of that series as `raw-store` describes, from `--from` (default 1999-01-01) through `--to` (default today, UTC), starting requests `--interval-secs` apart (default 5). `--series nuc-status` SHALL fetch `NUC_STATUS` in one request, ignoring the dates and interval, and `--series scram-dataset` the scram dataset, ignoring the dates. (PRD-0002 T-002 T-007, PRD-0003 T-008)
 
 #### Scenario: Defaults
 - **WHEN** `downpower fetch --series events` is parsed
 - **THEN** it covers 1999-01-01 through today at a 5-second interval
 
-#### Scenario: The bulk file
-- **WHEN** `downpower fetch --series nuc-status` is parsed
+#### Scenario: One file each
+- **WHEN** `downpower fetch --series nuc-status` or `--series scram-dataset` is parsed
 - **THEN** it names no NRC report to page through
 
 ### Requirement: The interval floor
@@ -53,7 +53,7 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** both are rejected, and `--interval-secs 60` is accepted
 
 ### Requirement: backfill
-`downpower backfill` SHALL fetch every status page and then every Event Notification page from 1999-01-01 through today, then a fresh `NUC_STATUS`, then rebuild as `downpower rebuild` does, failing on the first step that fails. Each fetch skips what earlier runs settled, so a rerun costs only the unsettled pages. (PRD-0002 T-010)
+`downpower backfill` SHALL fetch every status page and then every Event Notification page from 1999-01-01 through today, then a fresh `NUC_STATUS` and scram dataset, then rebuild as `downpower rebuild` does, failing on the first step that fails. Each fetch skips what earlier runs settled, so a rerun costs only the unsettled pages. (PRD-0002 T-010, PRD-0003 T-008)
 
 #### Scenario: A rerun after an interruption
 - **WHEN** `downpower backfill` runs again after stopping part way
@@ -93,7 +93,7 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **THEN** it prints the in-service unit-days and each family's unit-days below 100%, unit-years, TWh and share
 
 ### Requirement: xtask scrams
-`cargo xtask scrams` SHALL build the event set and the ledger under the fail policy, run the scram check as `ledger` describes, and print both directions' counts and agreement overall and by year, every `missed` EN scram, and `--examples` report scrams (20 by default) of each of `missed` and `no_scram_code`. (PRD-0003 T-007)
+`cargo xtask scrams` SHALL build the event set and the ledger under the fail policy, run the scram check as `ledger` describes, and print both directions' counts and agreement overall and by year, every `missed` EN scram, and `--examples` report scrams (20 by default) of each of `missed` and `no_scram_code`; then, when a scram dataset is stored, its agreement overall and by year and `--examples` scrams of each of dataset only, ours only and the known differences. (PRD-0003 T-007 T-008)
 
 #### Scenario: Over the archive
 - **WHEN** `cargo xtask scrams` runs over a raw store whose units, tags and facilities are all known

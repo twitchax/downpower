@@ -365,6 +365,9 @@ fn event_set_holds_every_event_once_with_the_archive_counts() {
             pages: 3,
             empty: 1,
             events: 9,
+            categories: [("Agreement State", 5), ("Fuel Cycle Facility", 1), ("Non-Agreement State", 1), ("Non-Power Reactor", 1), ("Part 21", 1)]
+                .map(|(label, events)| (label.to_owned(), events))
+                .into(),
             failed: vec![],
             unknown_facilities: BTreeMap::new(),
         }

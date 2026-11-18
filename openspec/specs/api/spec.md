@@ -105,7 +105,7 @@ A unit-day SHALL serialize with `docket`, `date`, `power`, `source`, `eia_power`
 - **THEN** it reads `precedence_v1`, `inherit_14d`, `xref_en_v1`, `xref_unresolved`, `no_cause`, `reason_pending`, `no_report` or `unknown_tag`, and parses back
 
 ### Requirement: Status JSON
-`/api/status` SHALL answer JSON `{"build": ..., "serving": ..., "runs": [...]}`: the current build with its `version`, `table`, `built_at`, `raw_digest` and the summary `ledger` lists, or null when none is readable; the table the views read, or null; and the newest 20 runs, newest first, as `update-loop` records them. (PRD-0002 T-015 T-021)
+`/api/status` SHALL answer JSON `{"build": ..., "serving": ..., "runs": [...]}`: the current build with its `version`, `table`, `built_at`, `raw_digest`, the summary `ledger` lists and its event archive (`pages`, `empty`, `events`, `categories`, `failed`, `unknown_facilities`), or null when none is readable; the table the views read, or null; and the newest 20 runs, newest first, as `update-loop` records them. (PRD-0002 T-015 T-021, PRD-0003 T-010)
 
 #### Scenario: After one run
 - **WHEN** one recorded run has built the fixture ledger

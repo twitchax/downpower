@@ -31,6 +31,9 @@ why the version moved the way it did.
 - The NRC's scram dataset, fetched weekly into the raw store and reconciled with our EN scrams by
   event number and docket in every build (`downpower fetch --series scram-dataset`,
   `cargo xtask scrams`, `/api/status`).
+- `/status` shows the Event Notification archive (pages, events by category, parse failures and
+  quarantined facility names) and the scram dataset's agreement beside the internal check.
+- `cargo xtask oracle` and a parser test against the NRC's raw data file of 54 events.
 
 ### Changed
 

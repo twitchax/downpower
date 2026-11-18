@@ -145,8 +145,22 @@ Once a build records the scram check, the ledger panel SHALL state both agreemen
 - **THEN** the panel reads `1,251 of 1,271` (98.4%) and `1,208 of 1,787` (67.6%)
 - **AND** a build from before the check shows no scram sentence
 
+### Requirement: Status page scram dataset
+Once a build records the scram dataset's counts, the ledger panel SHALL state its span, the scrams both sides list of those plus the dataset-only and ours-only ones, and the known differences left aside. (PRD-0003 T-008 T-010)
+
+#### Scenario: The dataset
+- **WHEN** a build counts 708 agreeing, 9 dataset-only, 8 ours-only and 24 known scrams from 2011-01-01 to 2025-05-12
+- **THEN** the panel reads `708 of 725 scrams (97.7%), leaving aside 24 known differences`
+
+### Requirement: Status page event archive
+When the build holds an event archive, `/status` SHALL show its pages, those reading "No events found", its events, every page that failed to parse (the first 10 by date and a count of the rest) or `Every page parsed`, its events by category, most first, and the quarantined facility names with their events, or `Nothing quarantined`. (PRD-0003 T-010)
+
+#### Scenario: The archive
+- **WHEN** a build read 7,325 pages, 639 empty, holding 19,725 events, and the page for 2020-10-22 failed
+- **THEN** the panel says so and names 2020-10-22
+
 ### Requirement: Status page runs
-`/status` SHALL list the runs `api` returns, each marked passed or failed, with its start time, its status-page and event-report counts (`stored`, `unchanged`, `missing`, `settled`) or `not fetched`, the last `NUC_STATUS` day when it fetched one, whether it rebuilt or left the ledger unchanged, and its errors. (PRD-0002 T-015 T-019)
+`/status` SHALL list the runs `api` returns, each marked passed or failed, with its start time, its status-page and event-report counts (`stored`, `unchanged`, `missing`, `settled`) or `not fetched`, the last `NUC_STATUS` day and the scram dataset's last day when it fetched them, whether it rebuilt or left the ledger unchanged, and its errors. (PRD-0002 T-015 T-019, PRD-0003 T-008)
 
 #### Scenario: A run recorded before unchanged counts existed
 - **WHEN** a run's status counts lack `unchanged`

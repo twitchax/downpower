@@ -49,6 +49,18 @@ A fetching run SHALL also fetch a fresh `NUC_STATUS`, checked as `raw-store` des
 - **THEN** the second run fetches no `NUC_STATUS`
 - **AND** the store holds one
 
+### Requirement: The scram dataset a run fetches
+A fetching run SHALL fetch the NRC's scram dataset, checked as `raw-store` describes, after the pages and `NUC_STATUS`, when none is stored or the newest was fetched 7 or more days ago. (PRD-0003 T-008)
+
+#### Scenario: Once a week
+- **WHEN** a second run follows a first that fetched the dataset the same day
+- **THEN** the second run fetches no dataset, and the store holds one
+
+#### Scenario: The dataset is gone
+- **WHEN** nrc.gov answers 404 for the dataset
+- **THEN** the run records one error naming the scram dataset
+- **AND** it has fetched `NUC_STATUS` and still makes a build current
+
 ### Requirement: A failed fetch still refreshes
 A fetch error SHALL end the run's fetching, land in the run's `errors`, and leave the run to refresh the ledger from what the store holds. A refresh error SHALL land in `errors` too, and neither SHALL stop the loop. (PRD-0002 T-011)
 
@@ -70,7 +82,7 @@ After fetching, each run SHALL refresh the ledger as `ledger` describes, so it r
 - **AND** the build's `unknown_tags` counts `zorbulating the flux capacitor` once per use
 
 ### Requirement: Run records
-Each run SHALL be recorded with its start and finish times; the status and Event Notification fetch counts (`stored`, `unchanged`, `missing`, `skipped`), null when the run didn't fetch; the last day of a `NUC_STATUS` it fetched; the build table it rebuilt or updated, null when the ledger was current; and its errors. (PRD-0002 T-011 T-015 T-019)
+Each run SHALL be recorded with its start and finish times; the status and Event Notification fetch counts (`stored`, `unchanged`, `missing`, `skipped`), null when the run didn't fetch; the last day of a `NUC_STATUS` and of a scram dataset it fetched; the build table it rebuilt or updated, null when the ledger was current; and its errors. (PRD-0002 T-011 T-015 T-019, PRD-0003 T-008)
 
 #### Scenario: A recorded run
 - **WHEN** a fetching run that rebuilt is recorded

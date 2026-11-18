@@ -13,7 +13,7 @@ The system SHALL keep the raw store under `<data dir>/raw`, each fetched body zs
 - **AND** the store holds exactly one blob, `blobs/<hh>/<sha256>.zst`, which reads back as the page
 
 ### Requirement: Manifest records
-The system SHALL append one JSON line per fetch to `<data dir>/raw/manifest.jsonl`, holding `source` (`nrc` or `eia`), `series` (`power_status`, `event_notifications` or `nuc_status`), the report `date`, `url`, the final HTTP `status`, `captured_at`, `fetched_at`, `sha256` (null for a 404) and the uncompressed `len`. A `NUC_STATUS` record's `date` SHALL be the day it was fetched. (PRD-0002 T-001 T-007)
+The system SHALL append one JSON line per fetch to `<data dir>/raw/manifest.jsonl`, holding `source` (`nrc` or `eia`), `series` (`power_status`, `event_notifications`, `nuc_status` or `scram_dataset`), the report `date`, `url`, the final HTTP `status`, `captured_at`, `fetched_at`, `sha256` (null for a 404) and the uncompressed `len`. A `NUC_STATUS` or scram dataset record's `date` SHALL be the day it was fetched. (PRD-0002 T-001 T-007, PRD-0003 T-008)
 
 #### Scenario: A 404 is on record without a body
 - **WHEN** the page for 1999-01-03 answers 404
@@ -135,3 +135,14 @@ After storing a `NUC_STATUS`, `downpower fetch`, `downpower backfill` and the up
 - **WHEN** a fetched `NUC_STATUS` holds a generator the units catalog doesn't list
 - **THEN** the command fails, listing the generator
 - **AND** the file is still in the raw store
+
+### Requirement: Scram dataset fetch
+Fetching the NRC's scram dataset SHALL request `/cdn/legacy/reactors/operating/dataset/scram-event-notifications.xlsx` through the paced NRC fetcher, retry a body that doesn't end its zip, and record it under the fetch date, against the newest stored copy's blob when the bytes match. After storing it, `downpower fetch`, `downpower backfill` and the update loop SHALL parse the stored copy and fail when it doesn't parse or has no rows, or on a 404. (PRD-0003 T-008)
+
+#### Scenario: A cut-off workbook
+- **WHEN** the first response stops halfway through the file
+- **THEN** the fetcher asks again and stores the whole file once
+
+#### Scenario: Unchanged a week on
+- **WHEN** the dataset is fetched again a week later and its bytes haven't changed
+- **THEN** the manifest gains a record under the new date pointing at the same blob

@@ -281,7 +281,7 @@ A `NUC_STATUS` rating SHALL carry across days EIA skips and past the end of the 
 - **THEN** no unit in service in a year from 1999 to 2006 lacks a rating for it
 
 ### Requirement: Build summary
-Every build SHALL record a summary: rows; first and last day; rows from EIA alone; rows inside the hold; NRC rows EIA also reports and how many disagree on power; units a page lists twice; quarantined tags and unit names with their uses; total lost kWh; rows below 100% without a capacity; each covered date counted once as `reasons`, `held`, `eia` or `missing`; and the scram check's counts. (PRD-0002 T-008 T-015, PRD-0003 T-007)
+Every build SHALL record a summary: rows; first and last day; rows from EIA alone; rows inside the hold; NRC rows EIA also reports and how many disagree on power; units a page lists twice; quarantined tags and unit names with their uses; total lost kWh; rows below 100% without a capacity; each covered date counted once as `reasons`, `held`, `eia` or `missing`; the scram check's counts; and the scram dataset's, when one is stored. (PRD-0002 T-008 T-015, PRD-0003 T-007 T-008)
 
 #### Scenario: Dates by source
 - **WHEN** a build meets a page with reasons, a held page, a no-data day EIA fills, and a day with nothing
@@ -321,8 +321,23 @@ A unit's report scram SHALL start on the first of a run of consecutive NRC rows 
 - **WHEN** the one event matching a report scram is retracted
 - **THEN** it counts as `retracted`, a known difference outside the agreement rate
 
+### Requirement: The scram dataset reconciled
+Each build SHALL reconcile the newest stored scram dataset by event number and docket with the EN scrams of live events from the first of its first year through its last date: `agree` when both list one; a known difference when the dataset flags it retracted, our event is retracted, or only ours holds it from a reactor not critical; else dataset only or ours only. A dataset that doesn't parse SHALL fail a rebuild under the fail policy and be skipped under quarantine. (PRD-0003 T-008)
+
+#### Scenario: Each class
+- **WHEN** the dataset lists EN 45286 at Crystal River 3, EN 45289 at Peach Bottom 2 (whose line says `N`), and EN 45300 flagged retracted, but not Browns Ferry 3's EN 45290
+- **THEN** 45286 agrees, 45289 is dataset only, 45290 ours only, and 45300 a known difference
+
+#### Scenario: A scram while shut down
+- **WHEN** the dataset lacks EN 45290 and Browns Ferry 3 wasn't critical
+- **THEN** 45290 is a known difference, outside the agreement rate
+
+#### Scenario: New columns
+- **WHEN** the dataset's `Docket` column is renamed
+- **THEN** parsing fails, naming the header it found
+
 ### Requirement: The event set
-Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events, and the dates of pages skipped for failing to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003)
+Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events and their count by category label, and the dates of pages skipped for failing to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003 T-010)
 
 #### Scenario: An event the NRC edited
 - **WHEN** EN 54960 is on a page fetched 2026-11-13 and, edited, on a page fetched 2026-11-14
