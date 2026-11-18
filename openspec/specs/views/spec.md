@@ -5,7 +5,7 @@ The pages a reader sees: the home page's filters, fleet barcode and stacked area
 
 ## Requirements
 ### Requirement: Pages
-The site SHALL render the home page at `/` and the status page at `/status`, each under a nav linking `downpower` to `/` and `status` to `/status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015)
+The site SHALL render the home page at `/`, the events explorer at `/events`, one event at `/events/{number}` and the status page at `/status`, each under a nav linking `downpower`, `events` and `status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015, PRD-0004 T-004 T-005)
 
 #### Scenario: Both pages render
 - **WHEN** `downpower serve` is up over the fixture raw store
@@ -121,6 +121,31 @@ Each chart SHALL say it is loading until its data arrives and show the error whe
 #### Scenario: Before the first build
 - **WHEN** the home page loads while `/api/barcode/attributed` answers 503
 - **THEN** the barcode shows that the route answered 503 instead of drawing
+
+### Requirement: Explorer filters in the URL
+`/events` SHALL keep its filters in the query: `from` and `to`, `category` (comma-separated group slugs, the NRC's renamed pairs merged), `state`, `facility`, `unit`, `cfr`, `class`, `scram=1`, `q` and `page`, each left out at its default, and a parameter that doesn't parse SHALL keep its default. A change of filter SHALL go back to the first page. (PRD-0004 T-002 T-004)
+
+#### Scenario: A round trip
+- **WHEN** every filter is set, words and 10 CFR code included
+- **THEN** the query parses back to the same filters, percent-encoded where it must be
+
+#### Scenario: A mangled link
+- **WHEN** a link carries `from=yesterday&state=Texas&unit=498&page=0`
+- **THEN** each keeps its default and the page still opens
+
+### Requirement: The explorer page
+`/events` SHALL show one row of filter controls, the category groups as toggles that double as the legend, a stacked area of the selected events per month in eight series (the seven largest groups and Other, in the cause families' hues with Other in gray) with a month readout on hover, and the page's events newest first, each with its date, group, place or units, title linking `/events/{number}`, 10 CFR codes and `scram` and `retracted` chips, and links to the pages either side. (PRD-0004 T-004)
+
+#### Scenario: Scrams in Alabama
+- **WHEN** `/events?state=AL&scram=1` renders
+- **THEN** the scram toggle is pressed and the list holds EN 45290
+
+### Requirement: The event page
+`/events/{number}` SHALL show the event's dates, category, place, emergency class, last update and callers, its 10 CFR sections linking the explorer filtered to each, a reactor event's unit table (SCRAM Code, criticality, initial and current power and mode) and each unit's attributed barcode strip 60 days either side, the update timeline, the text, a retraction mark, and a link to the NRC page it came from; `No event {number}` when the API has none. (PRD-0004 T-005)
+
+#### Scenario: A scram
+- **WHEN** `/events/45290` loads
+- **THEN** its unit table reads Browns Ferry 3 `M/R` and it links the 2009-08-24 NRC page at `#en45290`
 
 ### Requirement: Status page ledger panel
 `/status` SHALL show the current build's unit-days, span, build time and derived version; its reported power reduction in TWh and its reduced unit-days without a capacity; dates by source (with reasons, inside the hold, EIA only, missing) with counts and shares; the NRC/EIA disagreement rate; and the quarantined tags and unit names with their uses, or `Nothing quarantined` when there are none. (PRD-0002 T-015)

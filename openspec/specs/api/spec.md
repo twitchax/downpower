@@ -141,7 +141,7 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 - **THEN** all four count in the eighth series
 
 ### Requirement: One event
-`/api/events/{number}` SHALL answer the serving build's event `number` as stored (the event as its page shows it, and its identity), 404 for a number it doesn't hold, and 400 for one that isn't digits. (PRD-0004 T-003)
+`/api/events/{number}` SHALL answer the serving build's event `number` as stored (the event as its page shows it, its identity and its page's date), with `nrc`, its anchor on that NRC page, `label`, its category as published, and `unit_names`; 404 for a number it doesn't hold, and 400 for one that isn't digits. (PRD-0004 T-003 T-005)
 
 #### Scenario: An unknown number
 - **WHEN** a client GETs `/api/events/99999` or `/api/events/zebra`

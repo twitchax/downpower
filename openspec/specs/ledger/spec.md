@@ -337,7 +337,7 @@ Each build SHALL reconcile the newest stored scram dataset by event number and d
 - **THEN** parsing fails, naming the header it found
 
 ### Requirement: The event set
-Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events and their count by category label, and the dates of pages skipped for failing to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003 T-010)
+Every build SHALL hold one event per number found on the newest capture of each stored event page, taken from the page fetched last (between pages fetched together, the later date), and SHALL record the pages read, those reading "No events found", the events by category label, each event's page date, and the dates of pages that failed to parse. A page that fails SHALL fail a rebuild under the fail policy and be skipped and counted under quarantine. (PRD-0003 T-003 T-010, PRD-0004 T-005)
 
 #### Scenario: An event the NRC edited
 - **WHEN** EN 54960 is on a page fetched 2026-11-13 and, edited, on a page fetched 2026-11-14
