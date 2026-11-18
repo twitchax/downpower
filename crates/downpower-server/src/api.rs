@@ -1,5 +1,6 @@
 //! The data the views fetch: the barcode buffer and the monthly lost energy per layer, one unit-day
-//! for the barcode's hover, and what `/status` shows.
+//! for the barcode's hover, the events explorer's list, counts and events, and what `/status`
+//! shows.
 //! Both read the table `ledger:current` names, so a rebuild swaps them in with the table, and a
 //! deploy that changes the record's shape keeps serving the old table until its rebuild lands.
 
@@ -10,31 +11,44 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{Path, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header},
     response::{IntoResponse as _, Response},
     routing::get,
 };
 use chrono::NaiveDate;
 use serde::Serialize;
+use sha2::{Digest as _, Sha256};
 
 use downpower_core::barcode::Layer;
+use downpower_core::explorer::{EventsState, PAGE};
+use downpower_ingest::units::Units;
 
 use crate::daily::{self, Run};
 use crate::db::Store;
+use crate::explorer::Explorer;
 use crate::ledger::{self, Build, Packed};
 
-/// The store, and the barcode last served per layer, reused while the stored tag matches it.
+/// The store; the barcode last served per layer, reused while the stored tag matches it; and the
+/// explorer's copy of the serving build's events, reused while the build is the same.
 #[derive(Clone)]
 struct Api {
     store: Store,
     barcodes: Arc<Mutex<HashMap<Layer, Packed>>>,
+    explorer: Arc<Mutex<Option<Arc<Explorer>>>>,
 }
 
 /// The `/api` routes over `store`.
 pub fn router(store: Store) -> Router {
-    let api = Api { store, barcodes: Arc::default() };
+    let api = Api {
+        store,
+        barcodes: Arc::default(),
+        explorer: Arc::default(),
+    };
     Router::new()
         .route("/api/barcode/{layer}", get(barcode))
+        .route("/api/events", get(events))
+        .route("/api/events/counts", get(event_counts))
+        .route("/api/events/{number}", get(event))
         .route("/api/lost/{layer}", get(lost))
         .route("/api/status", get(status))
         .route("/api/unit-day/{docket}/{date}", get(unit_day))
@@ -70,15 +84,8 @@ async fn barcode(State(api): State<Api>, Path(layer): Path<String>, headers: Hea
         Ok(None) => return building(),
         Err(error) => return failed(&error),
     };
-    let revalidated = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|tags| tags.split(',').any(|candidate| candidate.trim().trim_start_matches("W/").trim_matches('"') == tag));
-    if revalidated {
-        return match weak(&tag) {
-            Ok(etag) => (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response(),
-            Err(error) => failed(&error),
-        };
+    if revalidated(&headers, &tag) {
+        return not_modified(&tag);
     }
 
     let cached = api.barcodes.lock().unwrap_or_else(PoisonError::into_inner).get(&layer).filter(|packed| packed.etag == tag).cloned();
@@ -99,6 +106,98 @@ async fn barcode(State(api): State<Api>, Path(layer): Path<String>, headers: Hea
             Body::from(packed.bytes.into_inner()),
         )
             .into_response(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// Whether the request's `If-None-Match` names `tag`.
+fn revalidated(headers: &HeaderMap, tag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|tags| tags.split(',').any(|candidate| candidate.trim().trim_start_matches("W/").trim_matches('"') == tag))
+}
+
+fn not_modified(tag: &str) -> Response {
+    match weak(tag) {
+        Ok(etag) => (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// The explorer over the serving build's events, or `None` before any build: the cached one while
+/// the build is the same, else one read from its event table. A build is the same while its table
+/// and `built_at` are, so an update in place, which rewrites events in the same table, reads them
+/// again.
+async fn explorer(api: &Api) -> anyhow::Result<Option<Arc<Explorer>>> {
+    let Some(table) = ledger::serving(&api.store).await? else {
+        return Ok(None);
+    };
+    let built_at = ledger::current(&api.store).await?.filter(|build| build.table == table).map(|build| build.built_at.to_rfc3339());
+    let key = format!("{table}@{}", built_at.unwrap_or_default());
+    let cached = api.explorer.lock().unwrap_or_else(PoisonError::into_inner).as_ref().filter(|explorer| explorer.key() == key).cloned();
+    if let Some(explorer) = cached {
+        return Ok(Some(explorer));
+    }
+    let explorer = Arc::new(Explorer::new(key, ledger::events(&api.store, &table).await?, &Units::catalog()?));
+    *api.explorer.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&explorer));
+    Ok(Some(explorer))
+}
+
+/// A tag for the answer to `query` from `explorer`'s build.
+fn query_tag(explorer: &Explorer, kind: &str, query: &str) -> String {
+    hex::encode(&Sha256::digest(format!("{}\n{kind}\n{query}", explorer.key()))[..8])
+}
+
+/// `body` as JSON under a weak `ETag` from `tag`, or a 304 when the request already holds it.
+fn tagged(headers: &HeaderMap, tag: &str, body: impl Serialize) -> Response {
+    if revalidated(headers, tag) {
+        return not_modified(tag);
+    }
+    match weak(tag) {
+        Ok(etag) => ([(header::ETAG, etag)], Json(body)).into_response(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// A page of the events the query's filters select, newest first, as JSON.
+async fn events(State(api): State<Api>, uri: Uri, headers: HeaderMap) -> Response {
+    let state = EventsState::parse_query(uri.query().unwrap_or_default());
+    let explorer = match explorer(&api).await {
+        Ok(Some(explorer)) => explorer,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    let tag = query_tag(&explorer, "page", &state.to_query());
+    tagged(&headers, &tag, explorer.page(&state, PAGE))
+}
+
+/// The events the query's filters select, counted by month and series, as JSON.
+async fn event_counts(State(api): State<Api>, uri: Uri, headers: HeaderMap) -> Response {
+    let state = EventsState::parse_query(uri.query().unwrap_or_default()).first_page();
+    let explorer = match explorer(&api).await {
+        Ok(Some(explorer)) => explorer,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    let tag = query_tag(&explorer, "counts", &state.to_query());
+    tagged(&headers, &tag, explorer.counts(&state))
+}
+
+/// One event from the serving build, as stored: 400 for a number that isn't one, 404 for an event
+/// it doesn't hold.
+async fn event(State(api): State<Api>, Path(number): Path<String>) -> Response {
+    let Ok(number) = number.parse::<u32>() else {
+        return (StatusCode::BAD_REQUEST, "an event number is digits").into_response();
+    };
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    match ledger::event(&api.store, &table, number).await {
+        Ok(Some(event)) => Json(event).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "no such event").into_response(),
         Err(error) => failed(&error),
     }
 }

@@ -10,6 +10,7 @@ pub mod api;
 pub mod cli;
 pub mod daily;
 pub mod db;
+pub mod explorer;
 pub mod http_policy;
 pub mod ledger;
 pub mod tests;

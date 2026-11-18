@@ -4,15 +4,20 @@
 
 use std::fmt::Write as _;
 
-use chrono::NaiveDate;
+use chrono::{Datelike as _, NaiveDate};
+use serde::{Deserialize, Serialize};
 
 /// Events a page of the list holds.
 pub const PAGE: usize = 50;
 
+/// Series the counts chart draws: the seven largest groups and Other (the dataviz skill's cap).
+pub const SERIES: usize = 8;
+
 /// An event category as the explorer filters it: the NRC's published categories, with the two
 /// pairs it renamed merged (General Information or Other became General Information, and
 /// Non-Power Reactor became Research Reactor). Listed largest first, the counts chart's order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Group {
     PowerReactor,
     AgreementState,
@@ -20,6 +25,7 @@ pub enum Group {
     FuelCycle,
     OtherNuclearMaterial,
     NonAgreementState,
+    #[serde(rename = "part-21")]
     Part21,
     Hospital,
     ResearchReactor,
@@ -82,6 +88,12 @@ impl Group {
         Self::ALL.into_iter().find(|group| group.slug() == slug)
     }
 
+    /// The counts chart's series: the seven largest groups each, and the rest as Other.
+    #[must_use]
+    pub fn series(self) -> usize {
+        Self::ALL.iter().position(|group| *group == self).unwrap_or(SERIES - 1).min(SERIES - 1)
+    }
+
     /// The group of a category as the event page labels it.
     #[must_use]
     pub fn of_label(label: &str) -> Option<Self> {
@@ -103,7 +115,8 @@ impl Group {
 }
 
 /// An event's emergency class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Class {
     NonEmergency,
     UnusualEvent,
@@ -273,6 +286,65 @@ impl EventsState {
     }
 }
 
+/// One event as the list shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventRow {
+    pub number: u32,
+    /// The event date.
+    pub date: NaiveDate,
+    /// `None` for a category the explorer doesn't know.
+    pub group: Option<Group>,
+    /// The facility, site or licensee, as the catalogs name it where they do.
+    pub place: String,
+    pub state: Option<String>,
+    /// A reactor event's units, by catalog name.
+    pub units: Vec<String>,
+    pub title: Option<String>,
+    /// The 10 CFR sections' codes, as written.
+    pub sections: Vec<String>,
+    pub scram: bool,
+    pub retracted: bool,
+}
+
+/// One page of the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventsPage {
+    /// Events the filters select.
+    pub total: usize,
+    pub page: usize,
+    pub pages: usize,
+    pub rows: Vec<EventRow>,
+}
+
+/// Events per month by series ([`Group::series`]): the counts chart's data.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventCounts {
+    /// The first day of the first month; `None` while empty.
+    pub first: Option<NaiveDate>,
+    pub months: Vec<[u64; SERIES]>,
+}
+
+impl EventCounts {
+    /// Counts the events of each month from `first` through `last`, with no months when there are
+    /// none. `events` gives each event's date and group.
+    #[must_use]
+    pub fn of(events: impl IntoIterator<Item = (NaiveDate, Option<Group>)>) -> Self {
+        let events: Vec<(NaiveDate, Option<Group>)> = events.into_iter().collect();
+        let month = |date: NaiveDate| i64::from(date.year()) * 12 + i64::from(date.month0());
+        let Some(first) = events.iter().map(|(date, _)| *date).min() else {
+            return Self::default();
+        };
+        let last = events.iter().map(|(date, _)| month(*date)).max().unwrap_or_default();
+        let mut months = vec![[0; SERIES]; usize::try_from(last - month(first) + 1).unwrap_or_default()];
+        for (date, group) in events {
+            if let Some(counts) = usize::try_from(month(date) - month(first)).ok().and_then(|index| months.get_mut(index)) {
+                counts[group.map_or(SERIES - 1, Group::series)] += 1;
+            }
+        }
+        Self { first: first.with_day(1), months }
+    }
+}
+
 /// Percent-encodes everything but the unreserved characters and the list's comma.
 fn encode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
@@ -389,6 +461,16 @@ mod tests {
         assert_eq!(Group::ALL.len(), 11);
         assert!(Group::ALL.iter().all(|group| Group::from_slug(group.slug()) == Some(*group)));
         assert!(Class::ALL.iter().all(|class| Class::from_slug(class.slug()) == Some(*class)));
+        let json = |value: serde_json::Value| value.as_str().map(str::to_owned);
+        assert!(Group::ALL.iter().all(|group| json(serde_json::to_value(group).unwrap_or_default()).as_deref() == Some(group.slug())));
+        assert!(Class::ALL.iter().all(|class| json(serde_json::to_value(class).unwrap_or_default()).as_deref() == Some(class.slug())));
+    }
+
+    #[test]
+    fn the_eighth_series_is_other() {
+        assert_eq!(Group::PowerReactor.series(), 0);
+        assert_eq!(Group::Part21.series(), 6);
+        assert_eq!([Group::Hospital, Group::ResearchReactor, Group::SpentFuelStorage, Group::Transportation].map(Group::series), [7; 4]);
     }
 
     #[test]

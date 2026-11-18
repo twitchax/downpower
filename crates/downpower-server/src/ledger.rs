@@ -748,6 +748,22 @@ pub async fn event(store: &Store, table: &str, number: u32) -> anyhow::Result<Op
     Ok(event.map(|event| event.0))
 }
 
+/// Every event from the build whose rows are in `table`.
+///
+/// # Errors
+///
+/// When `table` isn't a build table, or the query or a row fails.
+pub async fn events(store: &Store, table: &str) -> anyhow::Result<Vec<StoredEvent>> {
+    let event_table = event_table(table)?;
+    let events: Vec<SerdeWrapper<StoredEvent>> = store
+        .query(format!("SELECT * OMIT id FROM {event_table}"))
+        .await
+        .with_context(|| format!("reading the events in {event_table}"))?
+        .take(0)
+        .with_context(|| format!("reading the events in {event_table}"))?;
+    Ok(events.into_iter().map(|event| event.0).collect())
+}
+
 /// Every reactor event's unit rows from the build whose rows are in `table`, by event and unit.
 ///
 /// # Errors

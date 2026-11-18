@@ -5,7 +5,7 @@ The HTTP surface of `downpower serve` beyond the rendered pages: the `/api/*` ro
 
 ## Requirements
 ### Requirement: Routes
-The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015)
+The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003)
 
 #### Scenario: Health
 - **WHEN** a client GETs `/healthz`
@@ -121,6 +121,38 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 #### Scenario: The observed barcode
 - **WHEN** a client GETs `/api/barcode/observed` with `Accept-Encoding: gzip`
 - **THEN** the response carries `Content-Encoding: gzip`
+
+### Requirement: The event list
+`/api/events` SHALL answer JSON `{total, page, pages, rows}`: page `page`, 50 to a page, of the serving build's events the query selects (dates, category groups, state, a name, a unit's docket, a 10 CFR prefix, emergency class, scram, and words all found in the title, text or names), newest first by date then number, each row with its number, date, group, place, state, units, title, 10 CFR codes and scram and retraction flags. (PRD-0004 T-002 T-003)
+
+#### Scenario: Two filters
+- **WHEN** a client GETs `/api/events?state=AL&scram=1` over the fixture events
+- **THEN** it lists EN 45290 alone, of a total of 1
+
+#### Scenario: Stable pages
+- **WHEN** the 38 fixture events are read 10 to a page
+- **THEN** the four pages hold every event once, in the order one page of 50 holds them
+
+### Requirement: Event counts
+`/api/events/counts` SHALL answer JSON `{first, months}`: the events the same filters select, counted per month from the first's month to the last's in eight series, the seven largest category groups and Other, so the months sum to the list's total. (PRD-0004 T-003)
+
+#### Scenario: Small groups fold into Other
+- **WHEN** the fixture's three Hospital events and its Transportation Event are counted
+- **THEN** all four count in the eighth series
+
+### Requirement: One event
+`/api/events/{number}` SHALL answer the serving build's event `number` as stored (the event as its page shows it, and its identity), 404 for a number it doesn't hold, and 400 for one that isn't digits. (PRD-0004 T-003)
+
+#### Scenario: An unknown number
+- **WHEN** a client GETs `/api/events/99999` or `/api/events/zebra`
+- **THEN** they answer 404 and 400
+
+### Requirement: Event tags
+The list and the counts SHALL carry a weak `ETag` from the serving build's table and `built_at` and the query, and SHALL answer 304 to a request whose `If-None-Match` holds it. An update in place moves `built_at`, so it moves the tag. (PRD-0004 T-003)
+
+#### Scenario: Revalidating a list
+- **WHEN** a client GETs a list again with the `ETag` it was given
+- **THEN** it answers 304
 
 ### Requirement: Cache policy
 Every response under `/pkg/`, the content-hashed site assets, SHALL carry `Cache-Control: public, max-age=31536000, immutable`, and every other response (pages, `/healthz`, `/api/*` and unhashed public files such as `/robots.txt`) SHALL carry `Cache-Control: no-cache`. (PRD-0001 T-001)
