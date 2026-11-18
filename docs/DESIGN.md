@@ -332,8 +332,11 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
     - A chart of counts per month by category follows the same filters.
     - `/events/{number}` shows the header, the unit table, the text with its update timeline, the
       NRC link, and, for a reactor event, that unit's barcode strip around the date.
-    - Search uses SurrealDB's full-text index if its memory fits the Fly machine, measured first.
-      Otherwise it scans the text in memory.
+    - Search scans each event's lowercased title, text and names in memory, held per build (35 MB
+      for 22,428 events). Measured against SurrealDB's full-text index, it answers as fast on one
+      core (11–17 ms against 6–34 ms) at a quarter of the memory, costs no write on a rebuild, and
+      matches substrings, where the index misses "scrammed" for `scram` (PRD-0004.log.md#t-001,
+      revised 2026-11-18).
 35. **Event markers on the barcode are off by default.** They are turned on from the legend and
     kept in the URL. A scram has its own shape (shape before color), hovering shows the number
     and title, and clicking opens `/events/{number}`.
