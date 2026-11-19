@@ -133,6 +133,13 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 - **WHEN** the 38 fixture events are read 10 to a page
 - **THEN** the four pages hold every event once, in the order one page of 50 holds them
 
+### Requirement: Event search
+`q` SHALL select the events whose title, text, place, site, licensee, unit names and persons contain each of its whitespace-separated words as a substring, in any case, so `scram` also finds "scrammed". (PRD-0004 T-001 T-003)
+
+#### Scenario: Two words
+- **WHEN** a client GETs `/api/events?q=camshaft stamp` over the fixture events
+- **THEN** it lists EN 55027 alone
+
 ### Requirement: Event counts
 `/api/events/counts` SHALL answer JSON `{first, months}`: the events the same filters select, counted per month from the first's month to the last's in eight series, the seven largest category groups and Other, so the months sum to the list's total. (PRD-0004 T-003)
 
