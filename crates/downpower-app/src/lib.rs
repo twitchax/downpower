@@ -10,8 +10,10 @@ pub mod barcode;
 pub mod bars;
 #[cfg(feature = "hydrate")]
 mod browser;
+pub mod chart;
 pub mod event;
 pub mod explorer;
+pub mod ffd;
 pub mod filters;
 mod icon;
 pub mod lost;
@@ -32,6 +34,7 @@ use leptos_router::{
 use crate::barcode::BarcodeView;
 use crate::event::EventPage;
 use crate::explorer::EventsExplorer;
+use crate::ffd::FfdPage;
 use crate::filters::Filters;
 pub use crate::icon::Icon;
 use crate::lost::StackedArea;
@@ -80,6 +83,7 @@ pub fn App() -> impl IntoView {
                     <a href="/">"downpower"</a>
                     <a href="/trends">"trends"</a>
                     <a href="/events">"events"</a>
+                    <a href="/ffd">"ffd"</a>
                     <a href="/status">"status"</a>
                 </nav>
                 <Routes fallback=|| view! { <p class="muted">"Page not found."</p> }>
@@ -87,6 +91,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("events") view=EventsExplorer />
                     <Route path=(StaticSegment("events"), ParamSegment("number")) view=EventPage />
                     <Route path=StaticSegment("trends") view=TrendsPage />
+                    <Route path=StaticSegment("ffd") view=FfdPage />
                     <Route path=StaticSegment("status") view=StatusPage />
                 </Routes>
             </main>

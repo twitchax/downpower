@@ -2,7 +2,8 @@
 
 **Status:** decisions settled through grilling round 4 (2026-11-16). PRD-0002, the status-report
 ledger, is done. Event Notifications are PRD-0003 (ingest), PRD-0004 (the explorer) and PRD-0005
-(fitness for duty). What is still open, and what each open item waits on, is under "Still open".
+(fitness for duty), and PRD-0006 adds the fleet trends. What is still open, and what each open item
+waits on, is under "Still open".
 
 ## Intent
 
@@ -132,7 +133,7 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - Backup: Fly's daily volume snapshots plus the home-box copy.
 16. **The unit key is the NRC docket number** (for example, `05000275` is Diablo Canyon 1).
     - A committed crosswalk CSV maps each docket to every NRC name variant, the EIA plant and
-      generator, a display name, and the retirement date.
+      generator, a display name, its state, and the retirement date.
     - It covers units retired since 1999.
     - A unit is in service from commercial operation (Watts Bar 2, Vogtle 3 and 4 started after
       1999), and out of service between a shutdown and a restart, such as Browns Ferry 1 from 1985
@@ -244,7 +245,11 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
     - **PRD-0003:** Event Notifications ingest: every category parsed, the 28-day hold, `See EN#`
       resolution and both scram cross-checks (Decisions 28–33).
     - **PRD-0004:** the events explorer and the barcode's event markers (Decisions 34 and 35).
-    - **PRD-0005:** fitness for duty and the legalization overlay (Decisions 36–38).
+    - **PRD-0005:** fitness for duty and the legalization overlay (Decisions 36–38). Every break
+      behind its series is in `docs/BREAKS.md`.
+    - **PRD-0006:** fleet trends from the ledger alone (added 2026-11-18): loss as a share of net
+      capacity by year and month of the year, refueling outage length, and scrams per 100
+      operating unit-years.
     - **Then the joins, in order:** EIA-860 cooling type and water body, then NOAA hourly weather
       (wet-bulb), then EIA-923 generation, then EIA-923 Schedule 8D, then USGS intake temperature,
       then EIA-930.

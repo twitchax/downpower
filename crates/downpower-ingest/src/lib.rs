@@ -3,12 +3,14 @@
 //! page parsers, the unit spine, and the ledger they build. There is no database here, since the server owns that, so these tests stay fast.
 
 pub mod attribution;
+pub mod cannabis;
 pub mod capacity;
 pub mod chunks;
 pub mod eia;
 pub mod events;
 pub mod facilities;
 pub mod fetch;
+pub mod ffd;
 pub mod ledger;
 pub mod nrc;
 pub mod raw;

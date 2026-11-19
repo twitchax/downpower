@@ -17,7 +17,8 @@ use tower::ServiceExt as _;
 
 use downpower_core::explorer::{EventCounts, EventsPage, EventsState, Group, PAGE};
 use downpower_core::markers::Markers;
-use downpower_ingest::events::EventSet;
+use downpower_ingest::events::{EventSet, Section};
+use downpower_ingest::ffd::Ffd;
 use downpower_ingest::ledger::{Catalog, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
 use downpower_ingest::units::Units;
@@ -36,16 +37,34 @@ fn put_pages(store: &RawStore) {
 }
 
 fn explorer() -> Explorer {
+    explorer_with(|_| {})
+}
+
+/// The explorer over the fixture events after `edit`.
+fn explorer_with(edit: impl FnOnce(&mut EventSet)) -> Explorer {
     let tmp = tempfile::tempdir().unwrap();
     let store = RawStore::open(tmp.path()).unwrap();
     put_pages(&store);
-    let set = EventSet::build(&store, &Catalog::embedded().unwrap().facilities, Unknowns::Fail).unwrap();
+    let mut set = EventSet::build(&store, &Catalog::embedded().unwrap().facilities, Unknowns::Fail).unwrap();
+    edit(&mut set);
     let events = set.events.into_iter().map(|(number, event)| StoredEvent {
         identity: set.identities.get(&number).cloned(),
         page: set.pages.get(&number).copied(),
         event,
     });
-    Explorer::new("event_1", events, &Units::catalog().unwrap())
+    Explorer::new("event_1", events, &Units::catalog().unwrap(), &Ffd::catalog().unwrap())
+}
+
+#[test]
+fn uat_ffd_explorer_lists_fitness_for_duty_events_by_section() {
+    let explorer = explorer_with(|set| {
+        set.events.get_mut(&45290).unwrap().sections = vec![Section {
+            code: Some("26.719(b)(1)".to_owned()),
+            description: "FITNESS FOR DUTY".to_owned(),
+        }];
+    });
+    assert_eq!(numbers(&explorer, "ffd=1", PAGE), [45290]);
+    assert_eq!(numbers(&explorer, "ffd=1&state=GA", PAGE), Vec::<u32>::new());
 }
 
 /// The numbers `query` lists, every page of `per` events, in order.

@@ -18,11 +18,14 @@ use sha2::{Digest as _, Sha256};
 use surrealdb::types::{Bytes, SerdeWrapper};
 
 use downpower_core::barcode::{self, Barcode, Layer, Packer};
+use downpower_core::ffd::Series as FfdSeries;
 use downpower_core::series::Monthly;
 use downpower_core::trends::Trends;
+use downpower_ingest::cannabis::Laws;
 use downpower_ingest::chunks::{self, Chunk, Chunker, EventHashes, Hashes};
 use downpower_ingest::events::{Archive, Event, EventSet};
 use downpower_ingest::facilities::{self, EventUnit, Identity};
+use downpower_ingest::ffd::{self, Ffd};
 use downpower_ingest::ledger::{self, Catalog, Summary, UnitDay, Unknowns};
 use downpower_ingest::raw::RawStore;
 use downpower_ingest::trends::Collector;
@@ -201,7 +204,7 @@ impl Packers {
 /// When the definitions fail.
 pub async fn define(store: &Store) -> anyhow::Result<()> {
     store
-        .query("DEFINE TABLE IF NOT EXISTS ledger SCHEMALESS; DEFINE TABLE IF NOT EXISTS unit SCHEMALESS; DEFINE TABLE IF NOT EXISTS barcode SCHEMALESS; DEFINE TABLE IF NOT EXISTS lost SCHEMALESS; DEFINE TABLE IF NOT EXISTS chunks SCHEMALESS; DEFINE TABLE IF NOT EXISTS trends SCHEMALESS;")
+        .query("DEFINE TABLE IF NOT EXISTS ledger SCHEMALESS; DEFINE TABLE IF NOT EXISTS unit SCHEMALESS; DEFINE TABLE IF NOT EXISTS barcode SCHEMALESS; DEFINE TABLE IF NOT EXISTS lost SCHEMALESS; DEFINE TABLE IF NOT EXISTS chunks SCHEMALESS; DEFINE TABLE IF NOT EXISTS trends SCHEMALESS; DEFINE TABLE IF NOT EXISTS ffd SCHEMALESS;")
         .await
         .and_then(surrealdb::IndexedResults::check)
         .context("defining the ledger tables")?;
@@ -420,6 +423,8 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
         let set = EventSet::build(&raw, &catalog.facilities, unknowns)?;
         let (event_hashes, events_moved) = send_events(&set, old_events.as_ref(), &sender)?;
         let mut trends = Collector::new(&set, &catalog.units);
+        let (rules, laws) = (Ffd::catalog()?, Laws::catalog()?);
+        let mut fitness = ffd::Collector::new(&set, &catalog.units, &rules, &laws);
         let mut sink = Sink {
             old: old_days,
             hashes: Hashes::default(),
@@ -433,6 +438,7 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
                 packers.push(day)?;
             }
             trends.push(&days)?;
+            fitness.push(&days);
             chunker.push(days).into_iter().try_for_each(|chunk| sink.take(chunk))
         })?;
         chunker.finish().into_iter().try_for_each(|chunk| sink.take(chunk))?;
@@ -440,6 +446,7 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
         let views = Views {
             layers: packers.finish()?,
             trends: trends.finish(),
+            ffd: fitness.finish(),
         };
         anyhow::Ok((summary, set.archive, views, hashes, replaced, event_hashes, events_moved))
     });
@@ -482,11 +489,12 @@ async fn write(store: &Store, data_dir: &Path, unknowns: Unknowns, table: &str, 
     })
 }
 
-/// What a build stores beside its rows: per layer its barcode and monthly series, and the fleet
-/// trends.
+/// What a build stores beside its rows: per layer its barcode and monthly series, the fleet trends
+/// and the FFD series.
 struct Views {
     layers: Vec<(Layer, Option<Packed>, Monthly)>,
     trends: Trends,
+    ffd: FfdSeries,
 }
 
 /// Stores a build's barcodes, monthly series, trends and chunk hashes under its table's name, so
@@ -499,6 +507,13 @@ async fn store_views(store: &Store, table: &str, views: Views, hashes: &Hashes) 
         .await
         .and_then(surrealdb::IndexedResults::check)
         .context("storing the trends")?;
+    store
+        .query("UPSERT ffd:[$table] CONTENT $ffd RETURN NONE")
+        .bind(("table", table.to_owned()))
+        .bind(("ffd", SerdeWrapper(views.ffd)))
+        .await
+        .and_then(surrealdb::IndexedResults::check)
+        .context("storing the FFD series")?;
     for (layer, packed, monthly) in views.layers {
         if let Some(packed) = packed {
             store
@@ -724,7 +739,7 @@ async fn drop_tables(store: &Store, units: &Units, keep: Option<&str>) -> anyhow
                 .with_context(|| format!("clearing {table}"))?;
         }
         store
-            .query("DELETE barcode:[$table, NONE]..=[$table, ..] RETURN NONE; DELETE lost:[$table, NONE]..=[$table, ..] RETURN NONE; DELETE trends:[$table] RETURN NONE; DELETE chunks:[$table] RETURN NONE;")
+            .query("DELETE barcode:[$table, NONE]..=[$table, ..] RETURN NONE; DELETE lost:[$table, NONE]..=[$table, ..] RETURN NONE; DELETE trends:[$table] RETURN NONE; DELETE ffd:[$table] RETURN NONE; DELETE chunks:[$table] RETURN NONE;")
             .bind(("table", table.to_owned()))
             .await
             .and_then(surrealdb::IndexedResults::check)
@@ -907,4 +922,20 @@ pub async fn trends(store: &Store, table: &str) -> anyhow::Result<Option<Trends>
         .take(0)
         .with_context(|| format!("reading the trends of {table}"))?;
     Ok(trends.map(|trends| trends.0))
+}
+
+/// `table`'s FFD series, if its build stored one (PRD-0005 T-006).
+///
+/// # Errors
+///
+/// When the query fails or the record doesn't parse.
+pub async fn ffd(store: &Store, table: &str) -> anyhow::Result<Option<FfdSeries>> {
+    let series: Option<SerdeWrapper<FfdSeries>> = store
+        .query("SELECT first, last, events, exposure, laws FROM ONLY ffd:[$table]")
+        .bind(("table", table.to_owned()))
+        .await
+        .with_context(|| format!("reading the FFD series of {table}"))?
+        .take(0)
+        .with_context(|| format!("reading the FFD series of {table}"))?;
+    Ok(series.map(|series| series.0))
 }

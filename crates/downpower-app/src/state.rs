@@ -94,6 +94,19 @@ pub fn year_ticks(first: NaiveDate, days: u32, most: usize) -> Vec<(i32, f64)> {
     thin(years.collect(), most)
 }
 
+/// Whether an axis label at `fraction` of the width hangs left of its tick: a label in the last
+/// twentieth would run past the plot's right edge, and on a phone past the screen's.
+#[must_use]
+pub fn hangs_left(fraction: f64) -> bool {
+    fraction > 0.95
+}
+
+/// Whether a year's axis label is minor: off the five-year marks, so a phone hides it.
+#[must_use]
+pub const fn minor(year: i32) -> bool {
+    year % 5 != 0
+}
+
 /// Every 1st, 2nd, 5th, 10th or 25th of `years`, whichever first leaves at most `most`.
 #[must_use]
 pub fn thin(years: Vec<(i32, f64)>, most: usize) -> Vec<(i32, f64)> {
@@ -112,6 +125,15 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn labels_in_the_last_twentieth_hang_left_and_five_year_marks_stay_on_phones() {
+        assert!(!hangs_left(0.5));
+        assert!(!hangs_left(0.95));
+        assert!(hangs_left(0.98));
+        assert!(!minor(2020) && !minor(2005));
+        assert!(minor(2026) && minor(2002));
+    }
 
     fn parse(query: &[(&str, &str)]) -> ViewState {
         let map: HashMap<String, String> = query.iter().map(|(key, value)| ((*key).to_owned(), (*value).to_owned())).collect();

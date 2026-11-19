@@ -1,5 +1,5 @@
 //! The events explorer's filters (PRD-0004, DESIGN.md Decision 34), kept in the URL query as the
-//! barcode's are, so every list is a permalink: `?from=2010-01-01&category=power-reactor&scram=1&q=fire`.
+//! barcode's are, so every list is a permalink: `?from=2010-01-01&category=power-reactor&scram=1&ffd=1&q=fire`.
 //! A parameter at its default is left out. The server parses the same query to answer `/api/events`.
 
 use std::fmt::Write as _;
@@ -175,6 +175,8 @@ pub struct EventsState {
     pub class: Option<Class>,
     /// Only events that scrammed a reactor.
     pub scram: bool,
+    /// Only fitness-for-duty events (DESIGN.md Decision 36, PRD-0005 T-007).
+    pub ffd: bool,
     /// Words every listed event's title, text or names hold.
     pub q: Option<String>,
     /// From 1.
@@ -193,6 +195,7 @@ impl Default for EventsState {
             cfr: None,
             class: None,
             scram: false,
+            ffd: false,
             q: None,
             page: 1,
         }
@@ -228,6 +231,7 @@ impl EventsState {
             cfr: param("cfr").and_then(|cfr| text(&cfr)),
             class: param("class").and_then(|class| Class::from_slug(&class)),
             scram: param("scram").as_deref() == Some("1"),
+            ffd: param("ffd").as_deref() == Some("1"),
             q: param("q").and_then(|q| text(&q)),
             page: param("page").and_then(|page| page.parse().ok()).filter(|page| *page >= 1).unwrap_or(1),
         }
@@ -268,6 +272,7 @@ impl EventsState {
         push("cfr", self.cfr.clone());
         push("class", self.class.map(|class| class.slug().to_owned()));
         push("scram", self.scram.then(|| "1".to_owned()));
+        push("ffd", self.ffd.then(|| "1".to_owned()));
         push("q", self.q.clone());
         push("page", (self.page > 1).then(|| self.page.to_string()));
         if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) }
@@ -414,6 +419,7 @@ mod tests {
             cfr: Some("50.72(b)(2)(iv)(B)".to_owned()),
             class: Some(Class::UnusualEvent),
             scram: true,
+            ffd: true,
             q: Some("diesel generator & fire".to_owned()),
             page: 3,
         };
@@ -422,7 +428,7 @@ mod tests {
 
         assert_eq!(
             query,
-            "?from=2010-01-01&to=2020-12-31&category=power-reactor,research-reactor&state=TX&facility=South%20Texas&unit=05000498&cfr=50.72%28b%29%282%29%28iv%29%28B%29&class=unusual-event&scram=1&q=diesel%20generator%20%26%20fire&page=3"
+            "?from=2010-01-01&to=2020-12-31&category=power-reactor,research-reactor&state=TX&facility=South%20Texas&unit=05000498&cfr=50.72%28b%29%282%29%28iv%29%28B%29&class=unusual-event&scram=1&ffd=1&q=diesel%20generator%20%26%20fire&page=3"
         );
         assert_eq!(EventsState::parse_query(&query), state);
     }

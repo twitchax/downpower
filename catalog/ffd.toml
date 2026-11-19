@@ -1,0 +1,141 @@
+# Fitness for duty (DESIGN.md Decision 36, PRD-0005).
+#
+# An event is an FFD event when a 10 CFR section it carries is 26.73 (Part 26 reporting before the
+# 2008 rewrite), 26.719 (after it) or 26.417(b)(1) (construction sites), spaces ignored and the
+# section ending there or at a paragraph. The lists below are the reviewed exceptions: `include`
+# names events coded otherwise that report an FFD matter, and `exclude` names coded events that
+# don't. Each carries why, so the review is checkable. Retracted events count toward nothing
+# (Decision 30). Never match on the title or a bare keyword.
+
+include = [
+  { number = 35619, why = "a licensed operator's random alcohol test, filed as a voluntary FFD report with no section" },
+]
+
+exclude = []
+
+# The phrase rules. An FFD event's title and text are lowercased, their whitespace collapsed, and
+# every `strip` pattern blanked: boilerplate that names a test or an agency without naming a
+# finding ("drug and alcohol test", the Bureau of Alcohol, Tobacco, Firearms and Explosives). Then,
+# per dimension, the first rule whose pattern matches gives the value, as catalog/tags.toml's rules
+# work, and an event no rule matches is "none named". Bare keywords misfire, so each rule wants
+# its context: `THC` is a typo of "the" in the all-caps years, and "positive" is also a tritium
+# sample. Review a change against `cargo xtask ffd`'s snapshot diff.
+strip = [
+  'isopropyl alcohol',
+  'bureau of alcohol[^.]*',
+  'alcohol,? tobacco,? (?:and )?firearms',
+  'drug and alcohol (?:test(?:ing|s)?|screen(?:ing)?|program)',
+  'alcohol and drug (?:test(?:ing|s)?|screen(?:ing)?|program)',
+  'drug/alcohol (?:test(?:ing)?|screen)',
+  'drugs? (?:and|&|or|and/or) alcohol',
+  'alcohol (?:and|&|or|and/or) drugs?',
+  'non-?licensed',
+  'non licensed',
+  'unlicensed',
+]
+
+# Named drugs first, then generic drug wording, then alcohol: an event naming a drug and alcohol is
+# drug-related.
+[[substance]]
+value = "marijuana"
+pattern = 'marijuana|marihuana|cannabis|cannabinoid|\(thc\)|(?:for|of) thc\b|thc metabolite|thc \('
+
+[[substance]]
+value = "cocaine"
+pattern = 'cocaine|benzoylecgonine'
+
+[[substance]]
+value = "opiates"
+pattern = 'opiate|opioid|morphine|codeine|heroin|oxycodone|hydrocodone|oxymorphone|hydromorphone|fentanyl|methadone'
+
+[[substance]]
+value = "amphetamines"
+pattern = 'amphetamine|\bmdma\b|ecstasy'
+
+[[substance]]
+value = "other_drug"
+pattern = 'phencyclidine|\bpcp\b|benzodiazepine|barbiturate'
+
+[[substance]]
+value = "drug"
+pattern = 'illegal drug|illicit drug|controlled substance|paraphernalia|narcotic|prescription (?:drug|medication)|positive (?:for |test for )?(?:an? )?(?:illegal |controlled )?drug|drugs? (?:test|screen)[^.]{0,30}positive|drugs? (?:was|were) (?:found|discovered)|unauthorized (?:drug|substance)'
+
+[[substance]]
+value = "alcohol"
+pattern = 'alcohol|\bbeer\b|liquor|\bwine\b|whiske?y|vodka|\bbac\b|breath test|breathalyzer|intoxicat'
+
+# The person's role, most specific first: a contract supervisor is a supervisor.
+[[role]]
+value = "licensed_operator"
+pattern = 'licensed (?:senior )?(?:reactor )?operator|senior reactor operator|reactor operator|\bsro\b|licensed (?:individual|employee|person)'
+
+[[role]]
+value = "supervisor"
+pattern = 'supervisor|foreman|superintendent|\bmanager\b'
+
+[[role]]
+value = "ffd_staff"
+pattern = 'ffd (?:program )?(?:staff|personnel|technician)|fitness[- ]for[- ]duty (?:program )?(?:staff|personnel|technician)|medical review officer|\bmro\b|collector|collection site'
+
+[[role]]
+value = "security"
+pattern = 'security (?:officer|guard|force)|armed responder'
+
+[[role]]
+value = "contractor"
+pattern = 'contractor|contract (?:employee|worker|individual)|supplemental|vendor'
+
+[[role]]
+value = "employee"
+pattern = 'employee|utility worker|plant worker|\bworker\b'
+
+# What happened: failures of the program before anything a person did, and a found substance before
+# the tests its discovery led to.
+[[kind]]
+value = "program_failure"
+pattern = 'blind (?:performance|quality|sample|specimen|test)|laborator|false (?:positive|negative)|program(?:matic)? (?:failure|issue|weakness|deficien)|\bhhs\b|testing facility|access (?:was )?(?:inappropriately|improperly) granted|missed 24-hour|failure to (?:test|perform)|testing pool|random (?:drug )?(?:testing |screening )?pool|vulnerability|collection error|collector failed|failed to (?:follow|implement|include)|left out of'
+
+[[kind]]
+value = "substance_found"
+pattern = '(?:found|discovered|located) (?:in|inside|within|on) (?:the )?(?:plant |site )?protected area|(?:found|discovered) inside the protected|(?:beer|alcohol|liquor|bottle|cans?|container|paraphernalia|substance|marijuana|drugs?|cocaine)\b[^.]{0,60}\b(?:was|were) (?:found|discovered)|contraband (?:substance|alcohol|drugs?|beer|liquor)|prohibited (?:item|material|substance)|discovery of|(?:can|bottle|flask) (?:of|containing)|consumed alcohol (?:with)?in the protected'
+
+[[kind]]
+value = "subversion"
+pattern = 'subver|adulterat|substitut|synthetic urine|dilute|tamper|falsif|tainted|attempt(?:ed)? to (?:cheat|defeat)'
+
+[[kind]]
+value = "refusal"
+pattern = 'refus|declined to|failed to (?:report|provide|appear)|did not report for'
+
+[[kind]]
+value = "positive"
+pattern = 'confirmed positive|positive (?:test|result|for|drug|alcohol|breath|urine|specimen|sample|fitness|ffd|random|pre-access|follow)|test(?:ed|s)? positive|(?:test|result|sample|specimen) (?:was|were) positive|breath|\bbac\b|blood alcohol|exceed|above the|failed (?:a|an|the|his|her|their)\b|detected|failure of (?:an? )?(?:alcohol|drug|ffd|fitness)|under the influence|(?:have|had) used'
+
+[[kind]]
+value = "violation"
+pattern = 'violat|failed to (?:disclose|comply)|did not (?:disclose|comply)|arrest|\bdui\b|\bdwi\b|non-?complian|self[- ]disclos|possession|admitted|legal action|disqualifying|failed to meet|unfit for|misuse|chemical dependency|self[- ]identified'
+
+# The test that found it.
+[[test]]
+value = "random"
+pattern = 'random'
+
+[[test]]
+value = "for_cause"
+pattern = 'for[- ]cause|reasonable suspicion|behavioral observation'
+
+[[test]]
+value = "post_event"
+pattern = 'post[- ](?:event|accident|incident)'
+
+[[test]]
+value = "follow_up"
+pattern = 'follow[- ]?up'
+
+[[test]]
+value = "pre_access"
+pattern = 'pre[- ]?access|pre[- ]?employment|pre[- ]?placement|in[- ]?processing|initial (?:access|badging)|badging'
+
+[[test]]
+value = "return_to_duty"
+pattern = 'return[- ]to[- ]duty'

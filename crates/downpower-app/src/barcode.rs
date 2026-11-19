@@ -420,7 +420,7 @@ fn Axis(barcode: Loaded, state: Memo<ViewState>) -> impl IntoView {
         Some(
             year_ticks(barcode.date(window.start), window.days, 14)
                 .into_iter()
-                .map(|(year, fraction)| view! { <span class="tick" style:left=format!("{:.3}%", fraction * 100.0)>{year}</span> })
+                .map(|(year, fraction)| view! { <span class="tick" class:end=crate::state::hangs_left(fraction) class:minor=crate::state::minor(year) style:left=format!("{:.3}%", fraction * 100.0)>{year}</span> })
                 .collect_view(),
         )
     };

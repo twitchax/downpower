@@ -403,10 +403,10 @@ mod unit {
     use super::*;
     use crate::events::{Facility, Licensee, Stamp, UnitInfo};
 
-    const UNITS: &str = "docket,name,nrc_names,en_site,en_unit,eia_plant,eia_generator,commercial,shutdown,restart,source
-05000528,Palo Verde 1,Palo Verde 1,Palo Verde,1,6008,1,,,,
-05000529,Palo Verde 2,Palo Verde 2,Palo Verde,2,6008,2,,,,
-05000237,Dresden 2,Dresden 2,Dresden,2,869,2,,,,
+    const UNITS: &str = "docket,name,nrc_names,en_site,en_unit,eia_plant,eia_generator,commercial,shutdown,restart,source,state
+05000528,Palo Verde 1,Palo Verde 1,Palo Verde,1,6008,1,,,,,AZ
+05000529,Palo Verde 2,Palo Verde 2,Palo Verde,2,6008,2,,,,,AZ
+05000237,Dresden 2,Dresden 2,Dresden,2,869,2,,,,,IL
 ";
     const HEADER: &str = "docket,kind,name,state,en_names,unit,license,source\n";
     const FACILITIES: &str = "05000010,power_reactor,Dresden 1,IL,Dresden,1,,test

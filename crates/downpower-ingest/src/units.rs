@@ -76,6 +76,8 @@ pub struct Unit {
     pub docket: Docket,
     /// The name the site shows.
     pub name: String,
+    /// The state the unit is in, as its Event Notifications give it (PRD-0005 T-005).
+    pub state: String,
     /// Every spelling the status pages have used for the unit.
     pub nrc_names: Vec<String>,
     /// Every spelling Event Notifications have used for the unit's site, matched ignoring case, and
@@ -118,6 +120,7 @@ impl Unit {
 struct CsvRow {
     docket: String,
     name: String,
+    state: String,
     nrc_names: String,
     en_site: String,
     en_unit: u8,
@@ -151,7 +154,7 @@ impl Units {
     ///
     /// # Errors
     ///
-    /// When a row doesn't parse, a docket is malformed, a docket, NRC name or EIA generator appears
+    /// When a row doesn't parse, a state isn't two capital letters, a docket is malformed, a docket, NRC name or EIA generator appears
     /// twice, a shutdown has no source, or a restart doesn't follow its shutdown.
     pub fn parse(csv: &str) -> Res<Self> {
         let mut units = Vec::new();
@@ -169,6 +172,7 @@ impl Units {
                 en_site: row.en_site.split(';').map(str::to_owned).collect(),
                 en_unit: row.en_unit,
                 name: row.name,
+                state: row.state,
                 eia: EiaGenerator {
                     plant: row.eia_plant,
                     generator: row.eia_generator,
@@ -178,6 +182,12 @@ impl Units {
                 restart: row.restart,
                 source: row.source,
             };
+            ensure!(
+                unit.state.len() == 2 && unit.state.bytes().all(|byte| byte.is_ascii_uppercase()),
+                "line {line}: {} has state {:?}",
+                unit.name,
+                unit.state
+            );
             ensure!(
                 (unit.commercial.is_none() && unit.shutdown.is_none()) || unit.source.is_some(),
                 "line {line}: {} has a date but no source",
@@ -245,7 +255,7 @@ mod unit {
 
     use super::*;
 
-    const HEADER: &str = "docket,name,nrc_names,en_site,en_unit,eia_plant,eia_generator,commercial,shutdown,restart,source\n";
+    const HEADER: &str = "docket,name,nrc_names,en_site,en_unit,eia_plant,eia_generator,commercial,shutdown,restart,source,state\n";
 
     fn error(rows: &str) -> String {
         format!("{:#}", Units::parse(&format!("{HEADER}{rows}")).unwrap_err())
@@ -257,7 +267,7 @@ mod unit {
 
     #[test]
     fn every_key_finds_its_unit() {
-        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,LaSalle;La Salle,1,6026,1,,,,\n")).unwrap();
+        let units = Units::parse(&format!("{HEADER}05000373,LaSalle 1,LaSalle 1;La Salle 1,LaSalle;La Salle,1,6026,1,,,,,IL\n")).unwrap();
         let unit = &units.all()[0];
 
         assert_eq!(unit.docket.as_str(), "05000373");
@@ -267,6 +277,7 @@ mod unit {
         assert_eq!(units.by_nrc_name("Zion 1"), None);
         assert_eq!(unit.en_site, ["LaSalle", "La Salle"]);
         assert_eq!(unit.en_unit, 1);
+        assert_eq!(unit.state, "IL");
     }
 
     #[test]
@@ -290,7 +301,7 @@ mod unit {
     #[test]
     fn service_ends_after_the_shutdown_day_and_resumes_at_restart() {
         let units = Units::parse(&format!(
-            "{HEADER}05000255,Palisades,Palisades,Palisades,1,1715,1,,2022-05-20,2025-10-01,test\n05000271,Vermont Yankee,Vermont Yankee,Vermont Yankee,1,3751,1,,2014-12-29,,test\n05200025,Vogtle 3,Vogtle 3,Vogtle,3,649,3,2023-07-31,,,test\n"
+            "{HEADER}05000255,Palisades,Palisades,Palisades,1,1715,1,,2022-05-20,2025-10-01,test,IL\n05000271,Vermont Yankee,Vermont Yankee,Vermont Yankee,1,3751,1,,2014-12-29,,test,IL\n05200025,Vogtle 3,Vogtle 3,Vogtle,3,649,3,2023-07-31,,,test,IL\n"
         ))
         .unwrap();
         let [palisades, vermont, vogtle] = units.all() else { panic!("three units") };
@@ -308,21 +319,22 @@ mod unit {
     #[test]
     fn the_table_is_checked() {
         let cases = [
-            ("5000373,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,\n", "not an NRC docket"),
-            ("07001113,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,\n", "not a reactor docket"),
-            ("05000373,A,A,A,1,1,1,,,,\n05000373,B,B,B,1,2,1,,,,\n", "docket 05000373 appears twice"),
-            ("05000373,A,A,A,1,1,1,,,,\n05000374,B,A,B,1,2,1,,,,\n", "NRC name \"A\": appears twice"),
-            ("05000373,A,A,A,1,1,1,,,,\n05000374,B,B,B,1,1,1,,,,\n", "EIA generator"),
-            ("05000373,A,A; B,A,1,1,1,,,,\n", "blank or padded"),
-            ("05000373,A,A,A; B,1,1,1,,,,\n", "EN site \" B\" is blank or padded"),
-            ("05000373,A,A,,1,1,1,,,,\n", "EN site \"\" is blank or padded"),
-            ("05000373,A,A,A,,1,1,,,,\n", "line 2"),
-            ("05000373,A,A,A,1,1,1,,2020-01-01,,\n", "has a date but no source"),
-            ("05000373,A,A,A,1,1,1,2020-01-01,,,\n", "has a date but no source"),
-            ("05000373,A,A,A,1,1,1,2021-01-01,2020-01-01,,x\n", "shuts down before commercial operation"),
-            ("05000373,A,A,A,1,1,1,,2020-01-01,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,A,1,1,1,,,2019-01-01,x\n", "restarts without an earlier shutdown"),
-            ("05000373,A,A,A,1,plant,1,,,,\n", "line 2"),
+            ("5000373,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,,IL\n", "not an NRC docket"),
+            ("07001113,LaSalle 1,LaSalle 1,LaSalle,1,6026,1,,,,,IL\n", "not a reactor docket"),
+            ("05000373,A,A,A,1,1,1,,,,,IL\n05000373,B,B,B,1,2,1,,,,,IL\n", "docket 05000373 appears twice"),
+            ("05000373,A,A,A,1,1,1,,,,,IL\n05000374,B,A,B,1,2,1,,,,,IL\n", "NRC name \"A\": appears twice"),
+            ("05000373,A,A,A,1,1,1,,,,,IL\n05000374,B,B,B,1,1,1,,,,,IL\n", "EIA generator"),
+            ("05000373,A,A; B,A,1,1,1,,,,,IL\n", "blank or padded"),
+            ("05000373,A,A,A; B,1,1,1,,,,,IL\n", "EN site \" B\" is blank or padded"),
+            ("05000373,A,A,,1,1,1,,,,,IL\n", "EN site \"\" is blank or padded"),
+            ("05000373,A,A,A,,1,1,,,,,IL\n", "line 2"),
+            ("05000373,A,A,A,1,1,1,,2020-01-01,,,IL\n", "has a date but no source"),
+            ("05000373,A,A,A,1,1,1,2020-01-01,,,,IL\n", "has a date but no source"),
+            ("05000373,A,A,A,1,1,1,2021-01-01,2020-01-01,,x,IL\n", "shuts down before commercial operation"),
+            ("05000373,A,A,A,1,1,1,,2020-01-01,2019-01-01,x,IL\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,A,1,1,1,,,2019-01-01,x,IL\n", "restarts without an earlier shutdown"),
+            ("05000373,A,A,A,1,plant,1,,,,,IL\n", "line 2"),
+            ("05000373,A,A,A,1,1,1,,,,,Ill\n", "state \"Ill\""),
         ];
         for (rows, expected) in cases {
             let error = error(rows);

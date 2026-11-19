@@ -9,6 +9,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+serde_json.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 downpower-ingest.workspace = true

@@ -7523,6 +7523,7 @@ dependencies = [
  "clap",
  "dbase",
  "downpower-ingest",
+ "serde_json",
  "zip",
 ]
 

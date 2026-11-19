@@ -234,8 +234,15 @@ fn ledger_a_current_record_in_an_older_shape_keeps_its_table_serving_until_a_reb
     });
 }
 
-/// Everything a build serves: its rows, both barcodes' tags, both monthly series and the trends.
-type Served = (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>, downpower_core::trends::Trends);
+/// Everything a build serves: its rows, both barcodes' tags, both monthly series, the trends and
+/// the FFD series.
+type Served = (
+    Vec<UnitDay>,
+    Vec<String>,
+    Vec<downpower_core::series::Monthly>,
+    downpower_core::trends::Trends,
+    downpower_core::ffd::Series,
+);
 
 async fn served(store: &db::Store, table: &str) -> Served {
     let mut etags = Vec::new();
@@ -244,7 +251,13 @@ async fn served(store: &db::Store, table: &str) -> Served {
         etags.push(stored::barcode(store, table, layer).await.unwrap().unwrap().etag);
         series.push(stored::monthly(store, table, layer).await.unwrap().unwrap());
     }
-    (rows(store, table).await, etags, series, stored::trends(store, table).await.unwrap().unwrap())
+    (
+        rows(store, table).await,
+        etags,
+        series,
+        stored::trends(store, table).await.unwrap().unwrap(),
+        stored::ffd(store, table).await.unwrap().unwrap(),
+    )
 }
 
 /// What a full rebuild serves over a fresh store holding the fixture plus `pages`.

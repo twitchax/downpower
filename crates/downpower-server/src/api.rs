@@ -24,6 +24,7 @@ use downpower_core::explorer::{EventsState, PAGE};
 use downpower_core::markers::Markers;
 use downpower_ingest::events::Scram;
 use downpower_ingest::facilities::Identity;
+use downpower_ingest::ffd::Ffd;
 use downpower_ingest::nrc::{self, Report};
 use downpower_ingest::units::Units;
 
@@ -67,6 +68,7 @@ pub fn router(store: Store) -> Router {
         .route("/api/lost/{layer}", get(lost))
         .route("/api/status", get(status))
         .route("/api/trends", get(trends))
+        .route("/api/ffd", get(ffd))
         .route("/api/unit-day/{docket}/{date}", get(unit_day))
         .with_state(api)
 }
@@ -153,7 +155,7 @@ async fn explorer(api: &Api) -> anyhow::Result<Option<Arc<Explorer>>> {
     if let Some(explorer) = cached {
         return Ok(Some(explorer));
     }
-    let explorer = Arc::new(Explorer::new(key, ledger::events(&api.store, &table).await?, &Units::catalog()?));
+    let explorer = Arc::new(Explorer::new(key, ledger::events(&api.store, &table).await?, &Units::catalog()?, &Ffd::catalog()?));
     *api.explorer.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&explorer));
     Ok(Some(explorer))
 }
@@ -354,6 +356,20 @@ async fn trends(State(api): State<Api>) -> Response {
     };
     match ledger::trends(&api.store, &table).await {
         Ok(Some(trends)) => Json(trends).into_response(),
+        Ok(None) => building(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// The FFD series of the current build, as JSON (PRD-0005 T-006).
+async fn ffd(State(api): State<Api>) -> Response {
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    match ledger::ffd(&api.store, &table).await {
+        Ok(Some(series)) => Json(series).into_response(),
         Ok(None) => building(),
         Err(error) => failed(&error),
     }

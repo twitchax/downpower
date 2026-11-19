@@ -115,6 +115,8 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
   font-size: var(--text-xs);
   line-height: 18px;
 }
+// A label near the right edge hangs left of its tick, so it never runs past the plot.
+.tick.end { transform: translateX(-100%); padding-left: 0; padding-right: var(--s-1); border-left: 0; border-right: 1px solid var(--line); }
 .swatches { display: none; }
 [data-paint="track"] { background: var(--bg-2); }
 [data-paint="hidden"] { background: var(--text-3); }
@@ -198,9 +200,35 @@ rect.kind-manual { fill: var(--series-2); }
 rect.spread { fill: var(--series-1); }
 .median-key { background: var(--text-1); }
 path.median { fill: none; stroke: var(--text-1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
-.legend-key { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-2); font-size: var(--text-xs); }
+.legend-key { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-2); font-size: var(--text-xs); white-space: nowrap; }
 .table-scroll { overflow-x: auto; }
 // Bars start at the plot's left edge, so the scale moves into a gutter of its own beside them.
 .bars .area-plot, .bars .axis { margin-left: 40px; }
 .bars .y-tick { left: -40px; width: 34px; text-align: right; transform: translateY(-50%); }
-.bars figcaption { flex-wrap: wrap; }
+.bars figcaption, .bars figcaption .row { flex-wrap: wrap; }
+
+// The FFD page (PRD-0005 T-007): drug-related, alcohol and adult use take the design language's
+// three chart series, one meaning each across the page; context (events naming neither, every
+// other FFD event, medical-only states) recedes to the metadata gray; the 2008 rewrite is a dashed
+// rule in the secondary text color, since the signal hues mean state.
+.ffd-drug { background: var(--series-1); }
+rect.ffd-drug { fill: var(--series-1); }
+.ffd-alcohol { background: var(--series-2); }
+rect.ffd-alcohol { fill: var(--series-2); }
+.ffd-other, .ffd-rest, .legal-medical { background: var(--text-3); }
+rect.ffd-other, rect.ffd-rest, rect.legal-medical { fill: var(--text-3); }
+.legal-adult { background: var(--series-3); }
+rect.legal-adult { fill: var(--series-3); }
+path.rule { fill: none; stroke: var(--text-2); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.rule-key { height: 0; border-top: 1px dashed var(--text-2); background: none; }
+.breakdowns { display: flex; flex-wrap: wrap; gap: var(--s-8); align-items: flex-start; }
+.caveats h2 { margin: 0; }
+.row.wrap { flex-wrap: wrap; }
+
+// Phone widths: the filter rows wrap rather than widen the page, and the page's gutter narrows.
+.filters .row { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  main { padding: var(--s-4); }
+  // An axis thinned for a wide plot crowds a phone's: only the five-year marks show.
+  .axis .tick.minor { display: none; }
+}

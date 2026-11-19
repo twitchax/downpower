@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use downpower_core::explorer::{Class, EventCounts, EventRow, EventsPage, EventsState, Group};
 use downpower_ingest::events::{EmergencyClass, Event, Scram, Site};
 use downpower_ingest::facilities::Identity;
+use downpower_ingest::ffd::Ffd;
 use downpower_ingest::units::Units;
 
 use crate::ledger::StoredEvent;
@@ -25,6 +26,8 @@ struct Entry {
     names: String,
     /// The title, text, names and persons, lowercased.
     text: String,
+    /// A fitness-for-duty event, as `catalog/ffd.toml` identifies one.
+    ffd: bool,
 }
 
 /// Every event of one build, newest first.
@@ -49,7 +52,8 @@ const fn class(class: EmergencyClass) -> Class {
     }
 }
 
-fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &str>) -> Entry {
+fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &str>, ffd: &Ffd) -> Entry {
+    let is_ffd = ffd.identify(&event).is_some();
     let dockets: Vec<String> = match identity {
         Some(Identity::Reactor { dockets }) => dockets.iter().map(|docket| docket.as_str().to_owned()).collect(),
         Some(Identity::Facility { docket, .. }) => vec![docket.as_str().to_owned()],
@@ -93,15 +97,16 @@ fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &
         dockets,
         names,
         text,
+        ffd: is_ffd,
     }
 }
 
 impl Explorer {
     /// Indexes `events` under `key`, which names the build they came from.
     #[must_use]
-    pub fn new(key: impl Into<String>, events: impl IntoIterator<Item = StoredEvent>, units: &Units) -> Self {
+    pub fn new(key: impl Into<String>, events: impl IntoIterator<Item = StoredEvent>, units: &Units, ffd: &Ffd) -> Self {
         let unit_names: HashMap<&str, &str> = units.all().iter().map(|unit| (unit.docket.as_str(), unit.name.as_str())).collect();
-        let mut entries: Vec<Entry> = events.into_iter().map(|stored| entry(stored.event, stored.identity.as_ref(), &unit_names)).collect();
+        let mut entries: Vec<Entry> = events.into_iter().map(|stored| entry(stored.event, stored.identity.as_ref(), &unit_names, ffd)).collect();
         entries.sort_by_key(|entry| std::cmp::Reverse((entry.row.date, entry.row.number)));
         Self { key: key.into(), entries }
     }
@@ -128,6 +133,7 @@ impl Explorer {
                 && cfr.as_deref().is_none_or(|cfr| entry.sections.iter().any(|section| section.starts_with(cfr)))
                 && state.class.is_none_or(|class| entry.class == Some(class))
                 && (!state.scram || row.scram)
+                && (!state.ffd || entry.ffd)
                 && words.iter().all(|word| entry.text.contains(word.as_str()))
         })
     }

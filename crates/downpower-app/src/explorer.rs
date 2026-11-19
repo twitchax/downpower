@@ -114,7 +114,7 @@ pub fn EventsExplorer() -> impl IntoView {
     }
 }
 
-/// The filter row: dates, place and code, emergency class, scram, words; then the category groups,
+/// The filter row: dates, place and code, emergency class, scram, fitness for duty, words; then the category groups,
 /// which double as the chart's legend.
 #[component]
 fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
@@ -193,6 +193,22 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
             </button>
         }
     };
+    let ffd = {
+        let go = go.clone();
+        view! {
+            <button
+                class="btn"
+                aria-pressed=move || state.get().ffd.to_string()
+                title="Only fitness-for-duty events: those coded 10 CFR 26.73, 26.719 or 26.417(b)(1), plus a reviewed list"
+                on:click=move |_| {
+                    let current = state.get_untracked();
+                    go(EventsState { ffd: !current.ffd, ..current }.first_page());
+                }
+            >
+                "Fitness for duty"
+            </button>
+        }
+    };
     let unit = {
         let go = go.clone();
         move || {
@@ -222,6 +238,7 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
             {cfr}
             {class}
             {scram}
+            {ffd}
             {unit}
             {clear}
         </div>
@@ -312,7 +329,7 @@ fn CountsChart(state: Memo<EventsState>) -> impl IntoView {
                 .get()?
                 .years(14)
                 .into_iter()
-                .map(|(year, fraction)| view! { <span class="tick" style:left=format!("{:.3}%", fraction * 100.0)>{year}</span> })
+                .map(|(year, fraction)| view! { <span class="tick" class:end=crate::state::hangs_left(fraction) class:minor=crate::state::minor(year) style:left=format!("{:.3}%", fraction * 100.0)>{year}</span> })
                 .collect_view(),
         )
     };

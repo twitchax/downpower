@@ -22,6 +22,7 @@ use downpower_ingest::units::Units;
 mod capacity;
 mod crosscheck;
 mod events;
+mod ffd;
 mod oracle;
 mod scrams;
 
@@ -89,6 +90,16 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         examples: usize,
     },
+    /// Rewrites catalog/ffd.tsv: every fitness-for-duty event in the raw store (PRD-0005 T-001), by
+    /// section or catalog/ffd.toml's lists. Review the diff.
+    Ffd {
+        /// Also print the events nothing makes FFD whose text says fitness for duty.
+        #[arg(long)]
+        candidates: bool,
+        /// Write each FFD event's title and text to this file, for reviewing the phrase rules.
+        #[arg(long)]
+        texts: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -104,6 +115,7 @@ fn main() -> anyhow::Result<()> {
         Command::Events => events::run(&cli.data_dir),
         Command::Oracle => oracle::run(&cli.data_dir),
         Command::Scrams { examples } => scrams::run(&cli.data_dir, examples),
+        Command::Ffd { candidates, texts } => ffd::run(&cli.data_dir, candidates, texts.as_deref()),
     }
 }
 

@@ -118,6 +118,25 @@ fn e2e_trends_serve_renders_the_page_and_its_data() {
     });
 }
 
+#[test]
+fn e2e_ffd_serve_renders_the_page_and_its_series() {
+    let tmp = tempfile::tempdir().unwrap();
+    raw_store(tmp.path(), None);
+    let (_server, base) = serve(tmp.path());
+
+    block_on(async move {
+        let client = reqwest::Client::new();
+        let series: downpower_core::ffd::Series = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/ffd"), Duration::from_secs(60)).await).unwrap();
+        assert_eq!(series.laws.len(), 51);
+        let page = String::from_utf8(get_ok(&client, &format!("{base}/ffd"), Duration::from_secs(5)).await).unwrap();
+        assert!(page.contains("<h1>Fitness for duty</h1>"), "{page}");
+        for part in ["FFD events by year", "Legal cannabis", "26.719(b)", "/events?ffd=1"] {
+            assert!(page.contains(part), "{part}");
+        }
+        assert!(page.contains(r#"href="/ffd""#), "the nav links it");
+    });
+}
+
 /// The 2025-07-15 status page with Browns Ferry 3 down and citing EN 45290, its 2009 scram.
 fn citing_page() -> Vec<u8> {
     let page = String::from_utf8(fixture("status/2025-07-15.html")).unwrap();

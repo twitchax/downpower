@@ -13,9 +13,19 @@ why the version moved the way it did.
   year and by month of the year, refueling outage length by year, and Event Notification scrams per
   100 operating unit-years, each following the home page's range, layer and families, with a table
   view and the partial year marked. `/api/trends` serves its data.
+- A fitness-for-duty page (`/ffd`, PRD-0005): the 913 Event Notifications coded 10 CFR 26.73,
+  26.719 or 26.417(b)(1), tagged by substance, role, what happened and the test; counts by year
+  with Part 26's 2008 rewrite marked; drug-related events per 100 operating unit-years beside the
+  share of the fleet in states where cannabis was legal; a state table; and the caveats.
+  `/api/ffd` serves the series, `docs/BREAKS.md` lists every break behind it, and the events
+  explorer gains a fitness-for-duty filter (`ffd=1`).
+- `catalog/cannabis.csv`, each state's adult-use, sales and medical dates with sources, and a
+  `state` column in `catalog/units.csv`.
 
 ### Fixed
 
+- At phone widths the filter rows wrap and the page's gutter narrows, so no page is wider than the
+  screen.
 - The stacked area's table view rides in the URL as `table=1`, so a reload or a shared link keeps
   it open.
 
