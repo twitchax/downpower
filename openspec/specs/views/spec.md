@@ -14,11 +14,11 @@ The site SHALL render the home page at `/`, the events explorer at `/events`, on
 - **AND** `/` links `/favicon.svg`, which the site serves
 
 ### Requirement: URL state
-The home page's views SHALL share one state kept in the URL query: `from` and `to` (`YYYY-MM-DD`, running to the data's edge when absent), `layer` (`attributed`, the default, or `observed`), and `families`, the slugs shown in color, comma-separated in stack order (all when absent). A parameter at its default SHALL be left out, so the default state has an empty query. (PRD-0002 T-013)
+The home page's views SHALL share one state kept in the URL query: `from` and `to` (`YYYY-MM-DD`, running to the data's edge when absent), `layer` (`attributed`, the default, or `observed`), `families`, the slugs shown in color, comma-separated in stack order (all when absent), `events=1` for the barcode's markers and `table=1` for the stacked area's table. A parameter at its default SHALL be left out, so the default state has an empty query. (PRD-0002 T-013, PRD-0004 T-006, 09d28a3)
 
 #### Scenario: A permalink
-- **WHEN** the state is 2010-01-01 to 2020-12-31, the observed layer, and only Forced and Grid
-- **THEN** its query is `?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced`
+- **WHEN** the state is 2010-01-01 to 2020-12-31, the observed layer, only Forced and Grid, markers on and the table shown
+- **THEN** its query is `?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced&events=1&table=1`
 - **AND** that query parses back to the same state
 
 ### Requirement: Mangled links still open
@@ -108,7 +108,7 @@ Beneath the barcode the home page SHALL show the reported power reduction in TWh
 - **THEN** the scale runs 0, 2, 4, 6, 8
 
 ### Requirement: Crosshair readout and table
-Hovering the stacked area SHALL show a crosshair and a readout of that month: each visible family's TWh and their total. A `Table` toggle SHALL list every family's TWh and share over the range, hidden families included, with an `All` row. (PRD-0002 T-014)
+Hovering the stacked area SHALL show a crosshair and a readout of that month: each visible family's TWh and their total. A `Table` toggle, kept in the URL as `table=1`, SHALL list every family's TWh and share over the range, hidden families included, with an `All` row. (PRD-0002 T-014, 09d28a3)
 
 #### Scenario: Totals over the range
 - **WHEN** the series holds 2 TWh of Refueling in November 2023 and 1 TWh in February 2024

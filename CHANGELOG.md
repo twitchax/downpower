@@ -7,6 +7,11 @@ why the version moved the way it did.
 
 ## [Unreleased]
 
+### Fixed
+
+- The stacked area's table view rides in the URL as `table=1`, so a reload or a shared link keeps
+  it open.
+
 ## [0.1.0] - 2026-11-18
 
 The first tagged release keeps the scaffold's version, since nothing earlier was ever tagged or
