@@ -7,6 +7,11 @@ why the version moved the way it did.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-18
+
+The first tagged release keeps the scaffold's version, since nothing earlier was ever tagged or
+published, and covers everything deployed at downpower.twitchax.com through the events explorer.
+
 ### Added
 
 - Initial scaffold.
@@ -46,3 +51,6 @@ why the version moved the way it did.
 - The tag table gives `scram` only to a reactor trip. Scram time tests, tripped pumps, lines and
   breakers, trip-system tests and parts, and turbine or generator trips that tripped no reactor
   take their own causes.
+
+[Unreleased]: https://github.com/twitchax/downpower/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/twitchax/downpower/releases/tag/v0.1.0
