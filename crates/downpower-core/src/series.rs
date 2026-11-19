@@ -14,8 +14,19 @@ pub fn month_of(date: NaiveDate) -> NaiveDate {
 }
 
 /// Whole months from `from`'s month to `to`'s.
-fn months_between(from: NaiveDate, to: NaiveDate) -> i64 {
+pub(crate) fn months_between(from: NaiveDate, to: NaiveDate) -> i64 {
     i64::from(to.year() - from.year()) * 12 + i64::from(to.month()) - i64::from(from.month())
+}
+
+/// Of `count` months from `first`, those whose first day falls from `from`'s month to `to`'s, as
+/// indexes: every month when the range is inverted.
+#[must_use]
+pub fn month_range(first: Option<NaiveDate>, count: usize, from: Option<NaiveDate>, to: Option<NaiveDate>) -> std::ops::Range<usize> {
+    let Some(first) = first else { return 0..0 };
+    let clamp = |date: NaiveDate| usize::try_from(months_between(first, date).max(0)).unwrap_or(0).min(count);
+    let start = from.map_or(0, clamp);
+    let end = to.map_or(count, |to| clamp(to).saturating_add(1).min(count));
+    if end <= start { 0..count } else { start..end }
 }
 
 /// Reported power reduction in kWh, per month and family (Decision 22's label: never "heat loss").
@@ -52,11 +63,7 @@ impl Monthly {
     /// The months whose first day falls from `from`'s month to `to`'s, as indexes.
     #[must_use]
     pub fn range(&self, from: Option<NaiveDate>, to: Option<NaiveDate>) -> std::ops::Range<usize> {
-        let Some(first) = self.first else { return 0..0 };
-        let clamp = |date: NaiveDate| usize::try_from(months_between(first, date).max(0)).unwrap_or(0).min(self.lost_kwh.len());
-        let start = from.map_or(0, clamp);
-        let end = to.map_or(self.lost_kwh.len(), |to| clamp(to).saturating_add(1).min(self.lost_kwh.len()));
-        if end <= start { 0..self.lost_kwh.len() } else { start..end }
+        month_range(self.first, self.lost_kwh.len(), from, to)
     }
 
     /// Checks the shape a client relies on.

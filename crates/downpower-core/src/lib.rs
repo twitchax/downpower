@@ -8,6 +8,7 @@ pub mod family;
 pub mod markers;
 pub mod scrams;
 pub mod series;
+pub mod trends;
 
 pub use family::{Families, Family};
 

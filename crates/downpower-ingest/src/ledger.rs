@@ -32,7 +32,8 @@ use crate::{Res, Void};
 /// 5: events carry their identity, and reactor events a row per unit (T-004). 6: `See EN#` days
 /// resolve through `catalog/xref.toml` (T-005). 7: an event with a blank Last Update Date parses.
 /// 8: builds record the internal scram check (T-007). 9: the check reads a citation inside any tag.
-pub const LEDGER_VERSION: u32 = 9;
+/// 10: builds store the fleet trends (PRD-0006 T-003).
+pub const LEDGER_VERSION: u32 = 10;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]

@@ -54,6 +54,7 @@ fn api_answers_503_until_a_build_is_current() {
         let router = router(options(), db::open(tmp.path()).await.unwrap());
         assert_eq!(get(&router, "/api/barcode/attributed", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(get(&router, "/api/unit-day/05000323/2025-07-15", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(get(&router, "/api/trends", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
     });
 }
 
@@ -290,5 +291,25 @@ fn api_lost_serves_the_monthly_series() {
         let total: u64 = monthly.lost_kwh.iter().flatten().sum();
         assert_eq!(total, build.summary.lost_kwh, "the months add up to the build's lost energy");
         assert_eq!(get(&router, "/api/lost/bogus", &[]).await.status(), StatusCode::NOT_FOUND);
+    });
+}
+
+#[test]
+fn uat_trends_api_serves_the_trends_beside_the_monthly_series() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let build = ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+        let router = router(options(), store);
+
+        let response = get(&router, "/api/trends", &[]).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let trends: downpower_core::trends::Trends = serde_json::from_slice(&body(response).await).unwrap();
+        let monthly: downpower_core::series::Monthly = serde_json::from_slice(&body(get(&router, "/api/lost/attributed", &[]).await).await).unwrap();
+        assert_eq!((trends.first, trends.months.len()), (monthly.first, monthly.lost_kwh.len()), "the months the stacked area has");
+        let days: u64 = trends.months.iter().map(|month| u64::from(month.unit_days)).sum();
+        assert_eq!(days, build.summary.days, "a unit-day per row");
+        assert_eq!(trends.last, build.summary.last);
     });
 }

@@ -184,3 +184,23 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .strip svg { display: block; width: 100%; height: 48px; background: var(--bg-0); }
 .strip rect { shape-rendering: crispEdges; }
 .strip a { color: var(--text-3); }
+
+// The trends page (PRD-0006): bars and spreads in the stacked area's stretched viewBox, with a
+// surface-colored seam between stacked segments and the hovered column lit behind its marks.
+rect.hover { fill: var(--bg-2); }
+rect.bar { stroke: var(--bg-0); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+rect.partial, path.partial { opacity: 0.45; }
+.kind-automatic { background: var(--series-1); }
+rect.kind-automatic { fill: var(--series-1); }
+.kind-manual { background: var(--series-2); }
+rect.kind-manual { fill: var(--series-2); }
+.spread-key { background: var(--series-1); }
+rect.spread { fill: var(--series-1); }
+.median-key { background: var(--text-1); }
+path.median { fill: none; stroke: var(--text-1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.legend-key { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-2); font-size: var(--text-xs); }
+.table-scroll { overflow-x: auto; }
+// Bars start at the plot's left edge, so the scale moves into a gutter of its own beside them.
+.bars .area-plot, .bars .axis { margin-left: 40px; }
+.bars .y-tick { left: -40px; width: 34px; text-align: right; transform: translateY(-50%); }
+.bars figcaption { flex-wrap: wrap; }

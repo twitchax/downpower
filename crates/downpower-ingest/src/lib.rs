@@ -16,6 +16,7 @@ pub mod scram_dataset;
 pub mod scrams;
 pub mod status;
 pub mod tags;
+pub mod trends;
 pub mod units;
 pub mod xref;
 

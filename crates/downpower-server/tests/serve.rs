@@ -99,6 +99,25 @@ fn e2e_ledger_serve_rebuilds_then_serves_every_view() {
     });
 }
 
+#[test]
+fn e2e_trends_serve_renders_the_page_and_its_data() {
+    let tmp = tempfile::tempdir().unwrap();
+    raw_store(tmp.path(), None);
+    let (_server, base) = serve(tmp.path());
+
+    block_on(async move {
+        let client = reqwest::Client::new();
+        let trends: downpower_core::trends::Trends = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/trends"), Duration::from_secs(60)).await).unwrap();
+        assert_eq!(trends.first.map(|first| first.to_string()), Some("2025-07-01".to_owned()));
+        let page = String::from_utf8(get_ok(&client, &format!("{base}/trends"), Duration::from_secs(5)).await).unwrap();
+        assert!(page.contains("<h1>Fleet trends</h1>"), "{page}");
+        for chart in ["Reported power reduction by year", "By month of the year", "Refueling outage length", "Scrams"] {
+            assert!(page.contains(chart), "{chart}");
+        }
+        assert!(page.contains(r#"href="/trends""#), "the nav links it");
+    });
+}
+
 /// The 2025-07-15 status page with Browns Ferry 3 down and citing EN 45290, its 2009 scram.
 fn citing_page() -> Vec<u8> {
     let page = String::from_utf8(fixture("status/2025-07-15.html")).unwrap();

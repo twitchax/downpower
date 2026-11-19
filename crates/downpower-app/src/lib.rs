@@ -7,6 +7,7 @@
 
 pub mod area;
 pub mod barcode;
+pub mod bars;
 #[cfg(feature = "hydrate")]
 mod browser;
 pub mod event;
@@ -18,6 +19,7 @@ pub mod paint;
 pub mod state;
 pub mod status;
 mod tooltip;
+pub mod trends;
 
 use leptos::prelude::*;
 use leptos_meta::{HashedStylesheet, MetaTags, Title, provide_meta_context};
@@ -35,6 +37,7 @@ pub use crate::icon::Icon;
 use crate::lost::StackedArea;
 use crate::state::ViewState;
 use crate::status::StatusPage;
+use crate::trends::TrendsPage;
 
 /// The HTML document the server renders around [`App`].
 #[must_use]
@@ -75,6 +78,7 @@ pub fn App() -> impl IntoView {
             <main>
                 <nav class="nav">
                     <a href="/">"downpower"</a>
+                    <a href="/trends">"trends"</a>
                     <a href="/events">"events"</a>
                     <a href="/status">"status"</a>
                 </nav>
@@ -82,6 +86,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=HomePage />
                     <Route path=StaticSegment("events") view=EventsExplorer />
                     <Route path=(StaticSegment("events"), ParamSegment("number")) view=EventPage />
+                    <Route path=StaticSegment("trends") view=TrendsPage />
                     <Route path=StaticSegment("status") view=StatusPage />
                 </Routes>
             </main>

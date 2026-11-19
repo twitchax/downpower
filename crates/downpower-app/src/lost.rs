@@ -66,14 +66,14 @@ fn twh(value: f64) -> String {
 }
 
 #[cfg(feature = "hydrate")]
-async fn load(layer: Layer) -> Result<Arc<Monthly>, String> {
+pub(crate) async fn load(layer: Layer) -> Result<Arc<Monthly>, String> {
     let bytes = crate::browser::fetch(&format!("/api/lost/{}", layer.slug())).await?.ok_or("no series yet")?;
     serde_json::from_slice(&bytes).map(Arc::new).map_err(|error| error.to_string())
 }
 
 #[cfg(not(feature = "hydrate"))]
 #[allow(clippy::unused_async, reason = "the browser's version awaits")]
-async fn load(_layer: Layer) -> Result<Arc<Monthly>, String> {
+pub(crate) async fn load(_layer: Layer) -> Result<Arc<Monthly>, String> {
     Err("the series loads in the browser".to_owned())
 }
 

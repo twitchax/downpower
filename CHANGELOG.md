@@ -7,6 +7,13 @@ why the version moved the way it did.
 
 ## [Unreleased]
 
+### Added
+
+- A fleet trends page (`/trends`, PRD-0006): reported power reduction as a share of net capacity by
+  year and by month of the year, refueling outage length by year, and Event Notification scrams per
+  100 operating unit-years, each following the home page's range, layer and families, with a table
+  view and the partial year marked. `/api/trends` serves its data.
+
 ### Fixed
 
 - The stacked area's table view rides in the URL as `table=1`, so a reload or a shared link keeps

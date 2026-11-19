@@ -234,19 +234,21 @@ fn ledger_a_current_record_in_an_older_shape_keeps_its_table_serving_until_a_reb
     });
 }
 
-/// Everything a build serves: its rows, both barcodes' tags and both monthly series.
-async fn served(store: &db::Store, table: &str) -> (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>) {
+/// Everything a build serves: its rows, both barcodes' tags, both monthly series and the trends.
+type Served = (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>, downpower_core::trends::Trends);
+
+async fn served(store: &db::Store, table: &str) -> Served {
     let mut etags = Vec::new();
     let mut series = Vec::new();
     for layer in downpower_core::barcode::Layer::ALL {
         etags.push(stored::barcode(store, table, layer).await.unwrap().unwrap().etag);
         series.push(stored::monthly(store, table, layer).await.unwrap().unwrap());
     }
-    (rows(store, table).await, etags, series)
+    (rows(store, table).await, etags, series, stored::trends(store, table).await.unwrap().unwrap())
 }
 
 /// What a full rebuild serves over a fresh store holding the fixture plus `pages`.
-async fn rebuilt_from_scratch(pages: &[(&str, Option<&[u8]>)]) -> (Vec<UnitDay>, Vec<String>, Vec<downpower_core::series::Monthly>) {
+async fn rebuilt_from_scratch(pages: &[(&str, Option<&[u8]>)]) -> Served {
     let tmp = tempfile::tempdir().unwrap();
     let raw = raw_store(tmp.path(), None);
     for (date, page) in pages {

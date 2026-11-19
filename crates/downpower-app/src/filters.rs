@@ -5,7 +5,7 @@
 use chrono::{Datelike as _, NaiveDate};
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
-use leptos_router::hooks::use_navigate;
+use leptos_router::hooks::{use_location, use_navigate};
 
 use downpower_core::barcode::Layer;
 use downpower_core::{Families, Family};
@@ -25,12 +25,13 @@ fn years_back(today: NaiveDate, years: i32) -> NaiveDate {
     today.with_year(today.year() - years).or_else(|| NaiveDate::from_ymd_opt(today.year() - years, 2, 28)).unwrap_or(today)
 }
 
-/// Writes a state to the URL, replacing the current history entry.
+/// Writes a state to the current page's URL, replacing the current history entry.
 pub(crate) fn navigator() -> impl Fn(ViewState) + Clone {
     let navigate = use_navigate();
+    let path = use_location().pathname;
     move |next: ViewState| {
         navigate(
-            &format!("/{}", next.to_query()),
+            &format!("{}{}", path.get_untracked(), next.to_query()),
             NavigateOptions {
                 replace: true,
                 scroll: false,
@@ -40,14 +41,15 @@ pub(crate) fn navigator() -> impl Fn(ViewState) + Clone {
     }
 }
 
+/// The filters; `markers` offers the barcode's event markers in the legend.
 #[component]
-pub fn Filters(state: Memo<ViewState>) -> impl IntoView {
+pub fn Filters(state: Memo<ViewState>, #[prop(default = true)] markers: bool) -> impl IntoView {
     view! {
         <div class="filters">
             <Layers state />
             <Range state />
         </div>
-        <Legend state />
+        <Legend state markers />
     }
 }
 
@@ -122,7 +124,7 @@ fn Range(state: Memo<ViewState>) -> impl IntoView {
 
 /// The family legend, each entry a toggle: a hidden family recedes to gray in every chart.
 #[component]
-fn Legend(state: Memo<ViewState>) -> impl IntoView {
+fn Legend(state: Memo<ViewState>, markers: bool) -> impl IntoView {
     let go = navigator();
     let items = Family::STACK
         .map(|family| {
@@ -142,7 +144,7 @@ fn Legend(state: Memo<ViewState>) -> impl IntoView {
             }
         })
         .collect_view();
-    let markers = {
+    let markers = markers.then(|| {
         let go = go.clone();
         view! {
             <button
@@ -158,7 +160,7 @@ fn Legend(state: Memo<ViewState>) -> impl IntoView {
                 "Events"
             </button>
         }
-    };
+    });
     let reset = move || {
         let go = go.clone();
         (state.get().families != Families::ALL).then(|| {

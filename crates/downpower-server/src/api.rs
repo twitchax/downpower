@@ -66,6 +66,7 @@ pub fn router(store: Store) -> Router {
         .route("/api/markers", get(markers))
         .route("/api/lost/{layer}", get(lost))
         .route("/api/status", get(status))
+        .route("/api/trends", get(trends))
         .route("/api/unit-day/{docket}/{date}", get(unit_day))
         .with_state(api)
 }
@@ -339,6 +340,20 @@ async fn lost(State(api): State<Api>, Path(layer): Path<String>) -> Response {
     };
     match ledger::monthly(&api.store, &table, layer).await {
         Ok(Some(monthly)) => Json(monthly).into_response(),
+        Ok(None) => building(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// The fleet trends of the current build, as JSON (PRD-0006).
+async fn trends(State(api): State<Api>) -> Response {
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    match ledger::trends(&api.store, &table).await {
+        Ok(Some(trends)) => Json(trends).into_response(),
         Ok(None) => building(),
         Err(error) => failed(&error),
     }
