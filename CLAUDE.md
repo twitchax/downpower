@@ -43,6 +43,9 @@ cargo make codecov   # coverage.lcov
 - **Tests:** unit tests in-module, integration and e2e in `tests/` (one subsystem per file, `e2e_*`
   names for tests that spawn the binary), fixtures from the `tests` factory module. Every
   behavioral change ships a test.
+- **UI state lives in the URL** (query, or path for a resource): `ViewState` for the home views
+  and `downpower_core::explorer::EventsState` for `/events`, each round-tripped by a test; signals
+  hold only hover, sizes and requests in flight (`conventions.md` § Leptos).
 - **PRDs** live in `.prds/`; reference task IDs in commits, and never mark a UAT verified without a
   real, passing test.
 - **No AI attribution** anywhere: no `Co-Authored-By` trailers, session links or "generated with"

@@ -1,5 +1,5 @@
 //! The views' shared filter state, kept in the URL query so every view is a permalink (DESIGN.md
-//! Decisions 23 and 24): `?from=2010-01-01&to=2020-12-31&layer=observed&families=forced,grid&events=1`.
+//! Decisions 23 and 24): `?from=2010-01-01&to=2020-12-31&layer=observed&families=forced,grid&events=1&table=1`.
 //! A parameter at its default is left out.
 
 use chrono::{Datelike as _, NaiveDate};
@@ -18,6 +18,8 @@ pub struct ViewState {
     pub families: Families,
     /// Whether the barcode draws the event markers, off by default (Decision 35).
     pub events: bool,
+    /// Whether the stacked area shows its table view beneath the chart.
+    pub table: bool,
 }
 
 impl Default for ViewState {
@@ -28,6 +30,7 @@ impl Default for ViewState {
             layer: Layer::default(),
             families: Families::ALL,
             events: false,
+            table: false,
         }
     }
 }
@@ -44,6 +47,7 @@ impl ViewState {
             layer: param("layer").and_then(|slug| Layer::from_slug(&slug)).unwrap_or_default(),
             families: param("families").map_or(Families::ALL, |param| Families::from_param(&param)),
             events: param("events").as_deref() == Some("1"),
+            table: param("table").as_deref() == Some("1"),
         }
     }
 
@@ -65,6 +69,9 @@ impl ViewState {
         }
         if self.events {
             params.push("events=1".to_owned());
+        }
+        if self.table {
+            params.push("table=1".to_owned());
         }
         if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) }
     }
@@ -125,9 +132,10 @@ mod tests {
             layer: Layer::Observed,
             families: Families::NONE.with(Family::Forced).with(Family::Grid),
             events: true,
+            table: true,
         };
         let query = state.to_query();
-        assert_eq!(query, "?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced&events=1");
+        assert_eq!(query, "?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced&events=1&table=1");
         let pairs: Vec<(&str, &str)> = query.trim_start_matches('?').split('&').filter_map(|pair| pair.split_once('=')).collect();
         assert_eq!(parse(&pairs), state);
     }
@@ -138,6 +146,14 @@ mod tests {
         assert!(!parse(&[("events", "yes")]).events);
         assert!(!ViewState::default().events);
         assert_eq!(ViewState { events: true, ..ViewState::default() }.to_query(), "?events=1");
+    }
+
+    #[test]
+    fn the_table_view_rides_in_the_url_only_when_shown() {
+        assert!(parse(&[("table", "1")]).table);
+        assert!(!parse(&[("table", "true")]).table);
+        assert!(!ViewState::default().table);
+        assert_eq!(ViewState { table: true, ..ViewState::default() }.to_query(), "?table=1");
     }
 
     #[test]

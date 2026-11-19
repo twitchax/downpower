@@ -26,7 +26,7 @@ fn years_back(today: NaiveDate, years: i32) -> NaiveDate {
 }
 
 /// Writes a state to the URL, replacing the current history entry.
-fn navigator() -> impl Fn(ViewState) + Clone {
+pub(crate) fn navigator() -> impl Fn(ViewState) + Clone {
     let navigate = use_navigate();
     move |next: ViewState| {
         navigate(

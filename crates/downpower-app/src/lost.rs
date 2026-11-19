@@ -1,7 +1,7 @@
 //! The stacked area of reported power reduction by family over time, the barcode's summary
 //! (DESIGN.md Decisions 22 and 24). It shares the barcode's filter state: the layer picks the series,
 //! the range picks the months, and a hidden family drops out of the stack. A table view carries
-//! every number the chart shows.
+//! every number the chart shows, and rides in the URL as `table=1` like every other control.
 
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -86,7 +86,8 @@ pub fn StackedArea(state: Memo<ViewState>) -> impl IntoView {
         Shown::new(&monthly, &state.get())
     });
     let pointer = RwSignal::new(None::<f64>);
-    let table = RwSignal::new(false);
+    let table = Memo::new(move |_| state.get().table);
+    let go = crate::filters::navigator();
     let plot = NodeRef::<leptos::html::Div>::new();
 
     let scale = Memo::new(move |_| {
@@ -148,7 +149,7 @@ pub fn StackedArea(state: Memo<ViewState>) -> impl IntoView {
             <figcaption class="row">
                 <span class="label">"Reported power reduction"</span>
                 <span class="meta">"TWh per month, by cause family"</span>
-                <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| table.update(|shown| *shown = !*shown)>
+                <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| go(ViewState { table: !table.get_untracked(), ..state.get_untracked() })>
                     "Table"
                 </button>
             </figcaption>
