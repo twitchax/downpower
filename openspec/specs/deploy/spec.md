@@ -48,7 +48,7 @@ CI SHALL build the image on every run and smoke-test it before any push, and SHA
 - **THEN** the machine mounts `/data`, runs the update loop with fetching on, and passes the `/healthz` check
 
 ### Requirement: The live site
-The deployed app SHALL serve `https://downpower.twitchax.com` under Fly's certificate, with its health check answering `ok` there. (PRD-0002 T-016, PRD-0004 T-008)
+The deployed app SHALL serve `https://downpower.twitchax.com` under Fly's certificate, with its health check answering `ok` there. (PRD-0002 T-016, PRD-0004 T-008, PRD-0005 T-008, PRD-0006 T-005)
 
 #### Scenario: The health check from outside
 - **WHEN** a client runs `curl -fsS https://downpower.twitchax.com/healthz`
@@ -57,6 +57,10 @@ The deployed app SHALL serve `https://downpower.twitchax.com` under Fly's certif
 #### Scenario: The explorer from outside
 - **WHEN** a client runs `curl -fsS https://downpower.twitchax.com/events`
 - **THEN** the page it gets names `Events`
+
+#### Scenario: The trends and FFD pages from outside
+- **WHEN** a client runs `curl -fsS https://downpower.twitchax.com/trends` and `/ffd`
+- **THEN** the pages it gets name `Fleet trends` and `Fitness for duty`
 
 ### Requirement: A shipped raw store builds on the next start
 A raw store copied onto the volume SHALL become the served ledger on the next `serve` start without any other step, since its digest differs from the current build's (as `ledger` describes), while any earlier build keeps serving until the new one lands. (PRD-0002 T-010 T-016)
