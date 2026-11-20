@@ -16,14 +16,9 @@ use crate::Res;
 use crate::nrc::{self, Report};
 use crate::raw::{Hash, RawStore, Record, Series, Source};
 
-/// The User-Agent the NRC email names: `downpower/0.1 (+https://github.com/twitchax/downpower)`.
-pub const USER_AGENT: &str = concat!(
-    "downpower/",
-    env!("CARGO_PKG_VERSION_MAJOR"),
-    ".",
-    env!("CARGO_PKG_VERSION_MINOR"),
-    " (+https://github.com/twitchax/downpower)"
-);
+/// The User-Agent the NRC email names (Decision 13), kept as written there rather than following
+/// the crate version, so a release doesn't change the client nrc.gov was told to expect.
+pub const USER_AGENT: &str = "downpower/0.1 (+https://github.com/twitchax/downpower)";
 
 /// An HTTP client that sends [`USER_AGENT`], for every source.
 ///

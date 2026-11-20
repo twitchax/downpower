@@ -61,7 +61,7 @@ The fetcher SHALL request a status page and an Event Notification page for every
 - **THEN** four status pages and four Event Notification pages are requested
 
 ### Requirement: Declared User-Agent and request pacing
-Every request to nrc.gov and eia.gov SHALL carry the User-Agent `downpower/<major>.<minor> (+https://github.com/twitchax/downpower)`, today `downpower/0.1 (+https://github.com/twitchax/downpower)`. One fetcher SHALL start NRC requests at least its interval apart, retries included, and the interval against nrc.gov SHALL never be under 5 seconds (as `cli` enforces). (PRD-0002 T-002 T-007)
+Every request to nrc.gov and eia.gov SHALL carry the User-Agent the NRC email names, `downpower/0.1 (+https://github.com/twitchax/downpower)`, whatever the release's version. One fetcher SHALL start NRC requests at least its interval apart, retries included, and the interval against nrc.gov SHALL never be under 5 seconds (as `cli` enforces). (PRD-0002 T-002 T-007)
 
 #### Scenario: A run against a fake nrc.gov
 - **WHEN** a fetcher with a 100 ms interval fetches four days, two of them twice
