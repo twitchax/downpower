@@ -7,6 +7,12 @@ why the version moved the way it did.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
+A minor version: the fleet trends and fitness-for-duty pages, their API routes and the
+legalization catalog are new, and nothing earlier changed shape. The ledger version moves to 11, so
+the first start after the upgrade rebuilds the ledger while the previous build keeps serving.
+
 ### Added
 
 - A fleet trends page (`/trends`, PRD-0006): reported power reduction as a share of net capacity by
@@ -74,5 +80,6 @@ published, and covers everything deployed at downpower.twitchax.com through the 
   breakers, trip-system tests and parts, and turbine or generator trips that tripped no reactor
   take their own causes.
 
-[Unreleased]: https://github.com/twitchax/downpower/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/twitchax/downpower/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/twitchax/downpower/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/twitchax/downpower/releases/tag/v0.1.0

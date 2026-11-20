@@ -1477,7 +1477,7 @@ dependencies = [
 
 [[package]]
 name = "downpower-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1498,7 +1498,7 @@ dependencies = [
 
 [[package]]
 name = "downpower-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "downpower-frontend"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "downpower-app",
@@ -1519,7 +1519,7 @@ dependencies = [
 
 [[package]]
 name = "downpower-ingest"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "downpower-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -7515,7 +7515,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "calamine",

@@ -13,7 +13,7 @@ resolver = "3"
 
 # Shared metadata: crates inherit it with `field.workspace = true`.
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Aaron Roney <twitchax@gmail.com>"]
 license = "MIT"
