@@ -41,6 +41,13 @@ Every unit-day SHALL be keyed by NRC docket (`05000xxx`, or `05200xxx` for Part 
 - **THEN** both spellings and the generator find docket 05000373
 - **AND** an unlisted name such as `Zion 1` finds none
 
+### Requirement: Unit states
+`catalog/units.csv` SHALL give each unit's state, the one its Event Notifications name, and a state that isn't two capital letters SHALL fail the catalog. (PRD-0005 T-005)
+
+#### Scenario: A state spelled out
+- **WHEN** a catalog row gives the state `Ill`
+- **THEN** the catalog fails naming `state "Ill"`
+
 ### Requirement: Units in service
 A unit SHALL be in service from its `commercial` date when it has one, through its `shutdown` date, and again from its `restart` date, and a day it is out of service SHALL have no ledger row, whatever its Power column reads. A date without a `source`, a shutdown before commercial operation, or a restart without an earlier shutdown SHALL fail the catalog. `catalog/units.csv` is the authority for the dates. (PRD-0002 T-004 T-009)
 
@@ -397,6 +404,71 @@ Every build SHALL store, beside each event, its identity, and for each unit of a
 - **WHEN** EN 45285 lists Quad Cities units 1 and 2
 - **THEN** the build holds its rows `[45285, 1]` with docket 05000254 and `[45285, 2]` with 05000265
 
+### Requirement: Refueling outages
+A build SHALL count a refueling outage for each run of a unit's consecutive days at 0% power with a day at power on each side, so a run cut by the archive's edges, a shutdown or the present doesn't count, when Refueling is the most common attributed family of its days, ties included. Its length SHALL be its days at 0%, and it SHALL start on its first. (PRD-0006 T-002)
+
+#### Scenario: The fixture's status pages
+- **WHEN** the trends are collected over the fixture's August 2009 status pages
+- **THEN** they hold one outage, Crystal River 3 (05000302) from 2009-08-24 for 3 days
+
+### Requirement: Trend scrams
+A build's trends SHALL count an unretracted reactor event's catalog unit as an automatic scram when its SCRAM Code is `A/R` or `A` and a manual one when `M/R` or `M`, in the month the event occurred. (PRD-0006 T-002)
+
+#### Scenario: A scram retracted
+- **WHEN** the fixture's EN 45290 is coded `A/R` and EN 45286 is retracted
+- **THEN** the month counts one automatic scram and no manual one
+
+### Requirement: Fitness-for-duty events
+An unretracted event SHALL be a fitness-for-duty event when a 10 CFR section's code, spaces ignored, is 26.73 or 26.719 or one of their paragraphs, or is 26.417(b)(1), or when `catalog/ffd.toml` includes it; and not when the catalog excludes it. A title alone SHALL make no event one. (PRD-0005 T-001)
+
+#### Scenario: Sections and paragraphs
+- **WHEN** events are coded `26.719 (b)(2)`, `26.417(b)(2)`, `26.7190` and `73.71(b)(1)`
+- **THEN** only the first is a fitness-for-duty event, under 26.719
+
+#### Scenario: The reviewed lists
+- **WHEN** the catalog includes an event with no FFD section and excludes one coded 26.719
+- **THEN** the first is a fitness-for-duty event and the second isn't
+
+### Requirement: Fitness-for-duty tags
+Each fitness-for-duty event SHALL carry a substance, role, kind and test from the first matching phrase rule of each in `catalog/ffd.toml`, read from its title and text lowercased with whitespace collapsed and the catalog's `strip` patterns removed, or `none`. A named drug SHALL outrank alcohol. `catalog/ffd.toml` is the authority for the phrases. (PRD-0005 T-002)
+
+#### Scenario: A random positive
+- **WHEN** the text reads "A contract supervisor had a confirmed positive for marijuana during a random fitness-for-duty test."
+- **THEN** the tags are marijuana, supervisor, positive and random
+
+#### Scenario: The known misfires
+- **WHEN** a text says "THC LICENSEE", a tritium sample "positive", isopropyl alcohol, the Bureau of Alcohol, Tobacco, Firearms and Explosives, or contraband weapons
+- **THEN** it names no substance and no kind
+
+### Requirement: FFD catalog checks
+`catalog/ffd.toml` SHALL fail to load when a listed event has no reason, an event is listed twice, or a pattern doesn't compile. (PRD-0005 T-001 T-002)
+
+#### Scenario: Listed twice
+- **WHEN** the catalog both includes and excludes event 1
+- **THEN** it fails to load
+
+### Requirement: Where an FFD event happened
+A fitness-for-duty event outside Power Reactor SHALL count at a facility. A reactor event SHALL be at an operating reactor when a unit it names was in service that day; at a construction site when every unit it names was before commercial operation or is a Part 52 docket `catalog/units.csv` lacks; and at another reactor site otherwise. Its state SHALL be the plant's, as the event gives it. (PRD-0005 T-005)
+
+#### Scenario: Recoded fixture events
+- **WHEN** EN 45290 at Browns Ferry 3, EN 45286 moved to Vogtle 3 before its commercial operation, EN 45289 moved to Summer 2 and 3, and fuel cycle EN 45285 are FFD events on 2009-08-24
+- **THEN** they count as operating (AL), construction, construction and facility
+
+### Requirement: FFD exposure by state
+A build SHALL count each state's in-service unit-days by year, the unit's state from `catalog/units.csv`, with the days of them adult use was legal there and the days a comprehensive medical program was, from `catalog/cannabis.csv`. (PRD-0005 T-005 T-006)
+
+#### Scenario: Browns Ferry 3 and Fermi 2
+- **WHEN** both are in service on 2009-08-23 and 2009-08-24
+- **THEN** the exposure is AL 2009 with 2 unit-days and no legal days, and MI 2009 with 2 unit-days, both under its 2008-12-04 medical law
+
+### Requirement: The legalization catalog
+`catalog/cannabis.csv` (`state,adult_use,sales,medical,source`, `#` lines a header carrying the CC BY-SA 4.0 notice) SHALL list the 50 states and DC once each, and SHALL fail to load on a state that isn't two capital letters, a date that doesn't parse, sales without adult use or before it, or a row without an `https://` source. Adult use and medical SHALL count from their dates on. (PRD-0005 T-004)
+
+#### Scenario: Colorado
+- **WHEN** the committed catalog is read
+- **THEN** Colorado's adult use counts from 2012-12-10, not 2012-12-09, and its medical program in 2001
+- **AND** Idaho has no medical program on 2026-11-18
+
 ### Requirement: Observed and attributed layers
 In the attributed layer a unit-day SHALL carry its attributed family, and in the observed layer it SHALL keep that family only when its method is `precedence_v1` and count as Unattributed otherwise. The barcode cells and monthly series `api` serves are built per layer this way. (PRD-0002 T-013 T-014)
 
@@ -409,7 +481,7 @@ In the attributed layer a unit-day SHALL carry its attributed family, and in the
 - **THEN** the day is Forced in the attributed layer and Unattributed in the observed layer
 
 ### Requirement: Derived version
-Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv`, `catalog/facilities.csv` and `catalog/xref.toml`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004 T-005)
+Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv`, `catalog/facilities.csv`, `catalog/xref.toml`, `catalog/ffd.toml` and `catalog/cannabis.csv`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004 T-005, PRD-0005 T-006)
 
 #### Scenario: A stable stamp
 - **WHEN** the derived version is computed twice by one binary
@@ -457,7 +529,7 @@ Refreshing the ledger SHALL do nothing when the current build's `derived_version
 - **AND** when the record is in an older shape, that refresh logs it once, and reading `/status` meanwhile logs nothing
 
 ### Requirement: In-place updates match a full rebuild
-An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, events with their identities and unit rows, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003 T-004)
+An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, the trends and the FFD series, events with their identities and unit rows, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003 T-004, PRD-0005 T-006, PRD-0006 T-003)
 
 #### Scenario: A new page, then pages withdrawn
 - **WHEN** a page for 2025-07-16 arrives, and later both July pages are recorded as 404s

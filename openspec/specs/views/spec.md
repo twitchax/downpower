@@ -1,11 +1,11 @@
 # views Specification
 
 ## Purpose
-The pages a reader sees: the home page's filters, fleet barcode and stacked area of reported power reduction, which share one state kept in the URL so every view is a permalink, and `/status`, which says what the ledger rests on.
+The pages a reader sees: the home page's filters, fleet barcode and stacked area of reported power reduction, the fleet trends and the fitness-for-duty page, which share one state kept in the URL so every view is a permalink, the events explorer, and `/status`, which says what the ledger rests on.
 
 ## Requirements
 ### Requirement: Pages
-The site SHALL render the home page at `/`, the events explorer at `/events`, one event at `/events/{number}` and the status page at `/status`, each under a nav linking `downpower`, `events` and `status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015, PRD-0004 T-004 T-005)
+The site SHALL render the home page at `/`, the fleet trends at `/trends`, the events explorer at `/events`, one event at `/events/{number}`, the fitness-for-duty page at `/ffd` and the status page at `/status`, each under a nav linking `downpower`, `trends`, `events`, `ffd` and `status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015, PRD-0004 T-004 T-005, PRD-0005 T-008, PRD-0006 T-005)
 
 #### Scenario: Both pages render
 - **WHEN** `downpower serve` is up over the fixture raw store
@@ -14,12 +14,19 @@ The site SHALL render the home page at `/`, the events explorer at `/events`, on
 - **AND** `/` links `/favicon.svg`, which the site serves
 
 ### Requirement: URL state
-The home page's views SHALL share one state kept in the URL query: `from` and `to` (`YYYY-MM-DD`, running to the data's edge when absent), `layer` (`attributed`, the default, or `observed`), `families`, the slugs shown in color, comma-separated in stack order (all when absent), `events=1` for the barcode's markers and `table=1` for the stacked area's table. A parameter at its default SHALL be left out, so the default state has an empty query. (PRD-0002 T-013, PRD-0004 T-006, 09d28a3)
+The home page's views SHALL share one state kept in the URL query: `from` and `to` (`YYYY-MM-DD`, running to the data's edge when absent), `layer` (`attributed`, the default, or `observed`), `families`, the slugs shown in color, comma-separated in stack order (all when absent), `events=1` for the barcode's markers and `table=1` for the charts' tables. A parameter at its default SHALL be left out, so the default state has an empty query. (PRD-0002 T-013, PRD-0004 T-006, PRD-0006 T-004, 09d28a3)
 
 #### Scenario: A permalink
 - **WHEN** the state is 2010-01-01 to 2020-12-31, the observed layer, only Forced and Grid, markers on and the table shown
 - **THEN** its query is `?from=2010-01-01&to=2020-12-31&layer=observed&families=grid,forced&events=1&table=1`
 - **AND** that query parses back to the same state
+
+### Requirement: One state across pages
+`/trends` and `/ffd` SHALL read the home page's URL state, and a control on any of the three SHALL replace the state while keeping the page's path, so a link carries the range, layer and families from one to another. (PRD-0006 T-004)
+
+#### Scenario: A range on the trends page
+- **WHEN** the reader presses 10 yr on `/trends`
+- **THEN** the URL stays on `/trends` with the new `from`
 
 ### Requirement: Mangled links still open
 A parameter that doesn't parse SHALL keep its default, and an unknown family slug SHALL be dropped. The family slugs are `refueling`, `fuel-cycle`, `maintenance`, `equipment`, `environmental`, `grid`, `forced` and `unattributed`. (PRD-0002 T-013)
@@ -136,8 +143,56 @@ Each chart SHALL say it is loading until its data arrives and show the error whe
 - **WHEN** the home page loads while `/api/barcode/attributed` answers 503
 - **THEN** the barcode shows that the route answered 503 instead of drawing
 
+### Requirement: The trends page
+`/trends` SHALL show, over the URL state's range and below the home page's filters without the markers toggle, four bar charts: reported power reduction by year as a share of net capacity stacked by visible family, the same share by month of the year, refueling outage length by year (a box from the lower to the upper quartile, a median line, the count), and EN scrams per 100 operating unit-years by year, automatic and manual. (PRD-0006 T-004)
+
+#### Scenario: The page served
+- **WHEN** `downpower serve` is up over the fixture raw store
+- **THEN** `/trends` carries `Fleet trends`, `Reported power reduction by year`, `By month of the year`, `Refueling outage length` and `Scrams`
+
+### Requirement: Trend readouts, tables and the partial year
+Hovering a trends chart's column SHALL show its values, the top of a stack first, and `table=1` SHALL show every chart's table. A year the data or the range doesn't cover whole SHALL be labeled with a star, drawn faded and read as partial. (PRD-0006 T-004)
+
+#### Scenario: Forced hidden, 2025 partial
+- **WHEN** 2024 and a partial 2025 each lost 6% of capacity to Refueling and Forced is hidden
+- **THEN** the columns read `2024` and `2025*`, the second drawn faded
+- **AND** its readout reads `2025 (partial) · 6.00% of capacity`
+
+#### Scenario: Scram rates
+- **WHEN** a year holds 3,653 unit-days, 20 automatic scrams and 5 manual
+- **THEN** its readout reads `2024 · 250.0 per 100 unit-years over 10.0`
+
+### Requirement: The FFD page
+`/ffd` SHALL show over the URL state's range: FFD events by year by substance (drug-related, alcohol, neither named) with construction-site, other reactor and facility events counted apart; drug-related and all FFD events per 100 operating unit-years; the share of operating unit-years in states with legal adult use and a medical program; a state table; breakdowns by role, kind and test; and the caveats. (PRD-0005 T-007)
+
+#### Scenario: The page served
+- **WHEN** `downpower serve` is up over the fixture raw store
+- **THEN** `/ffd` carries `Fitness for duty`, `FFD events by year`, `Legal cannabis`, `26.719(b)` and a link to `/events?ffd=1`
+
+### Requirement: FFD rates and the 2008 rewrite
+Each `/ffd` chart SHALL mark Part 26's rewrite, effective 2008-04-30, with one dashed rule in 2008's column, and SHALL read rates per 100 operating unit-years (in-service unit-days over 365.25) and shares as percentages of them, with `table=1` showing every chart's table. (PRD-0005 T-007)
+
+#### Scenario: 100 unit-years
+- **WHEN** a year holds 36,525 operating unit-days, 10 drug-related events and 30 in all, a quarter of them in adult-use states
+- **THEN** its rate row reads `100.0`, `10.0` and `30.0`, and its share row `25.00%`
+
+### Requirement: The FFD state table
+The state table SHALL list each state's operating unit-years, FFD and drug-related events at operating reactors, its adult-use, sales and medical dates, and its drug-related events and their rate per 100 unit-years before adult use and since, `—` where there is none, each state linking `/events?ffd=1&state=` its code. (PRD-0005 T-007)
+
+#### Scenario: Split at adult use
+- **WHEN** Illinois has 3,653 unit-days and one drug-related event before adult use and 3,652 and one after
+- **THEN** its row reads 10.0 per 100 both before and after
+
+### Requirement: Phone widths
+Under 640px every page SHALL fit the screen: the filter rows wrap, axis year labels thin to the five-year marks, and a label in an axis's last twentieth hangs left of its tick. (PRD-0005 T-007)
+
+#### Scenario: The last label
+- **WHEN** axis labels sit at 98% and 95% of the width
+- **THEN** the first hangs left and the second doesn't
+- **AND** on a phone 2026's label hides while 2020's stays
+
 ### Requirement: Explorer filters in the URL
-`/events` SHALL keep its filters in the query: `from` and `to`, `category` (comma-separated group slugs, the NRC's renamed pairs merged), `state`, `facility`, `unit`, `cfr`, `class`, `scram=1`, `q` and `page`, each left out at its default, and a parameter that doesn't parse SHALL keep its default. A change of filter SHALL go back to the first page. (PRD-0004 T-002 T-004)
+`/events` SHALL keep its filters in the query: `from` and `to`, `category` (comma-separated group slugs, the NRC's renamed pairs merged), `state`, `facility`, `unit`, `cfr`, `class`, `scram=1`, `ffd=1`, `q` and `page`, each left out at its default, and a parameter that doesn't parse SHALL keep its default. A change of filter SHALL go back to the first page. (PRD-0004 T-002 T-004, PRD-0005 T-007)
 
 #### Scenario: A round trip
 - **WHEN** every filter is set, words and 10 CFR code included

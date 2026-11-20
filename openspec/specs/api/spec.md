@@ -5,7 +5,7 @@ The HTTP surface of `downpower serve` beyond the rendered pages: the `/api/*` ro
 
 ## Requirements
 ### Requirement: Routes
-The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}`, `/api/markers` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003 T-006)
+The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}`, `/api/markers`, `/api/trends`, `/api/ffd` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003 T-006, PRD-0005 T-006, PRD-0006 T-003)
 
 #### Scenario: Health
 - **WHEN** a client GETs `/healthz`
@@ -16,11 +16,11 @@ The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL ser
 - **THEN** each answers 404
 
 ### Requirement: 503 until a build exists
-The barcode, lost and unit-day routes SHALL answer 503 with `Retry-After: 30` and the body `the ledger is building` while no build has been made current, and the barcode and lost routes SHALL do the same when the serving build stored no buffer or series for the layer. (PRD-0002 T-013 T-016)
+The barcode, lost, unit-day, trends and FFD routes SHALL answer 503 with `Retry-After: 30` and the body `the ledger is building` while no build has been made current, and the barcode, lost, trends and FFD routes SHALL do the same when the serving build stored no buffer or series for them. (PRD-0002 T-013 T-016, PRD-0005 T-006, PRD-0006 T-003)
 
 #### Scenario: A fresh volume
 - **WHEN** the database has never held a build
-- **THEN** `/api/barcode/attributed` and `/api/unit-day/05000323/2025-07-15` answer 503
+- **THEN** `/api/barcode/attributed`, `/api/unit-day/05000323/2025-07-15`, `/api/trends` and `/api/ffd` answer 503
 
 ### Requirement: Routes read the serving build
 The data routes SHALL read the build the current-build record names, also while that record is in a shape the running binary can't parse, as `ledger` describes. (PRD-0002 T-020)
@@ -82,6 +82,29 @@ The barcode SHALL carry a weak ETag, `W/"<first 16 hex digits of the buffer's sh
 - **WHEN** a series holds 9 kWh of Fuel cycle in January 2024
 - **THEN** it serializes as `{"first":"2024-01-01","lost_kwh":[[0,9,0,0,0,0,0,0]]}`
 
+### Requirement: Fleet trends
+`/api/trends` SHALL answer JSON `{first, last, months, outages}`: `first` the first day of the build's first month and `last` its last day with rows; one month per entry with its in-service unit-days, `capacity_kwh` (net capacity × 24 h over the rows that have one) and `scrams`, the unretracted EN scrams on catalog units as `[automatic, manual]`; and every refueling outage as `ledger` describes, by start date. (PRD-0006 T-001 T-003)
+
+#### Scenario: The JSON shape
+- **WHEN** the trends hold one unit-day on 2024-01-15 at 2 kW
+- **THEN** they serialize as `{"first":"2024-01-01","last":"2024-01-15","months":[{"unit_days":1,"capacity_kwh":48,"scrams":[0,0]}],"outages":[]}`
+
+#### Scenario: Beside the monthly series
+- **WHEN** `/api/trends` is fetched after a rebuild of the fixture raw store
+- **THEN** its `first` and month count match `/api/lost/attributed`'s
+- **AND** its unit-days sum to the build summary's days
+
+### Requirement: The FFD series
+`/api/ffd` SHALL answer JSON `{first, last, events, exposure, laws}`: the days the ledger covers; every unretracted fitness-for-duty event, oldest first, with its number, date, plant state, site and its `substance`, `role`, `kind` and `test` tags (`none` when the text names none), as `ledger` describes; the in-service unit-days by state and year with the days adult use and a medical program were legal there; and every state's and DC's dates. (PRD-0005 T-005 T-006)
+
+#### Scenario: Over the fixture build
+- **WHEN** `/api/ffd` is fetched after a rebuild of the fixture raw store
+- **THEN** `first` and `last` match the build summary's, its exposure sums to the build's days, and `laws` holds 51 entries
+
+#### Scenario: Nothing named
+- **WHEN** an event's text names no substance, role, kind or test
+- **THEN** its tags serialize as `"substance":"none","role":"none","kind":"none","test":"none"`
+
 ### Requirement: One unit-day
 `/api/unit-day/{docket}/{date}` SHALL answer the serving build's row for that docket and `YYYY-MM-DD` date as JSON, 404 when the build has no such row, and 400 when the date doesn't parse. (PRD-0002 T-013)
 
@@ -132,6 +155,13 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 #### Scenario: Stable pages
 - **WHEN** the 38 fixture events are read 10 to a page
 - **THEN** the four pages hold every event once, in the order one page of 50 holds them
+
+### Requirement: The fitness-for-duty filter
+With `ffd=1`, the event list and the counts SHALL select only the fitness-for-duty events `ledger` identifies, alongside every other filter. (PRD-0005 T-007)
+
+#### Scenario: Fitness for duty
+- **WHEN** the fixture's EN 45290 is coded 26.719(b)(1) and the events are filtered by `ffd=1`, then by `ffd=1&state=GA`
+- **THEN** the first lists EN 45290 alone and the second lists none
 
 ### Requirement: Event search
 `q` SHALL select the events whose title, text, place, site, licensee, unit names and persons contain each of its whitespace-separated words as a substring, in any case, so `scram` also finds "scrammed". (PRD-0004 T-001 T-003)
