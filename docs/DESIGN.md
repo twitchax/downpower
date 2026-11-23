@@ -373,6 +373,36 @@ identity fields, update markers and FFD counts) are in `docs/research/data-sourc
 39. **No email channel.** The GovDelivery list was never subscribed, and the event pages carry
     everything it would. The `nrc@twitchax.com` route was deleted on 2026-11-16.
 
+## Decisions (settled 2026-11-23)
+
+Scram triggers (PRD-0007), from a scratch read of the 1,802 scram Event Notifications
+(`.prds/PRD-0007.log.md`).
+
+### Scram triggers
+
+40. **Every scram EN gets two tags: a system and a circumstance.**
+    - The system is what the text says started the scram, the most upstream cause it names; the
+      circumstance is weather, testing, maintenance, an operator or technician error, or none.
+    - One ordered list would have to choose between "feedwater" and "testing" for a feedwater trip
+      during a test, and the decline in scrams during testing and maintenance is a circumstance.
+    - Ordered phrase rules plus a reviewed list, as the FFD tags work (Decision 36), scored
+      against a sample labeled by hand before any rule existed.
+41. **Seven systems and `not_named`.** Feedwater, turbine and generator, plant electrical, offsite
+    power, cooling water, reactor and coolant system, and instruments. Fire, main steam isolation
+    and control rods fold into them, since a chart carries at most eight colors. An EN filed with
+    the cause under investigation (40% of them) is `not_named`, a value every view shows.
+42. **A scram's cost is its episode.**
+    - The unit's days from the drop until it is back within 10 points of the power it scrammed
+      from, whatever cause the ledger attributes each day to: repair days after a scram usually
+      name the repair, so the `scram` cause alone undercounts.
+    - A Refueling day or the unit's next scram ends it early, so a scram just before an outage
+      doesn't book the outage.
+    - The energy is measured below the pre-scram power, not below 100%. Episodes sit beside the
+      attribution and change no day's cause.
+43. **A `/scrams` page,** sharing the trends' range: scrams per 100 unit-years by system, lost
+    output by system, the circumstances, and a unit table, where design differences (the BWR/6
+    units) show. The trends page's scram chart links to it, and the explorer gains `trigger=`.
+
 ## Still open
 
 - **What the Power column measures.** Waiting on the NRC's reply (Decision 13). Its Data
