@@ -77,6 +77,8 @@ strip = [
   '\bexcept (?:that|for)\b.*',
   '(?:reactor|rcs|reactor coolant system|primary) (?:pressure|temperature)s? (?:is|was|are|at|being|of)\b.*',
   '\bno (?:bad |severe |adverse |inclement )?weather\b.*',
+  '(?:main )?condenser vacuum (?:was|is|were) (?:broken|broke|secured|released)\b.*',
+  '\b(?:broke|breaking|break) (?:the )?(?:main )?condenser vacuum.*',
   'seismic.*',
   'fire brigade drill.*',
   'synchroniz.*',
@@ -116,7 +118,7 @@ pattern = 'feed ?(?:water )?(?:pump|reg|control|heater|flow|line|valve|controlle
 
 [[system]]
 value = "turbine_generator"
-pattern = '\behc\b|\bdehc\b|electro-?hydraulic|turbine control|control valves?|governor|stop valves?|intercept valves?|bypass valves?|pressure regulator|turbine runback|(?:turbine|load) (?:was )?run ?back|main generator|lube oil|moisture separator|\bmsr\b|thrust bearing|turbine (?:vibration|overspeed|bearing)'
+pattern = '\behc\b|\bdehc\b|electro-?hydraulic|turbine control|(?:turbine|main steam|governor) control valves?|\btcvs?\b|governor|(?:turbine|main) stop valves?|intercept valves?|bypass valves?|pressure regulator|turbine runback|(?:turbine|load) (?:was )?run ?back|main generator|lube oil|moisture separator|\bmsr\b|thrust bearing|turbine (?:vibration|overspeed|bearing)|(?:vibrations?|fire|blade failure) (?:in|on|of) (?:the )?(?:main )?turbine\b'
 
 [[system]]
 value = "instruments"
@@ -124,7 +126,7 @@ pattern = 'spurious|\bspik|noise|erratic|invalid|false (?:signal|indication|trip
 
 [[system]]
 value = "reactor_coolant"
-pattern = '(?:control )?rods?\b.{0,20}(?:dropped|drop|slipped|misalign|stuck|withdr|deviation)|dropped (?:control )?rods?|rod (?:deviation|position)|\bcrdm?\b|control rod drive|rod control|control element|\bceas?\b|\bmg sets?\b|motor generator set|reactor coolant pump|\brcps?\b|recirc|pressurizer|\bporv|relief valve|\bsrvs?\b|safety valve|(?:main steam isolation valves?|msivs?)\b.{0,20}(?:failed|drifted|went closed|closed unexpectedly|inadvertent)|(?:failure|inadvertent closure|spurious closure) of (?:an? |the )?(?:\S+ ){0,3}(?:main steam isolation|msiv)|main steam (?:line )?(?:leak|break|rupture)|coolant leak|reactor coolant (?:system )?leak|unidentified leak|conductivity|\brcs\b leak'
+pattern = '(?:control )?rods?\b.{0,20}(?:dropped|drop|slipped|misalign|stuck|withdr|deviation)|dropped (?:control )?rods?|rod (?:deviation|position)|\bcrdm?\b|control rod drive|rod control|control element|\bceas?\b|\bmg sets?\b|motor generator set|reactor coolant pump|\brcps?\b|recirc|pressurizer|\bporv|relief valve|\bsrvs?\b|safety valve|(?:main steam isolation valves?|msivs?)\b.{0,20}(?:failed|drifted|went closed|closed unexpectedly|inadvertent)|(?:failure|inadvertent closure|spurious closure) of (?:an? |the )?(?:\S+ ){0,3}(?:main steam isolation|msiv)|main steam (?:line )?(?:leak|break|rupture)|coolant leak|reactor coolant (?:system )?leak|unidentified leak|conductivity|\brcs\b leak|tube (?:rupture|leak|failure)|primary[- ]to[- ]secondary (?:leak|leakage)'
 
 # Signals that name only what tripped, read when no root cause leads. A level first: "a turbine
 # trip on high steam generator level" started in the feedwater train.
