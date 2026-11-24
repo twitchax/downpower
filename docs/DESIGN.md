@@ -389,8 +389,12 @@ Scram triggers (PRD-0007), from a scratch read of the 1,802 scram Event Notifica
       against a sample labeled by hand before any rule existed.
 41. **Seven systems and `not_named`.** Feedwater, turbine and generator, plant electrical, offsite
     power, cooling water, reactor and coolant system, and instruments. Fire, main steam isolation
-    and control rods fold into them, since a chart carries at most eight colors. An EN filed with
-    the cause under investigation (40% of them) is `not_named`, a value every view shows.
+    and control rods fold into them, since a chart carries at most eight colors.
+    - A text naming only the protective signal takes the signal's system: a turbine trip is turbine
+      and generator, a low steam generator level is feedwater. So the system is what tripped as
+      filed, not the root cause, which 40% of scram ENs leave under investigation.
+    - `not_named` is the rest, 4 of the 150 labeled events, and every view shows it (revised
+      2026-11-23, from the labeling guide in `crates/downpower-ingest/tests/fixtures/scrams`).
 42. **A scram's cost is its episode.**
     - The unit's days from the drop until it is back within 10 points of the power it scrammed
       from, whatever cause the ledger attributes each day to: repair days after a scram usually
