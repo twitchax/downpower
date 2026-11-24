@@ -120,7 +120,7 @@ impl Trends {
     }
 
     /// Whether the days shown, the range clipped to the data, leave out part of `year`.
-    fn partial(&self, year: i32, from: Option<NaiveDate>, to: Option<NaiveDate>) -> bool {
+    pub(crate) fn partial(&self, year: i32, from: Option<NaiveDate>, to: Option<NaiveDate>) -> bool {
         let (Some(january), Some(december)) = (NaiveDate::from_ymd_opt(year, 1, 1), NaiveDate::from_ymd_opt(year, 12, 31)) else {
             return true;
         };
@@ -133,7 +133,7 @@ impl Trends {
     }
 
     /// The range's months, each with its first day.
-    fn dated(&self, from: Option<NaiveDate>, to: Option<NaiveDate>) -> impl Iterator<Item = (NaiveDate, &Month)> {
+    pub(crate) fn dated(&self, from: Option<NaiveDate>, to: Option<NaiveDate>) -> impl Iterator<Item = (NaiveDate, &Month)> {
         let first = self.first;
         self.range(from, to).filter_map(move |index| {
             let date = first?.checked_add_months(chrono::Months::new(u32::try_from(index).ok()?))?;

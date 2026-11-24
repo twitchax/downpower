@@ -7,6 +7,7 @@ pub mod cannabis;
 pub mod capacity;
 pub mod chunks;
 pub mod eia;
+pub mod episodes;
 pub mod events;
 pub mod facilities;
 pub mod fetch;
@@ -19,6 +20,7 @@ pub mod scrams;
 pub mod status;
 pub mod tags;
 pub mod trends;
+pub mod triggers;
 pub mod units;
 pub mod xref;
 

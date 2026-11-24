@@ -25,6 +25,7 @@ mod events;
 mod ffd;
 mod oracle;
 mod scrams;
+mod triggers;
 
 const REASONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/reasons.tsv");
 const UNCLASSIFIED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../catalog/unclassified.tsv");
@@ -100,6 +101,14 @@ enum Command {
         #[arg(long)]
         texts: Option<PathBuf>,
     },
+    /// Rewrites catalog/triggers.tsv: every scram Event Notification in the raw store with its
+    /// system and circumstance (PRD-0007 T-002), and what decided each. Review the diff.
+    Triggers {
+        /// Also build the ledger and every scram's episode (T-003), and compare their energy with
+        /// the ledger's `scram` cause.
+        #[arg(long)]
+        episodes: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -116,6 +125,7 @@ fn main() -> anyhow::Result<()> {
         Command::Oracle => oracle::run(&cli.data_dir),
         Command::Scrams { examples } => scrams::run(&cli.data_dir, examples),
         Command::Ffd { candidates, texts } => ffd::run(&cli.data_dir, candidates, texts.as_deref()),
+        Command::Triggers { episodes } => triggers::run(&cli.data_dir, episodes),
     }
 }
 

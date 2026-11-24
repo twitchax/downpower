@@ -10,6 +10,7 @@ pub mod markers;
 pub mod scrams;
 pub mod series;
 pub mod trends;
+pub mod triggers;
 
 pub use family::{Families, Family};
 

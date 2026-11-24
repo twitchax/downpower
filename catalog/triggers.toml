@@ -1,0 +1,158 @@
+# Scram triggers (DESIGN.md Decisions 40 and 41, PRD-0007 T-002).
+#
+# Every scram Event Notification gets two tags: the system the text says started the scram, and
+# what was going on (weather, testing, maintenance, an error). The values are defined in
+# crates/downpower-ingest/tests/fixtures/scrams/labeling-guide.md, which the hand-labeled sample
+# followed. Review a change against `cargo xtask triggers`'s snapshot diff, and against the sample's
+# agreement, which `uat_scram_triggers_sample` holds at 90% or better.
+#
+# How the rules read an event: its title, then its text's sentences, updates included, each
+# lowercased with whitespace collapsed and every `strip` pattern blanked.
+#
+# - The system is the first `system` rule in the earliest sentence any of them matches: a root
+#   cause, told first. Failing that, the same over the `signal` rules, which name only what
+#   tripped, so "a turbine trip, cause under investigation" is turbine and generator. Failing both,
+#   not named.
+# - The circumstance is the first `circumstance` rule matching anywhere, or none. Each rule carries
+#   its own context, since a test merely in progress isn't one the text ties to the trip.
+#
+# A rule's order is its logic: within a sentence, a root cause comes before what it tripped, so "a
+# turbine trip caused by a loss of offsite power" is offsite power.
+
+# How many sentences after a lead that names only a signal may name its root cause without a word
+# of cause: "a reactor trip on low steam generator level. The A feed pump had tripped."
+near = 2
+
+# A sentence that names a cause, which may override the lead with a root further upstream.
+cause = '\bcaus|due to|result(?:ed|ing|s)? (?:of|from|in)|attributed|initiated by|because|determined to be|traced to|\bled to|initiat\w* (?:the|this) (?:event|transient|trip|scram)'
+
+# The sentences the circumstance rules read: those about the trip, so a test elsewhere in the
+# report ("Division 1 RHR surveillance testing was in progress") doesn't count.
+cue = '\btrip|scram|shut ?down|mode switch|\brps\b|reactor protection|\bcaus|due to|result|initial conditions|actuation|at the time|weather|storm|lightning|hurricane|tornado|wind'
+
+# What a trip report says about the response, never the trigger: rods in, auxiliary feedwater,
+# decay heat, levels being maintained, the buses moving to their backup transformer, diesels, the
+# reporting paragraph, and denials ("no maintenance or testing was in progress"). Each blanks the
+# rest of its sentence from where it starts.
+strip = [
+  '(?:the )?(?:nrc )?resident inspector.*',
+  '(?:this|the) (?:event|notification|report) (?:is|was) (?:being )?(?:reported|made).*',
+  'pursuant to.*',
+  '\breportable\b.*',
+  '(?:requires?|required) an? (?:\S+ ){0,2}(?:report|notification)\b.*',
+  'any event or condition.*',
+  'pre-?planned sequence.*',
+  'in accordance with 10 ?cfr.*',
+  'all (?:control )?(?:rods|ceas?|control element assemblies|control rods)\b.*',
+  '(?:auxiliary|aux\.?|emergency|motor[- ]driven|turbine[- ]driven) feed ?water.*',
+  '\b(?:afw|efw|aux feed)\b.*',
+  'decay heat.*',
+  '(?:steam generator|s/?g|reactor (?:vessel )?water|rpv|reactor|vessel) levels? (?:is|are|was|were) (?:being )?(?:maintained|controlled|restored|stable|normal|recovered).*',
+  '(?:buses|busses|loads|electrical (?:loads|lineup|buses)|non-?safety (?:related )?buses|plant electrical)\b.{0,40}(?:transferred|swapped|fast transfer|transfer)\b.*',
+  '(?:main )?feed ?water (?:system )?(?:remained|remains|is|was|were) (?:in service|available|used).*',
+  'feed ?water isolation (?:signal|occurred|actuat\w*|was received|as (?:expected|designed)|and)\b.*',
+  '(?:and|with) (?:a )?feed ?water isolation$',
+  '[\[\]"]',
+  '(?:on )?natural (?:re)?circulation.*',
+  '(?:main )?condenser (?:remained|remains|is|was) (?:available|in service).*',
+  'heat sink.*',
+  '(?:following|after|subsequent to|upon|post) (?:the )?(?:(?:reactor|unit|plant|automatic|manual|uncomplicated|rx|turbine) )*(?:trip|scram)(?:,| (?:all|the|both|a|an|reactor|unit|operators|plant|level|pressure|power|main|emergency|primary|group|rcs|steam|vessel|and|with|there|no|response)\b).*',
+  'post[- ](?:trip|scram).*',
+  'emergency diesel generators?\b.*',
+  '\bedgs?\b.*',
+  '\bno\b.{0,60}\b(?:maintenance|testing|tests?|work)\b.{0,40}(?:in progress|being performed|ongoing|occurring|at the time|was being).*',
+  '\bno (?:equipment|safety|other)\b.{0,40}out of service.*',
+  '\b(?:no )?(?:porvs?|power[- ]operated relief valves?|safety relief valves?|srvs?|relief valves?|safeties|atmospheric (?:dump|relief) valves?|steam dumps?)\b.{0,60}\b(?:lifted|opened|open|actuated|cycled|operated|did not|were not|reseated|used|being used|responded).*',
+  '(?:both |the )?(?:reactor )?recirc(?:ulation)? (?:pumps?|mg sets?)\b.{0,40}\b(?:tripped|downshift\w*|ran back|transferred|shifted)\b.{0,40}\b(?:as (?:expected|designed|required)|on the (?:trip|scram)|following|after the).*',
+  '(?:primary )?containment isolation.*',
+  '\bgroup (?:[1-9]|i{1,3}|iv|v|vi{1,3})\b.*',
+  '\bpcis\b.*',
+  '\b(?:hpci|rcic|eccs|safety injection)\b.*',
+  '(?:reactor|rpv|vessel) (?:water )?level (?:lowered|decreased|dropped|reached|dipped|went|fell)\b.*',
+  '(?:steam generator|s/?g) (?:water )?levels? (?:lowered|decreased|dropped|shrank|reached|dipped|fell)\b.*',
+  '(?:inventory|level|pressure|levels) (?:is|are|was|were)? ?(?:being )?(?:maintained|controlled|restored) (?:by|with|using|via|through).*',
+  '(?:startup|start-up|power ascension|restart|returning to power)\b.{0,20}\bfollowing (?:a |an |the )?(?:repair|replacement|maintenance|work|forced outage|outage|refueling)[^,;]*',
+  '(?:the plant|plant|all (?:other )?(?:safety )?(?:related )?(?:systems|equipment|safety systems)|systems|equipment|safety systems) (?:responded|functioned|operated|performed|worked)\b.*',
+  '(?:with the )?exception of.*',
+  '\bexcept (?:that|for)\b.*',
+  '(?:reactor|rcs|reactor coolant system|primary) (?:pressure|temperature)s? (?:is|was|are|at|being|of)\b.*',
+  '\bno (?:bad |severe |adverse |inclement )?weather\b.*',
+  'seismic.*',
+  'fire brigade drill.*',
+  'synchroniz.*',
+  '(?:as a result of|due to|following|after|upon) (?:the )?(?:reactor |unit |plant |automatic |manual )*(?:trip|scram)\b.*',
+  '(?:shutdown|shut down|outage) for (?:a )?(?:scheduled |planned )?(?:maintenance|refueling|repairs?)',
+]
+
+# The system's root causes, most upstream first: a later sentence naming a cause overrides the lead
+# only with a rule above the lead's. A transformer's own fault, which takes offsite power with it at
+# times (EN 40953), then the grid, the generator's protection, the plant's distribution, cooling
+# water, the feedwater train, the turbine's controls, instruments, and the reactor and its coolant
+# system.
+
+[[system]]
+value = "electrical"
+pattern = 'transformer.{0,30}(?:fault|lockout|fail|fire|explosion|smoke|differential|ground|short|sudden pressure)|loss of (?:\S+ ){0,6}transformer|(?:fault|fire|explosion|failure|smoke|sudden pressure|lightning|struck|lockout)\b(?: \S+){0,4} (?:on|in|of|at|struck|to)(?: \S+){0,4} transformer'
+
+[[system]]
+value = "offsite_power"
+pattern = 'loss of (?:all )?(?:normal |preferred )?off-?site (?:ac )?power|off-?site power (?:was |were )?(?:lost|interrupted)|switchyard|substation|transmission (?:line|system|network|grid)|(?:disturbance|instability|transient|fault|perturbation|event|frequency|voltage|loss) (?:on|in|of) the (?:electrical |transmission |offsite |power )?grid|grid (?:disturbance|instability|transient|fault|perturbation|event|frequency|voltage|conditions|emergency|stability)|\b(?:765|500|345|230|161|138|115|69) ?kv\b.{0,20}(?:line|transmission|yard|ring bus)|load dispatcher|line (?:fault|lockout)|(?:offsite|electrical system|power system|grid) (?:electrical )?(?:disturbance|transient)'
+
+[[system]]
+value = "turbine_generator"
+pattern = 'generator (?:\S+ ){0,2}(?:lockout|protect\w*|field|ground|differential|fault|relay|hydrogen|stator|excit\w*)|power[- ]load (?:imbalance|unbalance)|\bexcit|voltage regulator|stator|isophase|iso-phase|hydrogen|seal(?:ing)? steam|gland (?:seal|steam)|steam seal'
+
+[[system]]
+value = "electrical"
+pattern = '\b(?:bus|buses|busses|switchgear|load center|motor control center|mcc|inverter|battery|battery board|battery charger|power supply|power supplies)\b.{0,40}(?:fault|fail|lost|loss|ground|short|undervoltage|de-?energiz|fire|trip)|(?:loss of|lost|loss of power to|fault on|failure of|ground on|de-?energiz\w*)\s.{0,30}\b(?:bus|buses|busses|switchgear|inverter|battery|power supply|power supplies|mcc|load center)\b|under-?\s?voltage|electrical (?:fault|transient|disturbance)|ground fault|blown fuse|fuse (?:blew|failed|failure)|\b\d+(?:\.\d)? ?(?:vdc|vac|v dc|v ac|volt)\b|\b\d{3,5} ?v\b|\b\d+(?:\.\d+)? ?kv (?:bus|breaker|switchgear|board|shutdown board)|division (?:\d|i{1,3}) (?:ac |dc )?power|(?:electrical|power|distribution|instrument) panel|loss of (?:\S+ )?(?:ac|dc) power|transfer(?:ring)? (?:of )?(?:the )?(?:\S+ ){0,6}bus\b|\bbus\b (?:was |were )?being transferred'
+
+[[system]]
+value = "cooling_water"
+pattern = 'condenser (?:vacuum|back ?pressure)|vacuum (?:loss|decreas|degrad|lower)|(?:loss of|low|lowering|degrading|decreasing) vacuum|circ(?:ulating)?\.? ?water|\bcw\b pumps?|service water|\bintake\b|traveling screens?|trash rack|\bscreens?\b|jellyfish|grass|seaweed|algae|\bdebris\b|\bfish\b|frazil|cooling tower|air ejector|\bsjae\b|waterbox|water box|turbine (?:building )?(?:closed|auxiliary) cooling|\btacs\b|\btbccw\b|forebay|open loop cooling|closed (?:loop )?cooling water'
+
+[[system]]
+value = "feedwater"
+pattern = 'feed ?(?:water )?(?:pump|reg|control|heater|flow|line|valve|controller|system|string|train|temperature|transient)|\b(?:m|r)?fps?\b|\brfpt|\bmfrv|\bfrvs?\b|feed regulating|condensate|heater drain|drain tank|booster pump|hotwell|feedwater heater|loss of (?:main )?feed'
+
+[[system]]
+value = "turbine_generator"
+pattern = '\behc\b|\bdehc\b|electro-?hydraulic|turbine control|control valves?|governor|stop valves?|intercept valves?|bypass valves?|pressure regulator|turbine runback|(?:turbine|load) (?:was )?run ?back|main generator|lube oil|moisture separator|\bmsr\b|thrust bearing|turbine (?:vibration|overspeed|bearing)'
+
+[[system]]
+value = "instruments"
+pattern = 'spurious|\bspik|noise|erratic|invalid|false (?:signal|indication|trip|high|low)|inadvertent (?:\S+ ){0,6}signal|(?:failed|failure of|faulty|malfunction\w* of)\s(?:a |an |the )?.{0,30}(?:transmitter|sensor|detector|card|module|relay|contacts?|instrument|switch)|(?:transmitter|sensor|detector|card|module|relay|contacts?|instrument)\b.{0,20}(?:fail|malfunction|drift)|circuit card|logic (?:card|module|failure|fault)|below (?:the |its )?(?:trip |rps |reactor protection system )?(?:actuation )?setpoint'
+
+[[system]]
+value = "reactor_coolant"
+pattern = '(?:control )?rods?\b.{0,20}(?:dropped|drop|slipped|misalign|stuck|withdr|deviation)|dropped (?:control )?rods?|rod (?:deviation|position)|\bcrdm?\b|control rod drive|rod control|control element|\bceas?\b|\bmg sets?\b|motor generator set|reactor coolant pump|\brcps?\b|recirc|pressurizer|\bporv|relief valve|\bsrvs?\b|safety valve|(?:main steam isolation valves?|msivs?)\b.{0,20}(?:failed|drifted|went closed|closed unexpectedly|inadvertent)|(?:failure|inadvertent closure|spurious closure) of (?:an? |the )?(?:\S+ ){0,3}(?:main steam isolation|msiv)|main steam (?:line )?(?:leak|break|rupture)|coolant leak|reactor coolant (?:system )?leak|unidentified leak|conductivity|\brcs\b leak'
+
+# Signals that name only what tripped, read when no root cause leads. A level first: "a turbine
+# trip on high steam generator level" started in the feedwater train.
+[[signal]]
+value = "feedwater"
+pattern = '(?:steam generator|s/?g|reactor (?:vessel )?water|rpv|vessel|reactor) (?:water )?(?:level|lvl)|water level|level (?:of|in) (?:the )?(?:\S+ ){0,3}(?:steam generator|s/?g)\b|(?:hi(?:gh)?|lo(?:w)?)[- ](?:hi(?:gh)?|lo(?:w)?) (?:water )?level'
+
+[[signal]]
+value = "turbine_generator"
+pattern = '\bturbine|(?:main|unit|the|a) generator\b|generator (?:trip|lockout|load)|load reject|loss of (?:turbine )?load'
+
+[[signal]]
+value = "reactor_coolant"
+pattern = 'flux|\bdnbr?\b|departure from nucleate boiling|reactor pressure|high pressure|low pressure|overpower|over power|overtemperature|over temperature|temperature|\bflow\b|power to flow|power-to-flow|scram discharge volume|\bsdv\b|main steam isolation|\bmsivs?\b'
+
+# The circumstance, in the guide's order: weather, testing, maintenance, an error.
+[[circumstance]]
+value = "weather"
+pattern = 'lightning|thunder|storm|hurricane|tornado|tropical|high winds?|wind gust|severe weather|\bflood|ice storm|freezing|frazil|icing|snow|extreme (?:cold|heat)|heat wave|cold weather|blizzard'
+
+[[circumstance]]
+value = "testing"
+pattern = '(?:during|while|performing|perform|conducting|in progress|as part of|for|of a|of the|routine|scheduled|planned)\b[^|]{0,60}\b(?:surveillance|test(?:ing)?|calibration|physics)\b|\b(?:surveillance|test(?:ing)?|calibration)\b[^|]{0,30}(?:in progress|being performed|was being|caused|resulted|initiated)|(?:surveillance|test(?:ing)?) (?:procedure|activit)|physics test|rod worth|rod drop test|startup test|power ascension test'
+
+[[circumstance]]
+value = "maintenance"
+pattern = '(?:during|while|performing|perform|conducting|in progress|as part of|for|planned|scheduled|preventive|corrective)\b[^|]{0,40}\b(?:maintenance|modification|troubleshooting|replacement|installation|repair work)\b|\bmaintenance\b[^|]{0,30}(?:in progress|being performed|was being|caused|resulted|activit)|work (?:activit|was being|in progress|on the)|\brack(?:ing|ed)? (?:in|out)\b'
+
+[[circumstance]]
+value = "human_error"
+pattern = '(?:operator|personnel|human|technician|procedural|procedure) error|error by|incorrect(?:ly)? (?:operat|position|perform|install|manipulat|select)|wrong (?:unit|train|breaker|channel|component|switch)|mis-?position'

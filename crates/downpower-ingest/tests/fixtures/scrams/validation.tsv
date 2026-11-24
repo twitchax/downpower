@@ -1,0 +1,51 @@
+number	system	circumstance	sure	why
+35261	electrical	maintenance	no	during relay calibration on A 6.9-kV bus it deenergized, lost 2 of 3 RCPs; calibration test vs maintenance
+35372	reactor_coolant	testing	no	rod groups moved out of sequence while pulling banks during rod drop testing; manual trips
+35872	reactor_coolant	none	no	trip from OTDeltaT; cause under investigation, turbine trip only suspected
+36482	feedwater	none	yes	2 of 3 MFPs tripped on low suction after loss of HP heater drain pump (heater level transient)
+36863	electrical	maintenance	no	EDG output breaker inadvertently closed while racking out; undervoltage tripped heater drain pumps, MFPs
+37117	feedwater	none	yes	loss of A main feedwater pump; manual trip as SG levels approached low level trip
+37218	reactor_coolant	none	no	unknown causes; first out Power Range Negative Flux Rate Hi (signal only)
+37244	cooling_water	none	no	unable to hold condenser vacuum after admitting air to offgas train per alarm procedure; no error named
+38593	turbine_generator	none	yes	auto stop oil pressure trip on main turbine; cause being investigated
+38730	offsite_power	testing	yes	switchyard east bus tripped during breaker failure backup testing in switchyard; loss of offsite power
+39291	reactor_coolant	none	yes	manual trip due to dropped rod F-6
+39333	not_named	none	no	manual trip for high sulfate concentration in steam generators; no system named, cause under review
+39460	turbine_generator	none	yes	main turbine generator trip and reactor trip
+40484	turbine_generator	none	yes	update: failed 321/G relay in main generator protection circuitry
+40832	offsite_power	maintenance	no	scram following electrical yard manipulation; generator lockout, electrical fault under investigation
+40959	feedwater	none	yes	running RFW pump tripped on high RFW turbine drain tank level
+41023	offsite_power	none	yes	230KV B bus loss (partial loss of offsite power) lost non-vital 4160V buses, all RCPs tripped
+41227	turbine_generator	none	yes	turbine generator trip from loss of stator cooling water
+42058	feedwater	none	yes	loop 2 main feedwater regulating valve failed closed; low SG level
+42966	turbine_generator	none	no	believed turbine trip; turbine surveillance in progress but not known if it caused the trip
+43560	instruments	none	yes	recirc flow transmitter sensing line separated, false low flow to APRM flow-biased scram
+45547	electrical	none	yes	turbine trip on low condenser vacuum; loss of non-1E electrical switchgear initiated the event
+45931	feedwater	none	yes	low level C steam generator; feedwater transient initiated the event
+46235	instruments	maintenance	yes	during replacement of failed turbine stop valve relay feeding RPS, logic condition met
+46274	turbine_generator	weather	yes	inadvertent energization generator trip; heavy weather suspected as the cause
+46660	not_named	none	no	manual trip on SG sodium concentration exceeding chemistry limits; no system named
+47628	reactor_coolant	none	yes	primary to secondary SG leak over 30 gal/hr; manual trip
+49020	turbine_generator	none	yes	vibration and arcing on main turbine bearing #9 on the generator exciter
+49593	reactor_coolant	none	yes	loss of both recirc pumps on failed transfer to LFMG during downpower; cause unknown
+49743	turbine_generator	none	yes	turbine tripped; generator negative sequence current alarm; cause under investigation
+50124	feedwater	none	yes	A SG level oscillated after start of A condensate pump, reached 85% trip criterion
+50533	electrical	weather	no	loss of 2B startup transformer lost RCP CCW; thunderstorms with lightning onsite at the time
+51055	turbine_generator	none	yes	automatic scram from a turbine trip; cause under investigation
+51308	offsite_power	none	yes	turbine tripped after fault on offsite 345 kV line 2 miles from site
+51897	turbine_generator	none	yes	generator lockout, relay 86/G1 actuated; cause under investigation
+53060	turbine_generator	none	yes	trip due to turbine trip; cause under investigation
+53329	feedwater	none	yes	unable to control main feedwater flow through MFW control valves using ICS
+54096	feedwater	none	yes	B heater string isolation caused loss of suction and trip of feed water pumps A and C
+54175	reactor_coolant	none	yes	Loop 2 B main steam isolation valve failed shut
+54211	feedwater	none	yes	feedwater regulating valve 23BF19 malfunction degraded flow control to 23 SG
+54740	reactor_coolant	none	yes	group 1 of control rod bank B fully inserted into the core
+55114	electrical	maintenance	yes	loss of 13.8 kV non-class bus during maintenance lost two RCPs
+55821	feedwater	maintenance	yes	feedwater transient during maintenance on feedwater level control valve; low level scram
+56459	turbine_generator	none	no	turbine tripped on lost hydraulic pressure first; then failed fast bus transfer lost RCPs (electrical)
+56863	feedwater	none	yes	isolation of low-pressure feedwater string A lowered feedwater temperature
+57003	feedwater	none	yes	turbine trip caused by loss of suction to 22 main feedwater pump
+57344	electrical	weather	no	vacuum lost from loss of power to cooling tower fans, water intrusion from Hurricane Helene
+57854	instruments	none	yes	spurious safeguards actuation from false high containment pressure trip signal
+58018	turbine_generator	none	yes	turbine control valve fast closure due to generator lockout
+58141	feedwater	none	yes	steam leak in the feedwater heater system
