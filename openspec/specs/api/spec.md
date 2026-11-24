@@ -5,7 +5,7 @@ The HTTP surface of `downpower serve` beyond the rendered pages: the `/api/*` ro
 
 ## Requirements
 ### Requirement: Routes
-The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}`, `/api/markers`, `/api/trends`, `/api/ffd` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003 T-006, PRD-0005 T-006, PRD-0006 T-003)
+The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL serve `/api/barcode/{layer}`, `/api/lost/{layer}`, `/api/unit-day/{docket}/{date}`, `/api/events`, `/api/events/counts`, `/api/events/{number}`, `/api/markers`, `/api/trends`, `/api/ffd`, `/api/scrams` and `/api/status`, where `{layer}` is `attributed` or `observed` and any other layer answers 404. (PRD-0001 T-001, PRD-0002 T-013 T-014 T-015, PRD-0004 T-003 T-006, PRD-0005 T-006, PRD-0006 T-003, PRD-0007 T-005)
 
 #### Scenario: Health
 - **WHEN** a client GETs `/healthz`
@@ -16,11 +16,11 @@ The server SHALL answer `GET /healthz` with 200 and the body `ok`, and SHALL ser
 - **THEN** each answers 404
 
 ### Requirement: 503 until a build exists
-The barcode, lost, unit-day, trends and FFD routes SHALL answer 503 with `Retry-After: 30` and the body `the ledger is building` while no build has been made current, and the barcode, lost, trends and FFD routes SHALL do the same when the serving build stored no buffer or series for them. (PRD-0002 T-013 T-016, PRD-0005 T-006, PRD-0006 T-003)
+The barcode, lost, unit-day, trends, FFD and scrams routes SHALL answer 503 with `Retry-After: 30` and the body `the ledger is building` while no build has been made current, and the barcode, lost, trends, FFD and scrams routes SHALL do the same when the serving build stored no buffer or series for them. (PRD-0002 T-013 T-016, PRD-0005 T-006, PRD-0006 T-003, PRD-0007 T-005)
 
 #### Scenario: A fresh volume
 - **WHEN** the database has never held a build
-- **THEN** `/api/barcode/attributed`, `/api/unit-day/05000323/2025-07-15`, `/api/trends` and `/api/ffd` answer 503
+- **THEN** `/api/barcode/attributed`, `/api/unit-day/05000323/2025-07-15`, `/api/trends`, `/api/ffd` and `/api/scrams` answer 503
 
 ### Requirement: Routes read the serving build
 The data routes SHALL read the build the current-build record names, also while that record is in a shape the running binary can't parse, as `ledger` describes. (PRD-0002 T-020)
@@ -145,6 +145,17 @@ Responses SHALL be gzip-compressed when the request accepts gzip. (PRD-0002 T-01
 - **WHEN** a client GETs `/api/barcode/observed` with `Accept-Encoding: gzip`
 - **THEN** the response carries `Content-Encoding: gzip`
 
+### Requirement: The scram series
+`/api/scrams` SHALL answer JSON `{first, last, scrams, units}`: the build's first month and last day; every unit scram `ledger` describes, by date, number and docket, with its `kind`, `initial_power`, `system`, `circumstance` and `episode` (`start`, `days`, `lost_kwh`, `end`) or null; and each catalog unit's `docket`, `name` and in-service `days` per month from `first`. (PRD-0007 T-005)
+
+#### Scenario: Over the fixture build
+- **WHEN** `/api/scrams` is fetched after a rebuild of the fixture raw store
+- **THEN** its `last` matches the build summary's, its units' days sum to the build's days, and every unit has its name
+
+#### Scenario: Nothing named
+- **WHEN** a manual scram's text names no system or circumstance
+- **THEN** it serializes with `"kind":"manual","system":"not_named","circumstance":"none"`
+
 ### Requirement: The event list
 `/api/events` SHALL answer JSON `{total, page, pages, rows}`: page `page`, 50 to a page, of the serving build's events the query selects (dates, category groups, state, a name, a unit's docket, a 10 CFR prefix, emergency class, scram, and words all found in the title, text or names), newest first by date then number, each row with its number, date, group, place, state, units, title, 10 CFR codes and scram and retraction flags. (PRD-0004 T-002 T-003)
 
@@ -163,6 +174,13 @@ With `ffd=1`, the event list and the counts SHALL select only the fitness-for-du
 - **WHEN** the fixture's EN 45290 is coded 26.719(b)(1) and the events are filtered by `ffd=1`, then by `ffd=1&state=GA`
 - **THEN** the first lists EN 45290 alone and the second lists none
 
+### Requirement: The trigger filter
+With `trigger`, a comma-separated list of system slugs, the event list and the counts SHALL select only the unretracted scrams whose system, as `ledger` tags it, is one of them, alongside every other filter; an unknown slug is dropped. (PRD-0007 T-007)
+
+#### Scenario: Two systems
+- **WHEN** the fixture's EN 45290 tells of a feed pump trip and EN 45286 of a loss of offsite power, and the events are filtered by `trigger=feedwater`, then by `trigger=feedwater,offsite_power`
+- **THEN** the first lists EN 45290 alone and the second both
+
 ### Requirement: Event search
 `q` SHALL select the events whose title, text, place, site, licensee, unit names and persons contain each of its whitespace-separated words as a substring, in any case, so `scram` also finds "scrammed". (PRD-0004 T-001 T-003)
 
@@ -178,11 +196,15 @@ With `ffd=1`, the event list and the counts SHALL select only the fitness-for-du
 - **THEN** all four count in the eighth series
 
 ### Requirement: One event
-`/api/events/{number}` SHALL answer the serving build's event `number` as stored (the event as its page shows it, its identity and its page's date), with `nrc`, its anchor on that NRC page, `label`, its category as published, and `unit_names`; 404 for a number it doesn't hold, and 400 for one that isn't digits. (PRD-0004 T-003 T-005)
+`/api/events/{number}` SHALL answer the serving build's event `number` as stored (the event as its page shows it, its identity and its page's date), with `nrc`, its anchor on that NRC page, `label`, its category as published, `unit_names`, and `trigger`, an unretracted scram's `system` and `circumstance` or null; 404 for a number it doesn't hold, and 400 for one that isn't digits. (PRD-0004 T-003 T-005, PRD-0007 T-007)
 
 #### Scenario: An unknown number
 - **WHEN** a client GETs `/api/events/99999` or `/api/events/zebra`
 - **THEN** they answer 404 and 400
+
+#### Scenario: A scram's tags
+- **WHEN** a client GETs `/api/events/45290`, a scram, and `/api/events/45289`, which scrammed nothing
+- **THEN** the first carries a `trigger` with a system and a circumstance, and the second a null one
 
 ### Requirement: Event markers buffer
 `/api/markers` SHALL answer `application/octet-stream`: `DPM1`, a table of dockets, and one marker per unit of each mapped, unretracted reactor event in the serving build (a docket index, its day from 1999-01-01, a scram flag and the event number), under a weak `ETag` from the bytes, 304 to a request holding it. (PRD-0004 T-006)

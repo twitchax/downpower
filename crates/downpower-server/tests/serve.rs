@@ -111,7 +111,7 @@ fn e2e_trends_serve_renders_the_page_and_its_data() {
         assert_eq!(trends.first.map(|first| first.to_string()), Some("2025-07-01".to_owned()));
         let page = String::from_utf8(get_ok(&client, &format!("{base}/trends"), Duration::from_secs(5)).await).unwrap();
         assert!(page.contains("<h1>Fleet trends</h1>"), "{page}");
-        for chart in ["Reported power reduction by year", "By month of the year", "Refueling outage length", "Scrams"] {
+        for chart in ["Reported power reduction by year", "By month of the year", "Refueling outage length", "Scrams", "by trigger →"] {
             assert!(page.contains(chart), "{chart}");
         }
         assert!(page.contains(r#"href="/trends""#), "the nav links it");

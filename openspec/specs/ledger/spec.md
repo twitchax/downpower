@@ -469,6 +469,56 @@ A build SHALL count each state's in-service unit-days by year, the unit's state 
 - **THEN** Colorado's adult use counts from 2012-12-10, not 2012-12-09, and its medical program in 2001
 - **AND** Idaho has no medical program on 2026-11-18
 
+### Requirement: Scram triggers
+Each unretracted event giving a unit a SCRAM Code other than `N` SHALL take a system and a circumstance from `catalog/triggers.toml`'s phrase rules over its title and sentences, updates included: the most upstream root cause the text names, or the signal's system when it names only the trip signal, else `not_named`; and weather, testing, maintenance, human error or `none`. The catalog is the authority for the phrases. (PRD-0007 T-002)
+
+#### Scenario: The root over the signal
+- **WHEN** a scram's text says the reactor tripped on a turbine trip caused by a loss of offsite power
+- **THEN** its system is `offsite_power`
+
+#### Scenario: A signal alone
+- **WHEN** the title is `AUTOMATIC REACTOR TRIP ON TURBINE TRIP` and the text says only that the cause is under investigation
+- **THEN** its system is `turbine_generator`
+
+#### Scenario: Nothing named
+- **WHEN** the text says only that the cause of the trip is under investigation
+- **THEN** its system is `not_named`
+
+### Requirement: Trigger catalog checks
+`catalog/triggers.toml` SHALL fail to load when a pattern doesn't compile, a value is unknown, or an override gives no reason, assigns nothing or names an event twice. An override SHALL replace the rules' tag for its event, and a build SHALL fail when one names an event the archive lacks, a retracted one, or one that scrammed no unit. (PRD-0007 T-002)
+
+#### Scenario: Not a scram
+- **WHEN** an override names the fixture's EN 45289, which scrammed no unit
+- **THEN** the check fails
+
+### Requirement: Trigger accuracy
+The committed rules SHALL agree with at least 90% of the system labels and of the circumstance labels on the 150 scram events labeled by hand before any rule existed, and with at least 85% on the 50 validation events drawn after the rules were tuned. (PRD-0007 T-001 T-002)
+
+#### Scenario: Both fixtures
+- **WHEN** `uat_scram_triggers_sample` scores the committed rules
+- **THEN** both fixtures clear their floors
+
+### Requirement: Scram episodes
+A unit scram from at least 10% power SHALL have an episode when the status reports show the unit at least 10 points below that power on the event's day or the next: it runs from that day while the unit stays that far down, and its energy is (pre-scram power − power)% × net capacity × 24 h over those days, whatever cause each carries. A scram the reports don't show has none. (PRD-0007 T-003)
+
+#### Scenario: Back near full power
+- **WHEN** Crystal River 3 scrams from 100% on 2009-08-24 and reports 100, 0, 0, 30, 85 and 92 from that day
+- **THEN** its episode starts 2009-08-25, runs 4 days, loses 285 points of a day's capacity, and ends `returned`
+
+### Requirement: Episode ends
+An episode SHALL end `refueling` at a day attributed to Refueling, `next_scram` when the unit's next scram from at least 10% power is reached, `open` at a gap in the unit's rows or the end of the data, and `returned` at a day back within 10 points. (PRD-0007 T-003)
+
+#### Scenario: Into refueling
+- **WHEN** Browns Ferry 3 is down from the event's day and its reports name a refueling outage from the fourth day
+- **THEN** its episode runs 3 days and ends `refueling`
+
+### Requirement: The scram series
+A build SHALL store the scram series beside the trends: every unit scram on a catalog unit with its tags and episode, and each catalog unit's in-service days per month from the build's first month. (PRD-0007 T-005)
+
+#### Scenario: A unit off one page
+- **WHEN** Peach Bottom 3 is off one of nine August 2009 pages
+- **THEN** its days for that month read 8
+
 ### Requirement: Observed and attributed layers
 In the attributed layer a unit-day SHALL carry its attributed family, and in the observed layer it SHALL keep that family only when its method is `precedence_v1` and count as Unattributed otherwise. The barcode cells and monthly series `api` serves are built per layer this way. (PRD-0002 T-013 T-014)
 
@@ -481,7 +531,7 @@ In the attributed layer a unit-day SHALL carry its attributed family, and in the
 - **THEN** the day is Forced in the attributed layer and Unattributed in the observed layer
 
 ### Requirement: Derived version
-Every build SHALL record a `derived_version` of 16 lowercase hex digits from the ledger version constant and the embedded `catalog/tags.toml`, `catalog/unclassified.tsv`, `catalog/units.csv`, `catalog/capacity.csv`, `catalog/facilities.csv`, `catalog/xref.toml`, `catalog/ffd.toml` and `catalog/cannabis.csv`, so a new ledger version or any change to a catalog file changes it. The catalog files SHALL be embedded in the binary. (PRD-0002 T-008 T-009, PRD-0003 T-004 T-005, PRD-0005 T-006)
+Every build SHALL record a `derived_version`, 16 lowercase hex digits hashing the ledger version constant and the catalog files the binary embeds (`tags.toml`, `unclassified.tsv`, `units.csv`, `capacity.csv`, `facilities.csv`, `xref.toml`, `ffd.toml`, `cannabis.csv` and `triggers.toml` under `catalog/`), so a new ledger version or a catalog change changes it. (PRD-0002 T-008 T-009, PRD-0003 T-004 T-005, PRD-0005 T-006, PRD-0007 T-005)
 
 #### Scenario: A stable stamp
 - **WHEN** the derived version is computed twice by one binary
@@ -529,7 +579,7 @@ Refreshing the ledger SHALL do nothing when the current build's `derived_version
 - **AND** when the record is in an older shape, that refresh logs it once, and reading `/status` meanwhile logs nothing
 
 ### Requirement: In-place updates match a full rebuild
-An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, the trends and the FFD series, events with their identities and unit rows, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003 T-004, PRD-0005 T-006, PRD-0006 T-003)
+An in-place update SHALL leave the current build serving exactly what a full rebuild of the same raw store serves (rows, both layers' barcodes and monthly series, the trends, the FFD and scram series, events with their identities and unit rows, and removed unit-months and events), rewriting only the unit-months and events that changed, and SHALL record the new digest and summaries under the same table. (PRD-0002 T-019, PRD-0003 T-003 T-004, PRD-0005 T-006, PRD-0006 T-003, PRD-0007 T-005)
 
 #### Scenario: A new page, then pages withdrawn
 - **WHEN** a page for 2025-07-16 arrives, and later both July pages are recorded as 404s

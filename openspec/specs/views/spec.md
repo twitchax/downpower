@@ -5,7 +5,7 @@ The pages a reader sees: the home page's filters, fleet barcode and stacked area
 
 ## Requirements
 ### Requirement: Pages
-The site SHALL render the home page at `/`, the fleet trends at `/trends`, the events explorer at `/events`, one event at `/events/{number}`, the fitness-for-duty page at `/ffd` and the status page at `/status`, each under a nav linking `downpower`, `trends`, `events`, `ffd` and `status`, and any other path SHALL render `Page not found.` Each page SHALL declare the site's icon, `/favicon.svg`. (PRD-0002 T-013 T-015, PRD-0004 T-004 T-005, PRD-0005 T-008, PRD-0006 T-005)
+The site SHALL render the home page at `/`, `/trends`, `/scrams`, `/events`, one event at `/events/{number}`, `/ffd` and `/status`, each under a nav linking `downpower`, `trends`, `scrams`, `events`, `ffd` and `status` and declaring the site's icon, `/favicon.svg`; any other path SHALL render `Page not found.` (PRD-0002 T-013 T-015, PRD-0004 T-004 T-005, PRD-0005 T-008, PRD-0006 T-005, PRD-0007 T-006)
 
 #### Scenario: Both pages render
 - **WHEN** `downpower serve` is up over the fixture raw store
@@ -22,7 +22,7 @@ The home page's views SHALL share one state kept in the URL query: `from` and `t
 - **AND** that query parses back to the same state
 
 ### Requirement: One state across pages
-`/trends` and `/ffd` SHALL read the home page's URL state, and a control on any of the three SHALL replace the state while keeping the page's path, so a link carries the range, layer and families from one to another. (PRD-0006 T-004)
+`/trends`, `/scrams` and `/ffd` SHALL read the home page's URL state, and a control on any of the four SHALL replace the state while keeping the page's path, so a link carries the range, layer and families from one to another. (PRD-0006 T-004, PRD-0007 T-006)
 
 #### Scenario: A range on the trends page
 - **WHEN** the reader presses 10 yr on `/trends`
@@ -191,8 +191,29 @@ Under 640px every page SHALL fit the screen: the filter rows wrap, axis year lab
 - **THEN** the first hangs left and the second doesn't
 - **AND** on a phone 2026's label hides while 2020's stays
 
+### Requirement: The scrams page
+`/scrams` SHALL show, over the URL state's range and below its range control, three bar charts by year: scrams per 100 operating unit-years stacked by system, the energy scram episodes lost as a share of net capacity stacked by system, and scrams tied to testing, maintenance or an error per 100 unit-years; then a unit table and caveats. `/trends`'s scram chart SHALL link it under the same query. (PRD-0007 T-006)
+
+#### Scenario: The page served
+- **WHEN** `downpower serve` is up over the fixture raw store
+- **THEN** `/scrams` carries `Scram triggers`, `Scrams by trigger`, `Output lost to scrams`, `Scrams tied to testing, maintenance or an error` and `By unit`, and `/trends` carries `by trigger →`
+
+### Requirement: Scram readouts and tables
+Each scram chart's readout SHALL head its year (`(partial)` when the days shown leave part out) with the total and list each system or circumstance with its count, and its table SHALL give every year's counts and rates. The tied chart's readout and table SHALL add weather. Every system SHALL keep its color in stack order, from feedwater's green to not named's gray. (PRD-0007 T-006)
+
+#### Scenario: Rates
+- **WHEN** a year of 10.0 unit-years holds 4 feedwater and 6 turbine and generator scrams, 2 during testing, 1 maintenance, 1 human error and 3 weather
+- **THEN** the rate readout heads `2024 · 100.0 per 100 unit-years over 10.0` and the tied one `2024 · 40.0 per 100 unit-years tied to testing, maintenance or an error`
+
+### Requirement: The scram unit table
+`/scrams` SHALL list the units with 365 or more in-service days over the range, most scrams per unit-year first, each with its unit-years, scrams, rate per 100, median episode, lost GWh and leading named system, and linking `/events` filtered to its scrams over the range. (PRD-0007 T-006)
+
+#### Scenario: Too little exposure
+- **WHEN** three units hold 3,653, 1,000 and 200 unit-days and 5, 4 and 3 scrams
+- **THEN** the table lists the second, then the first
+
 ### Requirement: Explorer filters in the URL
-`/events` SHALL keep its filters in the query: `from` and `to`, `category` (comma-separated group slugs, the NRC's renamed pairs merged), `state`, `facility`, `unit`, `cfr`, `class`, `scram=1`, `ffd=1`, `q` and `page`, each left out at its default, and a parameter that doesn't parse SHALL keep its default. A change of filter SHALL go back to the first page. (PRD-0004 T-002 T-004, PRD-0005 T-007)
+`/events` SHALL keep its filters in the query: `from` and `to`, `category` (comma-separated group slugs, the NRC's renamed pairs merged), `state`, `facility`, `unit`, `cfr`, `class`, `scram=1`, `ffd=1`, `trigger` (comma-separated system slugs), `q` and `page`, each left out at its default, and a parameter that doesn't parse SHALL keep its default. A change of filter SHALL go back to the first page. (PRD-0004 T-002 T-004, PRD-0005 T-007, PRD-0007 T-007)
 
 #### Scenario: A round trip
 - **WHEN** every filter is set, words and 10 CFR code included
@@ -202,6 +223,10 @@ Under 640px every page SHALL fit the screen: the filter rows wrap, axis year lab
 - **WHEN** a link carries `from=yesterday&state=Texas&unit=498&page=0`
 - **THEN** each keeps its default and the page still opens
 
+#### Scenario: A trigger list
+- **WHEN** a link carries `trigger=offsite_power,fire,feedwater`
+- **THEN** the filter holds feedwater and offsite power, and `/events?trigger=feedwater` renders the trigger select
+
 ### Requirement: The explorer page
 `/events` SHALL show one row of filter controls, the category groups as toggles that double as the legend, a stacked area of the selected events per month in eight series (the seven largest groups and Other, in the cause families' hues with Other in gray) with a month readout on hover, and the page's events newest first, each with its date, group, place or units, title linking `/events/{number}`, 10 CFR codes and `scram` and `retracted` chips, and links to the pages either side. (PRD-0004 T-004)
 
@@ -210,11 +235,15 @@ Under 640px every page SHALL fit the screen: the filter rows wrap, axis year lab
 - **THEN** the scram toggle is pressed and the list holds EN 45290
 
 ### Requirement: The event page
-`/events/{number}` SHALL show the event's dates, category, place, emergency class, last update and callers, its 10 CFR sections linking the explorer filtered to each, a reactor event's unit table (SCRAM Code, criticality, initial and current power and mode) and each unit's attributed barcode strip 60 days either side, the update timeline, the text, a retraction mark, and a link to the NRC page it came from; `No event {number}` when the API has none. (PRD-0004 T-005)
+`/events/{number}` SHALL show the event's dates, category, place, emergency class, last update, callers and a scram's trigger; its 10 CFR sections linking the explorer filtered to each; a reactor event's unit table (SCRAM Code, criticality, initial and current power and mode) and each unit's attributed barcode strip 60 days either side; the updates, the text, a retraction mark and the NRC page's link; `No event {number}` when the API has none. (PRD-0004 T-005, PRD-0007 T-007)
 
 #### Scenario: A scram
 - **WHEN** `/events/45290` loads
 - **THEN** its unit table reads Browns Ferry 3 `M/R` and it links the 2009-08-24 NRC page at `#en45290`
+
+#### Scenario: A scram's trigger
+- **WHEN** an event's trigger is feedwater, during testing
+- **THEN** its facts read `Feedwater and condensate, during testing`
 
 ### Requirement: Status page ledger panel
 `/status` SHALL show the current build's unit-days, span, build time and derived version; its reported power reduction in TWh and its reduced unit-days without a capacity; dates by source (with reasons, inside the hold, EIA only, missing) with counts and shares; the NRC/EIA disagreement rate; and the quarantined tags and unit names with their uses, or `Nothing quarantined` when there are none. (PRD-0002 T-015)

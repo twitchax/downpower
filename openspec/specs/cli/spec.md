@@ -106,6 +106,13 @@ Every subcommand SHALL use `DOWNPOWER_DATA_DIR` as its data dir, `./data` when i
 - **WHEN** `cargo xtask ffd --candidates` runs over a raw store whose units and facilities are all known
 - **THEN** `catalog/ffd.tsv` lists each FFD event once, and the candidates print for review
 
+### Requirement: xtask triggers
+`cargo xtask triggers` SHALL tag every unretracted scram event in the raw store as `ledger` describes and rewrite `catalog/triggers.tsv`, one line per event with its number, date, SCRAM Codes, units, system, circumstance, what decided each, and title, and print the systems by five-year era; `--episodes` SHALL also build the ledger and print the episodes' ends, days and energy beside the ledger's `scram` cause. (PRD-0007 T-002 T-003)
+
+#### Scenario: Over the archive
+- **WHEN** `cargo xtask triggers` runs over a raw store whose units and facilities are all known
+- **THEN** `catalog/triggers.tsv` lists each scram event once
+
 ### Requirement: xtask events
 `cargo xtask events` SHALL parse every stored Event Notification page and print the archive's counts (pages with events, empty pages by year, events repeated across pages, events by category and with no 10 CFR section, unused event numbers), the update markers' kinds and parse rates, and the events identified by kind, and SHALL fail when any page fails to parse or names a facility the catalogs lack, printing the first 20 of each. (PRD-0003 T-001 T-002 T-004)
 

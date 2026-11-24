@@ -234,14 +234,15 @@ fn ledger_a_current_record_in_an_older_shape_keeps_its_table_serving_until_a_reb
     });
 }
 
-/// Everything a build serves: its rows, both barcodes' tags, both monthly series, the trends and
-/// the FFD series.
+/// Everything a build serves: its rows, both barcodes' tags, both monthly series, the trends, the
+/// FFD series and the scram series.
 type Served = (
     Vec<UnitDay>,
     Vec<String>,
     Vec<downpower_core::series::Monthly>,
     downpower_core::trends::Trends,
     downpower_core::ffd::Series,
+    downpower_core::triggers::Series,
 );
 
 async fn served(store: &db::Store, table: &str) -> Served {
@@ -257,6 +258,7 @@ async fn served(store: &db::Store, table: &str) -> Served {
         series,
         stored::trends(store, table).await.unwrap().unwrap(),
         stored::ffd(store, table).await.unwrap().unwrap(),
+        stored::scrams(store, table).await.unwrap().unwrap(),
     )
 }
 
