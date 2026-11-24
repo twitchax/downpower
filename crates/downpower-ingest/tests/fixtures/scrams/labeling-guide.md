@@ -6,7 +6,9 @@ manual_reactor and manual are manual). Read the whole text, including any `* * *
 `EN Revision` paragraphs, and give the event two tags.
 
 Label what the text says. Don't infer a cause the text doesn't state, and don't use outside
-knowledge of the plant.
+knowledge of the plant. A cause the report gives with a hedge ("believed to be", "apparently",
+"suspected", "most probably") counts as named: the label is the report's best reading, not a
+verified root cause.
 
 ## System: the plant system the text says started the scram
 

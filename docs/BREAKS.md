@@ -106,7 +106,8 @@ Counts are from `catalog/triggers.tsv` and the raw store (2026-11-23, the home-b
 - **Scrams the NRC was notified of.** A scram counts when an unretracted Event Notification's
   unit table gives the unit a SCRAM Code other than `N` (DESIGN.md Decisions 30 and 33). Under
   10 CFR 50.72 an actuation of the reactor protection system while critical is a 4-hour report,
-  (b)(2)(iv)(B), and a valid actuation while shut down an 8-hour one, (b)(3)(iv)(A).
+  (b)(2)(iv)(B), and a valid actuation while shut down an 8-hour one, (b)(3)(iv)(A); an invalid
+  one while shut down isn't phoned in, so it isn't in the series.
   [10 CFR 50.72](https://www.ecfr.gov/current/title-10/chapter-I/part-50/section-50.72).
 - **The system is what the report says started the scram,** as the phrase rules in
   `catalog/triggers.toml` read it: the most upstream cause the text names, or the signal's system
@@ -121,16 +122,25 @@ Counts are from `catalog/triggers.tsv` and the raw store (2026-11-23, the home-b
 
 #### 2001: 10 CFR 50.72 rewritten
 
-- **What changed.** The Reporting Requirements for Nuclear Power Reactors final rule
-  ([65 FR 63769](https://www.federalregister.gov/documents/2000/10/25/00-27283/reporting-requirements-for-nuclear-power-reactors-and-independent-spent-fuel-storage-installations),
-  2000-10-25) revised 50.72 and 50.73, effective 2001-01-23. Scrams moved from 50.72(b)(2)(ii),
-  coded "ESF ACTUATION" or "RPS ACTUATION", to (b)(2)(iv)(B), "RPS ACTUATION - CRITICAL", and
-  (b)(3)(iv)(A), "VALID SPECIF SYS ACTUATION".
+- **What changed.** The Reporting Requirements for Nuclear Power Reactors and Independent Spent
+  Fuel Storage Installations at Power Reactor Sites final rule
+  ([65 FR 63769](https://www.govinfo.gov/content/pkg/FR-2000-10-25/html/00-27283.htm), 2000-10-25)
+  revised 50.72 and 50.73, effective 2001-01-23.
+  - Before it, any actuation of the reactor protection system, critical or not and most invalid
+    ones included, was a 4-hour report under 50.72(b)(2)(ii)
+    ([10 CFR 50.72, 2000 edition](https://www.govinfo.gov/content/pkg/CFR-2000-title10-vol1/xml/CFR-2000-title10-vol1-sec50-72.xml)).
+  - After it, a scram while critical stays a 4-hour report under (b)(2)(iv)(B), invalid or not;
+    a valid scram while shut down is an 8-hour report under (b)(3)(iv)(A); and an invalid scram
+    while shut down is no longer phoned in at all, going to a Licensee Event Report instead
+    (preamble, p. 63774: "telephone reporting under section 50.72 has been eliminated for invalid
+    scrams from a subcritical condition").
 - **In the data.** The first scram coded (b)(2)(iv)(B) is EN 37691 on 2001-01-25, and the last
-  coded (b)(2)(ii) is EN 37994 on 2001-05-16. Scram events number 100 in 2000 and 101 in 2001, so
-  the count shows no step.
-- **How the views show it.** Not marked: a scram is identified by its SCRAM Code and tagged from
-  its text, neither of which the rule changed.
+  coded (b)(2)(ii) is EN 37994 on 2001-05-16. Unit scrams of a reactor that wasn't critical number
+  10 in 1999, 8 in 2000 and 9 in 2001, then 2 to 5 a year from 2002, so the change shows a year
+  late and small; all scram events number 100 in 2000 and 101 in 2001.
+- **How the views show it.** Not marked: about six scrams a year from a shut-down reactor drop out
+  of a series of 70 to 110, and a scram from under 10% power has no episode, so the loss chart
+  doesn't move.
 
 #### From about 2021: titles stop naming the trigger
 

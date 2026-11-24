@@ -36,7 +36,7 @@ number	system	circumstance	sure	why
 40069	offsite_power	none	yes	automatic scram due to loss of offsite power
 40074	offsite_power	none	yes	grid disturbance load swings on generator; OTdT trip
 40297	turbine_generator	none	yes	generator/turbine trip on loss of excitation
-40301	reactor_coolant	none	no	high reactor coolant conductivity; the condensate demineralizer is only the licensee's speculation (reviewed)
+40301	feedwater	none	no	high reactor coolant conductivity; the licensee speculates an off-service condensate demineralizer (reviewed: a hedged cause counts)
 40350	reactor_coolant	testing	no	rod 1D4 dropped (blown stationary coil fuse); trip directed due to physics test bank position
 40537	cooling_water	none	yes	manual scram on degrading main condenser vacuum
 40570	feedwater	none	yes	B SG feed pump tripped unexpectedly, falling SG levels
@@ -137,7 +137,7 @@ number	system	circumstance	sure	why
 54944	cooling_water	none	no	SG #24 low-low level trip after a lowering of main condenser vacuum; both under investigation
 55732	feedwater	none	yes	North RFP tripped on low suction while removing South RFP from service; low RPV level
 56028	electrical	none	yes	supply breakers of the 1B startup transformer opened
-56075	feedwater	none	no	manual trip on B main feedwater pump trip; an electrical transient only suspected (reviewed)
+56075	electrical	none	no	B main feedwater pump trip suspected to come from an electrical transient (reviewed: a hedged cause counts)
 56216	feedwater	none	yes	trip on high-high level of #23 steam generator; reason under investigation
 56543	electrical	none	yes	turbine trip causing reactor trip due to fault on 2GT transformer
 56790	cooling_water	none	yes	degrading condenser vacuum from unexpected closure of the condenser air ejector regulator
