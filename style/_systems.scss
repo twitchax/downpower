@@ -1,0 +1,30 @@
+// The scram triggers' systems (docs/DESIGN.md Decisions 41 and 43), for `/scrams`. The dataviz
+// skill's reference hues again, since the design language's chart tokens stop at three series, in
+// an order enumerated over every assignment of seven of the eight to `System::ALL`'s stack order
+// and picked among the best for meaning: worst adjacent colorblind ΔE 16.3 light / 9.9 dark
+// (target 8), normal vision 19.6 / 19.3 (floor 15), on --bg-0 and --bg-1 alike. Offsite power
+// takes the grid family's violet and Not named Unattributed's cool gray, so the two hues that
+// carry over keep their meaning. Light-mode magenta, yellow, aqua and, on --bg-1, orange sit under
+// 3:1, so every chart carries a legend, a readout and a table view. Change a value only with the
+// validator run against both surfaces.
+:root {
+  --system-feedwater: light-dark(#008300, #0ca30c);
+  --system-turbine-generator: light-dark(#e87ba4, #d55181);
+  --system-electrical: light-dark(#eda100, #c98500);
+  --system-offsite-power: light-dark(#6250d6, #9085e9);
+  --system-cooling-water: light-dark(#1baf7a, #199e70);
+  --system-reactor-coolant: light-dark(#2a78d6, #3987e5);
+  --system-instruments: light-dark(#eb6834, #d95926);
+  --system-not-named: light-dark(#7b7f84, #5f6368);
+}
+
+$systems: feedwater, turbine-generator, electrical, offsite-power, cooling-water, reactor-coolant, instruments, not-named;
+
+@each $system in $systems {
+  .system-#{$system} { background: var(--system-#{$system}); }
+  rect.system-#{$system} { fill: var(--system-#{$system}); }
+}
+
+// The one series of the tied-scrams chart.
+.tied { background: var(--series-1); }
+rect.tied { fill: var(--series-1); }

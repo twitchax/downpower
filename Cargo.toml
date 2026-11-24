@@ -117,6 +117,13 @@ expect_used = "deny"
 # trip this and no `#[must_use]` can satisfy it (ironpad allows it workspace-wide too).
 must_use_candidate = "allow"
 
+# Dependencies build without debug info in dev and test builds. The `serve` test binary links
+# SurrealDB, Leptos and axum, and with every dependency's debug info its .debug_str passed 4 GiB,
+# beyond 32-bit DWARF offsets (mold: "relocation R_X86_64_32 against .debug_str out of range",
+# PRD-0007 T-006). The workspace's own crates keep theirs.
+[profile.dev.package."*"]
+debug = false
+
 # The regex engine runs about 10x slower unoptimized, and the tag-table tests classify all 21,864
 # tags in catalog/reasons.tsv. Optimizing just these crates keeps `cargo make test` fast.
 [profile.dev.package.regex-automata]

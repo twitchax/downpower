@@ -18,6 +18,7 @@ pub mod filters;
 mod icon;
 pub mod lost;
 pub mod paint;
+pub mod scrams;
 pub mod state;
 pub mod status;
 mod tooltip;
@@ -38,6 +39,7 @@ use crate::ffd::FfdPage;
 use crate::filters::Filters;
 pub use crate::icon::Icon;
 use crate::lost::StackedArea;
+use crate::scrams::ScramsPage;
 use crate::state::ViewState;
 use crate::status::StatusPage;
 use crate::trends::TrendsPage;
@@ -82,6 +84,7 @@ pub fn App() -> impl IntoView {
                 <nav class="nav">
                     <a href="/">"downpower"</a>
                     <a href="/trends">"trends"</a>
+                    <a href="/scrams">"scrams"</a>
                     <a href="/events">"events"</a>
                     <a href="/ffd">"ffd"</a>
                     <a href="/status">"status"</a>
@@ -91,6 +94,7 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("events") view=EventsExplorer />
                     <Route path=(StaticSegment("events"), ParamSegment("number")) view=EventPage />
                     <Route path=StaticSegment("trends") view=TrendsPage />
+                    <Route path=StaticSegment("scrams") view=ScramsPage />
                     <Route path=StaticSegment("ffd") view=FfdPage />
                     <Route path=StaticSegment("status") view=StatusPage />
                 </Routes>

@@ -81,7 +81,7 @@ fn Layers(state: Memo<ViewState>) -> impl IntoView {
 
 /// Presets for the last few years, and the dates themselves.
 #[component]
-fn Range(state: Memo<ViewState>) -> impl IntoView {
+pub(crate) fn Range(state: Memo<ViewState>) -> impl IntoView {
     let go = navigator();
     let presets = [("All", None), ("10 yr", Some(10)), ("5 yr", Some(5)), ("1 yr", Some(1))]
         .map(|(label, years)| {

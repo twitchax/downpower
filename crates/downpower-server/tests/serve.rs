@@ -137,6 +137,35 @@ fn e2e_ffd_serve_renders_the_page_and_its_series() {
     });
 }
 
+#[test]
+fn e2e_scrams_serve_renders_the_page_its_series_and_the_trigger_filter() {
+    let tmp = tempfile::tempdir().unwrap();
+    raw_store(tmp.path(), None);
+    let (_server, base) = serve(tmp.path());
+
+    block_on(async move {
+        let client = reqwest::Client::new();
+        let series: downpower_core::triggers::Series = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/scrams"), Duration::from_secs(60)).await).unwrap();
+        assert!(!series.units.is_empty(), "the fixture's units, with their days");
+        let page = String::from_utf8(get_ok(&client, &format!("{base}/scrams"), Duration::from_secs(5)).await).unwrap();
+        assert!(page.contains("<h1>Scram triggers</h1>"), "{page}");
+        for part in [
+            "Scrams by trigger",
+            "Output lost to scrams",
+            "Scrams tied to testing, maintenance or an error",
+            "By unit",
+            "Feedwater and condensate",
+        ] {
+            assert!(page.contains(part), "{part}");
+        }
+        assert!(page.contains(r#"href="/scrams""#), "the nav links it");
+        let events: downpower_core::explorer::EventsPage = serde_json::from_slice(&get_ok(&client, &format!("{base}/api/events?trigger=feedwater"), Duration::from_secs(5)).await).unwrap();
+        assert_eq!(events.total, 0, "the fixture store holds no scram");
+        let explorer = String::from_utf8(get_ok(&client, &format!("{base}/events?trigger=feedwater"), Duration::from_secs(5)).await).unwrap();
+        assert!(explorer.contains(">trigger<"), "the explorer's trigger filter");
+    });
+}
+
 /// The 2025-07-15 status page with Browns Ferry 3 down and citing EN 45290, its 2009 scram.
 fn citing_page() -> Vec<u8> {
     let page = String::from_utf8(fixture("status/2025-07-15.html")).unwrap();

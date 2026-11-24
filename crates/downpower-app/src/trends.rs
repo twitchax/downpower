@@ -263,15 +263,38 @@ pub fn scram_rate(years: &[Year]) -> (Chart, Table) {
 }
 
 #[cfg(feature = "hydrate")]
-async fn load_trends() -> Result<Arc<Trends>, String> {
+pub(crate) async fn load_trends() -> Result<Arc<Trends>, String> {
     let bytes = crate::browser::fetch("/api/trends").await?.ok_or("no trends yet")?;
     serde_json::from_slice(&bytes).map(Arc::new).map_err(|error| error.to_string())
 }
 
 #[cfg(not(feature = "hydrate"))]
 #[allow(clippy::unused_async, reason = "the browser's version awaits")]
-async fn load_trends() -> Result<Arc<Trends>, String> {
+pub(crate) async fn load_trends() -> Result<Arc<Trends>, String> {
     Err("the trends load in the browser".to_owned())
+}
+
+/// The scram chart's legend, with the link to the same range's scram triggers.
+fn kinds(state: Memo<ViewState>) -> AnyView {
+    let items = ScramKind::ALL
+        .into_iter()
+        .map(|kind| {
+            view! {
+                <span class="legend-key">
+                    <span class=format!("swatch kind-{}", kind.slug())></span>
+                    {kind.label()}
+                </span>
+            }
+        })
+        .collect_view();
+    let by_trigger = move || format!("/scrams{}", state.get().to_query());
+    view! {
+        <span class="row">
+            {items}
+            <a class="meta" href=by_trigger>"by trigger →"</a>
+        </span>
+    }
+    .into_any()
 }
 
 #[component]
@@ -323,20 +346,6 @@ pub fn TrendsPage() -> impl IntoView {
             </figure>
         }
     };
-    let kinds = || {
-        let items = ScramKind::ALL
-            .into_iter()
-            .map(|kind| {
-                view! {
-                    <span class="legend-key">
-                        <span class=format!("swatch kind-{}", kind.slug())></span>
-                        {kind.label()}
-                    </span>
-                }
-            })
-            .collect_view();
-        view! { <span class="row">{items}</span> }.into_any()
-    };
     let spread = || {
         view! {
             <span class="row">
@@ -371,7 +380,7 @@ pub fn TrendsPage() -> impl IntoView {
         {figure(0, "Reported power reduction by year", "% of net capacity, by cause family", None)}
         {figure(1, "By month of the year", "% of net capacity, each calendar month across the range", None)}
         {figure(2, "Refueling outage length", "days at 0% power, by the year the outage began", Some(spread()))}
-        {figure(3, "Scrams", "Event Notification scrams per 100 operating unit-years", Some(kinds()))}
+        {figure(3, "Scrams", "Event Notification scrams per 100 operating unit-years", Some(kinds(state)))}
     }
 }
 
