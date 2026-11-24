@@ -203,6 +203,10 @@ rect.spread { fill: var(--series-1); }
 path.median { fill: none; stroke: var(--text-1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .legend-key { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-2); font-size: var(--text-xs); white-space: nowrap; }
 .table-scroll { overflow-x: auto; }
+// The scram page's unit table scrolls inside its section rather than widening the page's grid,
+// and the eight-system legend wraps at phone widths (PRD-0007 T-006).
+.units { min-width: 0; }
+.legend-keys { flex-wrap: wrap; }
 // Bars start at the plot's left edge, so the scale moves into a gutter of its own beside them.
 .bars .area-plot, .bars .axis { margin-left: 40px; }
 .bars .y-tick { left: -40px; width: 34px; text-align: right; transform: translateY(-50%); }
