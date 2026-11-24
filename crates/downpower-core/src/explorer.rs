@@ -7,6 +7,8 @@ use std::fmt::Write as _;
 use chrono::{Datelike as _, NaiveDate};
 use serde::{Deserialize, Serialize};
 
+use crate::triggers::System;
+
 /// Events a page of the list holds.
 pub const PAGE: usize = 50;
 
@@ -177,6 +179,9 @@ pub struct EventsState {
     pub scram: bool,
     /// Only fitness-for-duty events (DESIGN.md Decision 36, PRD-0005 T-007).
     pub ffd: bool,
+    /// Only scrams whose system is one of these (DESIGN.md Decision 43, PRD-0007 T-007); empty
+    /// lists every event.
+    pub triggers: Vec<System>,
     /// Words every listed event's title, text or names hold.
     pub q: Option<String>,
     /// From 1.
@@ -196,6 +201,7 @@ impl Default for EventsState {
             class: None,
             scram: false,
             ffd: false,
+            triggers: Vec::new(),
             q: None,
             page: 1,
         }
@@ -217,6 +223,9 @@ impl EventsState {
         let mut groups: Vec<Group> = param("category").map(|list| list.split(',').filter_map(Group::from_slug).collect()).unwrap_or_default();
         groups.sort();
         groups.dedup();
+        let mut triggers: Vec<System> = param("trigger").map(|list| list.split(',').filter_map(System::from_slug).collect()).unwrap_or_default();
+        triggers.sort();
+        triggers.dedup();
         Self {
             from: date("from"),
             to: date("to"),
@@ -232,6 +241,7 @@ impl EventsState {
             class: param("class").and_then(|class| Class::from_slug(&class)),
             scram: param("scram").as_deref() == Some("1"),
             ffd: param("ffd").as_deref() == Some("1"),
+            triggers,
             q: param("q").and_then(|q| text(&q)),
             page: param("page").and_then(|page| page.parse().ok()).filter(|page| *page >= 1).unwrap_or(1),
         }
@@ -273,6 +283,10 @@ impl EventsState {
         push("class", self.class.map(|class| class.slug().to_owned()));
         push("scram", self.scram.then(|| "1".to_owned()));
         push("ffd", self.ffd.then(|| "1".to_owned()));
+        push(
+            "trigger",
+            (!self.triggers.is_empty()).then(|| self.triggers.iter().map(|system| system.slug()).collect::<Vec<_>>().join(",")),
+        );
         push("q", self.q.clone());
         push("page", (self.page > 1).then(|| self.page.to_string()));
         if params.is_empty() { String::new() } else { format!("?{}", params.join("&")) }
@@ -420,6 +434,7 @@ mod tests {
             class: Some(Class::UnusualEvent),
             scram: true,
             ffd: true,
+            triggers: vec![System::Feedwater, System::OffsitePower],
             q: Some("diesel generator & fire".to_owned()),
             page: 3,
         };
@@ -428,19 +443,20 @@ mod tests {
 
         assert_eq!(
             query,
-            "?from=2010-01-01&to=2020-12-31&category=power-reactor,research-reactor&state=TX&facility=South%20Texas&unit=05000498&cfr=50.72%28b%29%282%29%28iv%29%28B%29&class=unusual-event&scram=1&ffd=1&q=diesel%20generator%20%26%20fire&page=3"
+            "?from=2010-01-01&to=2020-12-31&category=power-reactor,research-reactor&state=TX&facility=South%20Texas&unit=05000498&cfr=50.72%28b%29%282%29%28iv%29%28B%29&class=unusual-event&scram=1&ffd=1&trigger=feedwater,offsite_power&q=diesel%20generator%20%26%20fire&page=3"
         );
         assert_eq!(EventsState::parse_query(&query), state);
     }
 
     #[test]
     fn uat_events_state_a_mangled_parameter_keeps_its_default() {
-        let state = EventsState::parse_query("from=yesterday&category=power-reactor,zebras&state=Texas&unit=498&class=panic&scram=maybe&page=0&q=%20%20");
+        let state = EventsState::parse_query("from=yesterday&category=power-reactor,zebras&state=Texas&unit=498&class=panic&scram=maybe&trigger=offsite_power,fire,feedwater&page=0&q=%20%20");
 
         assert_eq!(
             state,
             EventsState {
                 groups: vec![Group::PowerReactor],
+                triggers: vec![System::Feedwater, System::OffsitePower],
                 ..EventsState::default()
             }
         );
