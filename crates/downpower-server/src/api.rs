@@ -69,6 +69,7 @@ pub fn router(store: Store) -> Router {
         .route("/api/status", get(status))
         .route("/api/trends", get(trends))
         .route("/api/ffd", get(ffd))
+        .route("/api/scrams", get(scrams))
         .route("/api/unit-day/{docket}/{date}", get(unit_day))
         .with_state(api)
 }
@@ -369,6 +370,20 @@ async fn ffd(State(api): State<Api>) -> Response {
         Err(error) => return failed(&error),
     };
     match ledger::ffd(&api.store, &table).await {
+        Ok(Some(series)) => Json(series).into_response(),
+        Ok(None) => building(),
+        Err(error) => failed(&error),
+    }
+}
+
+/// The scram series of the current build, as JSON (PRD-0007 T-005).
+async fn scrams(State(api): State<Api>) -> Response {
+    let table = match ledger::serving(&api.store).await {
+        Ok(Some(table)) => table,
+        Ok(None) => return building(),
+        Err(error) => return failed(&error),
+    };
+    match ledger::scrams(&api.store, &table).await {
         Ok(Some(series)) => Json(series).into_response(),
         Ok(None) => building(),
         Err(error) => failed(&error),

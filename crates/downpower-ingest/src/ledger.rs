@@ -33,8 +33,8 @@ use crate::{Res, Void};
 /// resolve through `catalog/xref.toml` (T-005). 7: an event with a blank Last Update Date parses.
 /// 8: builds record the internal scram check (T-007). 9: the check reads a citation inside any tag.
 /// 10: builds store the fleet trends (PRD-0006 T-003). 11: builds store the FFD series (PRD-0005
-/// T-006).
-pub const LEDGER_VERSION: u32 = 11;
+/// T-006). 12: builds store the scram series (PRD-0007 T-005).
+pub const LEDGER_VERSION: u32 = 12;
 
 /// The committed tables a build reads, embedded in the binary.
 #[derive(Debug, Clone)]
@@ -82,6 +82,7 @@ pub fn derived_version() -> String {
         crate::xref::CATALOG,
         crate::ffd::CATALOG,
         crate::cannabis::CATALOG,
+        crate::triggers::CATALOG,
     ] {
         // Length-prefixed, so moving text from one file to the next changes the stamp.
         hasher.update((catalog.len() as u64).to_le_bytes());

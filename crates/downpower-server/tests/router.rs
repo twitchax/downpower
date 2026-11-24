@@ -56,6 +56,7 @@ fn api_answers_503_until_a_build_is_current() {
         assert_eq!(get(&router, "/api/unit-day/05000323/2025-07-15", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(get(&router, "/api/trends", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(get(&router, "/api/ffd", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(get(&router, "/api/scrams", &[]).await.status(), StatusCode::SERVICE_UNAVAILABLE);
     });
 }
 
@@ -331,5 +332,24 @@ fn api_ffd_serves_the_series_with_the_ledger_span_and_every_state_law() {
         let days: u64 = series.exposure.iter().map(|row| u64::from(row.unit_days)).sum();
         assert_eq!(days, build.summary.days, "every row is a unit-day in its unit's state");
         assert_eq!(series.laws.len(), 51);
+    });
+}
+
+#[test]
+fn uat_scrams_api_serves_the_series_over_the_ledger_span() {
+    block_on(async {
+        let tmp = tempfile::tempdir().unwrap();
+        raw_store(tmp.path(), None);
+        let store = db::open(tmp.path()).await.unwrap();
+        let build = ledger::rebuild(&store, tmp.path(), Unknowns::Fail).await.unwrap();
+        let router = router(options(), store);
+
+        let response = get(&router, "/api/scrams", &[]).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let series: downpower_core::triggers::Series = serde_json::from_slice(&body(response).await).unwrap();
+        assert_eq!(series.last, build.summary.last);
+        let days: u64 = series.units.iter().flat_map(|unit| &unit.days).map(|days| u64::from(*days)).sum();
+        assert_eq!(days, build.summary.days, "a unit-day per row");
+        assert!(series.units.iter().all(|unit| !unit.name.is_empty()), "every unit has its name");
     });
 }
