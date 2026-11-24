@@ -26,6 +26,7 @@ use downpower_ingest::events::Scram;
 use downpower_ingest::facilities::Identity;
 use downpower_ingest::ffd::Ffd;
 use downpower_ingest::nrc::{self, Report};
+use downpower_ingest::triggers::{Tags, Triggers};
 use downpower_ingest::units::Units;
 
 use crate::daily::{self, Run};
@@ -156,7 +157,13 @@ async fn explorer(api: &Api) -> anyhow::Result<Option<Arc<Explorer>>> {
     if let Some(explorer) = cached {
         return Ok(Some(explorer));
     }
-    let explorer = Arc::new(Explorer::new(key, ledger::events(&api.store, &table).await?, &Units::catalog()?, &Ffd::catalog()?));
+    let explorer = Arc::new(Explorer::new(
+        key,
+        ledger::events(&api.store, &table).await?,
+        &Units::catalog()?,
+        &Ffd::catalog()?,
+        &Triggers::catalog()?,
+    ));
     *api.explorer.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&explorer));
     Ok(Some(explorer))
 }
@@ -264,6 +271,8 @@ struct EventDetail {
     nrc: Option<String>,
     label: &'static str,
     unit_names: Vec<String>,
+    /// An unretracted scram's system and circumstance (PRD-0007 T-007); none for any other event.
+    trigger: Option<Tags>,
 }
 
 /// One event from the serving build, as stored, with its NRC link: 400 for a number that isn't
@@ -296,10 +305,20 @@ async fn event(State(api): State<Api>, Path(number): Path<String>) -> Response {
                     .collect(),
                 _ => Vec::new(),
             };
+            let scram = !stored.event.retracted && stored.event.units.iter().any(|unit| unit.scram.is_some_and(|scram| scram != Scram::No));
+            let trigger = if scram {
+                match Triggers::catalog() {
+                    Ok(triggers) => Some(triggers.tags(&stored.event)),
+                    Err(error) => return failed(&error),
+                }
+            } else {
+                None
+            };
             Json(EventDetail {
                 nrc: stored.page.map(|page| format!("{}{}#en{number}", nrc::BASE_URL, Report::EventNotifications.path(page))),
                 label: stored.event.category.label(),
                 unit_names,
+                trigger,
                 stored,
             })
             .into_response()

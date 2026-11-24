@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use downpower_core::barcode::{Barcode, Cell, FULL};
 use downpower_core::explorer::{Class, EventsState};
+use downpower_core::triggers::{Circumstance, Tags};
 
 /// Days the strip shows either side of the event.
 pub const STRIP_DAYS: u64 = 60;
@@ -38,6 +39,9 @@ pub struct Detail {
     pub nrc: Option<String>,
     pub label: String,
     pub unit_names: Vec<String>,
+    /// An unretracted scram's system and circumstance (PRD-0007 T-007).
+    #[serde(default)]
+    pub trigger: Option<Tags>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -122,6 +126,20 @@ pub fn scram_code(scram: Option<&str>) -> &'static str {
     }
 }
 
+/// A scram's tags as the facts list writes them: the system, and what was going on when the text
+/// names it.
+#[must_use]
+pub fn trigger_label(tags: Tags) -> String {
+    let during = match tags.circumstance {
+        Circumstance::Weather => ", weather",
+        Circumstance::Testing => ", during testing",
+        Circumstance::Maintenance => ", during maintenance",
+        Circumstance::HumanError => ", an operator or technician error",
+        Circumstance::Unnamed => "",
+    };
+    format!("{}{during}", tags.system.label())
+}
+
 /// An emergency class's label.
 #[must_use]
 pub fn class_label(class: &str) -> &'static str {
@@ -203,6 +221,7 @@ fn Event(detail: Detail) -> impl IntoView {
         ("Category", detail.label.clone()),
         ("Place", format!("{}{}", detail.place(), detail.state.as_ref().map(|state| format!(", {state}")).unwrap_or_default())),
     ];
+    facts.extend(detail.trigger.map(|tags| ("Scram trigger", trigger_label(tags))));
     facts.extend(detail.class.as_deref().map(|class| ("Emergency class", class_label(class).to_owned())));
     facts.extend(detail.updated.map(|updated| ("Last update", updated.to_string())));
     facts.extend(detail.revised.map(|revised| ("Revision imported", revised.to_string())));
@@ -390,7 +409,8 @@ mod tests {
         "units": [{"unit": 3, "scram": "manual_reactor", "critical": true, "initial_power": 100, "initial_mode": "Power Operation", "current_power": 0, "current_mode": "Hot Standby"}],
         "updates": [{"kind": "update", "marker": "UPDATE", "date": "2009-08-25", "time": null, "zone": null, "from": "A", "to": "B", "text": ""}],
         "revised": null, "identity": {"kind": "reactor", "dockets": ["05000296"]}, "page": "2009-08-24",
-        "nrc": "https://www.nrc.gov/x#en45290", "label": "Power Reactor", "unit_names": ["Browns Ferry 3"]
+        "nrc": "https://www.nrc.gov/x#en45290", "label": "Power Reactor", "unit_names": ["Browns Ferry 3"],
+        "trigger": {"system": "feedwater", "circumstance": "testing"}
     }"#;
 
     #[test]
@@ -401,6 +421,7 @@ mod tests {
         assert_eq!(scram_code(detail.units[0].scram.as_deref()), "M/R");
         assert_eq!(class_label(detail.class.as_deref().unwrap_or_default()), "Non Emergency");
         assert_eq!(update_kind(&detail.updates[0].kind), "Update");
+        assert_eq!(detail.trigger.map(trigger_label).as_deref(), Some("Feedwater and condensate, during testing"));
     }
 
     #[test]

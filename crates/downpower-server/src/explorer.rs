@@ -9,6 +9,7 @@ use downpower_core::explorer::{Class, EventCounts, EventRow, EventsPage, EventsS
 use downpower_ingest::events::{EmergencyClass, Event, Scram, Site};
 use downpower_ingest::facilities::Identity;
 use downpower_ingest::ffd::Ffd;
+use downpower_ingest::triggers::{System, Triggers};
 use downpower_ingest::units::Units;
 
 use crate::ledger::StoredEvent;
@@ -28,6 +29,8 @@ struct Entry {
     text: String,
     /// A fitness-for-duty event, as `catalog/ffd.toml` identifies one.
     ffd: bool,
+    /// An unretracted scram's system, as `catalog/triggers.toml` tags it (PRD-0007 T-007).
+    system: Option<System>,
 }
 
 /// Every event of one build, newest first.
@@ -52,8 +55,10 @@ const fn class(class: EmergencyClass) -> Class {
     }
 }
 
-fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &str>, ffd: &Ffd) -> Entry {
+fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &str>, ffd: &Ffd, triggers: &Triggers) -> Entry {
     let is_ffd = ffd.identify(&event).is_some();
+    let scram = event.units.iter().any(|unit| unit.scram.is_some_and(|scram| scram != Scram::No));
+    let system = (scram && !event.retracted).then(|| triggers.tags(&event).system);
     let dockets: Vec<String> = match identity {
         Some(Identity::Reactor { dockets }) => dockets.iter().map(|docket| docket.as_str().to_owned()).collect(),
         Some(Identity::Facility { docket, .. }) => vec![docket.as_str().to_owned()],
@@ -91,22 +96,23 @@ fn entry(event: Event, identity: Option<&Identity>, unit_names: &HashMap<&str, &
             units,
             title: event.title,
             sections: event.sections.into_iter().filter_map(|section| section.code).collect(),
-            scram: event.units.iter().any(|unit| unit.scram.is_some_and(|scram| scram != Scram::No)),
+            scram,
             retracted: event.retracted,
         },
         dockets,
         names,
         text,
         ffd: is_ffd,
+        system,
     }
 }
 
 impl Explorer {
     /// Indexes `events` under `key`, which names the build they came from.
     #[must_use]
-    pub fn new(key: impl Into<String>, events: impl IntoIterator<Item = StoredEvent>, units: &Units, ffd: &Ffd) -> Self {
+    pub fn new(key: impl Into<String>, events: impl IntoIterator<Item = StoredEvent>, units: &Units, ffd: &Ffd, triggers: &Triggers) -> Self {
         let unit_names: HashMap<&str, &str> = units.all().iter().map(|unit| (unit.docket.as_str(), unit.name.as_str())).collect();
-        let mut entries: Vec<Entry> = events.into_iter().map(|stored| entry(stored.event, stored.identity.as_ref(), &unit_names, ffd)).collect();
+        let mut entries: Vec<Entry> = events.into_iter().map(|stored| entry(stored.event, stored.identity.as_ref(), &unit_names, ffd, triggers)).collect();
         entries.sort_by_key(|entry| std::cmp::Reverse((entry.row.date, entry.row.number)));
         Self { key: key.into(), entries }
     }
@@ -134,6 +140,7 @@ impl Explorer {
                 && state.class.is_none_or(|class| entry.class == Some(class))
                 && (!state.scram || row.scram)
                 && (!state.ffd || entry.ffd)
+                && (state.triggers.is_empty() || entry.system.is_some_and(|system| state.triggers.contains(&system)))
                 && words.iter().all(|word| entry.text.contains(word.as_str()))
         })
     }

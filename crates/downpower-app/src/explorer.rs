@@ -12,6 +12,7 @@ use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_navigate, use_query_map};
 
 use downpower_core::explorer::{Class, EventCounts, EventRow, EventsPage, EventsState, Group, SERIES};
+use downpower_core::triggers::System;
 
 use crate::area::{self, HEIGHT, WIDTH};
 use crate::state::thin;
@@ -114,7 +115,7 @@ pub fn EventsExplorer() -> impl IntoView {
     }
 }
 
-/// The filter row: dates, place and code, emergency class, scram, fitness for duty, words; then the category groups,
+/// The filter row: dates, place and code, emergency class, scram and its trigger, fitness for duty, words; then the category groups,
 /// which double as the chart's legend.
 #[component]
 fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
@@ -173,6 +174,24 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
                 <select on:change=move |event| go(EventsState { class: Class::from_slug(&event_target_value(&event)), ..state.get_untracked() }.first_page())>
                     <option value="" selected=move || state.get().class.is_none()>"any"</option>
                     {classes}
+                </select>
+            </label>
+        }
+    };
+    let systems = System::ALL
+        .map(|system| view! { <option value=system.slug() selected=move || state.get().triggers == [system]>{system.label()}</option> })
+        .collect_view();
+    let trigger = {
+        let go = go.clone();
+        view! {
+            <label class="date" title="Only scrams whose trigger, as the phrase rules read the text, is this system">
+                <span class="label">"trigger"</span>
+                <select on:change=move |event| {
+                    let triggers = System::from_slug(&event_target_value(&event)).into_iter().collect();
+                    go(EventsState { triggers, ..state.get_untracked() }.first_page());
+                }>
+                    <option value="" selected=move || state.get().triggers.is_empty()>"any"</option>
+                    {systems}
                 </select>
             </label>
         }
@@ -238,6 +257,7 @@ fn ExplorerFilters(state: Memo<EventsState>) -> impl IntoView {
             {cfr}
             {class}
             {scram}
+            {trigger}
             {ffd}
             {unit}
             {clear}

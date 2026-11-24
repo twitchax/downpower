@@ -21,6 +21,7 @@ use downpower_ingest::events::{EventSet, Section};
 use downpower_ingest::ffd::Ffd;
 use downpower_ingest::ledger::{Catalog, Unknowns};
 use downpower_ingest::raw::{RawStore, Series};
+use downpower_ingest::triggers::Triggers;
 use downpower_ingest::units::Units;
 use downpower_server::explorer::Explorer;
 use downpower_server::ledger::{self, StoredEvent};
@@ -52,7 +53,19 @@ fn explorer_with(edit: impl FnOnce(&mut EventSet)) -> Explorer {
         page: set.pages.get(&number).copied(),
         event,
     });
-    Explorer::new("event_1", events, &Units::catalog().unwrap(), &Ffd::catalog().unwrap())
+    Explorer::new("event_1", events, &Units::catalog().unwrap(), &Ffd::catalog().unwrap(), &Triggers::catalog().unwrap())
+}
+
+#[test]
+fn uat_scram_explorer_filters_scrams_by_trigger() {
+    let explorer = explorer_with(|set| {
+        set.events.get_mut(&45290).unwrap().text = "The reactor was manually tripped after the A main feed pump tripped.".to_owned();
+        set.events.get_mut(&45286).unwrap().text = "The reactor tripped on a loss of offsite power from a fault on the 230 kV line.".to_owned();
+    });
+    assert_eq!(numbers(&explorer, "trigger=feedwater", PAGE), [45290]);
+    assert_eq!(numbers(&explorer, "trigger=feedwater,offsite_power", PAGE), [45290, 45286]);
+    assert_eq!(numbers(&explorer, "trigger=offsite_power&state=AL", PAGE), Vec::<u32>::new());
+    assert_eq!(numbers(&explorer, "trigger=instruments", PAGE), Vec::<u32>::new(), "no scram is tagged instruments");
 }
 
 #[test]
@@ -216,6 +229,9 @@ fn uat_events_query_routes_answer_from_the_serving_build() {
         );
         assert_eq!((event["label"].as_str(), event["unit_names"][0].as_str()), (Some("Power Reactor"), Some("Browns Ferry 3")), "{event}");
         assert_eq!(event["units"][0]["scram"].as_str(), Some("manual_reactor"), "{event}");
+        assert!(event["trigger"]["system"].is_string() && event["trigger"]["circumstance"].is_string(), "a scram's tags: {event}");
+        let no_scram = json(get(&router, "/api/events/45289", &[]).await).await;
+        assert!(no_scram["trigger"].is_null(), "{no_scram}");
         assert_eq!(get(&router, "/api/events/99999", &[]).await.status(), StatusCode::NOT_FOUND);
     });
 }
