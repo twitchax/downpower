@@ -6,6 +6,7 @@ use leptos::prelude::*;
 use crate::barcode::{self, BarcodeView};
 use crate::chart::Figure;
 use crate::ffd::{self, FfdFigure};
+use crate::filters::FamilyKey;
 use crate::lost::{self, StackedArea};
 use crate::scrams::{self, ScramsFigure};
 use crate::state::ViewState;
@@ -61,6 +62,13 @@ impl View {
         self.figures().iter().position(|figure| figure.id == id)
     }
 
+    /// Whether figure `index` takes its colors from the cause families. On its page the filters'
+    /// legend is their key; a finding's page draws the key itself.
+    #[must_use]
+    pub const fn family_key(self, index: usize) -> bool {
+        matches!((self, index), (Self::Home, _) | (Self::Trends, 0 | 1))
+    }
+
     /// The `ViewState` parameters the view reads, so a finding's query sets nothing its view
     /// ignores: `/scrams` takes only the range, `/ffd` only the tables.
     #[must_use]
@@ -77,12 +85,17 @@ impl View {
 /// Figure `index` of `view`, alone at `state`: what a finding's page draws (Decision 45).
 #[component]
 pub fn ViewFigure(view: View, index: usize, state: Memo<ViewState>) -> impl IntoView {
-    match (view, index) {
+    let key = view.family_key(index).then(|| view! { <FamilyKey state /> });
+    let figure = match (view, index) {
         (View::Home, 0) => view! { <BarcodeView state /> }.into_any(),
         (View::Home, _) => view! { <StackedArea state /> }.into_any(),
         (View::Trends, _) => view! { <TrendsFigure state index /> }.into_any(),
         (View::Scrams, _) => view! { <ScramsFigure state index /> }.into_any(),
         (View::Ffd, _) => view! { <FfdFigure state index /> }.into_any(),
+    };
+    view! {
+        {key}
+        {figure}
     }
 }
 
@@ -93,6 +106,19 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn uat_findings_figures_colored_by_family_take_the_family_key() {
+        let keyed = |view: View| {
+            (0..view.figures().len())
+                .filter(|index| view.family_key(*index))
+                .map(|index| view.figures()[index].id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keyed(View::Home), ["barcode", "lost"]);
+        assert_eq!(keyed(View::Trends), ["loss-by-year", "loss-by-month"]);
+        assert!(keyed(View::Scrams).is_empty() && keyed(View::Ffd).is_empty(), "their figures carry their own legends");
+    }
 
     #[test]
     fn uat_findings_figures_every_view_names_its_figures_with_unique_kebab_ids() {

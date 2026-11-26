@@ -208,6 +208,8 @@ fn e2e_findings_serve_the_index_each_finding_with_its_tags_and_each_views_line()
                 assert!(page.contains(&part), "{}: {part}", finding.stem);
             }
             let view = View::from_path(finding.view).unwrap();
+            let keyed = view.family_key(view.figure(finding.figure).unwrap());
+            assert_eq!(page.contains("swatch family-"), keyed, "{}: the family key, without the filters' legend", finding.stem);
             for other in view.figures().iter().filter(|figure| figure.id != finding.figure) {
                 assert!(!page.contains(&format!(r#"id="{}""#, other.id)), "{}: only its own figure, not {}", finding.stem, other.id);
             }

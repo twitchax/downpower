@@ -176,6 +176,28 @@ fn Legend(state: Memo<ViewState>, markers: bool) -> impl IntoView {
     }
 }
 
+/// The families shown in `state`, as a key that filters nothing: what a figure drawn without the
+/// filters (on a finding's page) takes in place of their legend.
+#[component]
+pub(crate) fn FamilyKey(state: Memo<ViewState>) -> impl IntoView {
+    move || {
+        let visible = state.get().families;
+        let items = Family::STACK
+            .into_iter()
+            .filter(|family| visible.contains(*family))
+            .map(|family| {
+                view! {
+                    <span class="legend-key">
+                        <span class=format!("swatch family-{}", family.slug())></span>
+                        {family.label()}
+                    </span>
+                }
+            })
+            .collect_view();
+        view! { <div class="row legend-keys">{items}</div> }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
