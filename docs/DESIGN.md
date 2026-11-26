@@ -234,12 +234,13 @@ Decisions 10, 12 and 13 were revised later on 2026-11-12, after the nrc.gov 403 
       Unattributed a cool gray. Every view shares one `ViewState` (`?from&to&layer&families`).
 24. **The hero view is the fleet barcode,** with the stacked area of lost MWh by cause beneath it as
     its summary. Both share one filter state. It may be revisited.
-25. **Findings are markdown files in git, `findings/NNNN-slug.md`.**
+25. **Findings are markdown files in git, `findings/NNNN-slug.md`** (revised 2026-11-26 by
+    Decisions 44 and 46).
     - The frontmatter holds the view and its URL state, and the body holds the note.
-    - They are loaded into Surreal on every rebuild so they can be queried. They live in git, not
-      Surreal, because they can't be rebuilt from raw, deserve review, and can be checked in CI: a
-      test asserts every finding's state still parses.
-    - A "save as finding" button, present only in dev mode, writes the file.
+    - They live in git because they can't be rebuilt from raw, deserve review, and can be checked
+      in CI: a test asserts every finding's state still parses. They are compiled into the app
+      (Decision 44), not loaded into Surreal.
+    - `cargo xtask finding` writes a stub (Decision 46), not a dev-only button.
 26. **Sequence** (revised 2026-11-16).
     - **PRD-0002:** the status-report ledger as a deployed vertical slice.
     - **PRD-0003:** Event Notifications ingest: every category parsed, the 28-day hold, `See EN#`
@@ -406,6 +407,27 @@ Scram triggers (PRD-0007), from a scratch read of the 1,802 scram Event Notifica
 43. **A `/scrams` page,** sharing the trends' range: scrams per 100 unit-years by system, lost
     output by system, the circumstances, and a unit table, where design differences (the BWR/6
     units) show. The trends page's scram chart links to it, and the explorer gains `trigger=`.
+
+## Decisions (settled 2026-11-26)
+
+Findings (PRD-0008). Two of them revise Decision 25.
+
+### Findings
+
+44. **Findings are compiled into the app, not loaded into Surreal.**
+    - `downpower_core::findings` parses each file and renders its note to HTML at build time, in
+      the app's build script, so the server and the wasm share one table of findings.
+    - The server renders a finding's note, title and link-preview tags with no fetch, an edit to
+      a note costs no ledger rebuild (12 minutes on Fly), and the wasm carries HTML rather than a
+      markdown parser.
+45. **A finding's page shows its figure live** at the pinned state, with a link that opens the
+    whole view there. Each view lists the findings drawn on it, and the nav gains `findings`.
+46. **`cargo xtask finding <url> <slug>` writes a finding's stub,** with its query canonicalized and
+    its dates from the local build, in place of the dev-only save button. Either author can use it,
+    and the server never has a route that writes files.
+47. **Notes are in Aaron's voice, and each lands only after he has read it.** The pages around them
+    stay neutral. A finding shows the day it was written and the data's last day then, because its
+    numbers hold as of that day.
 
 ## Still open
 
