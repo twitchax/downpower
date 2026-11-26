@@ -18,7 +18,9 @@ use downpower_core::trends::DAYS_PER_YEAR;
 use crate::area::HEIGHT;
 use crate::bars;
 use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
+use crate::findings::FindingsOn;
 use crate::state::ViewState;
+use crate::views::View;
 
 /// The year columns of the overlay, starred when partial.
 fn columns(years: &[Year]) -> Vec<Column> {
@@ -396,6 +398,7 @@ pub fn FfdPage() -> impl IntoView {
             <p class="muted">
                 "Every Event Notification since 1999 that reports a fitness-for-duty matter: a test, a refusal, a substance found in a protected area, or a program failure. Beside them, the share of the fleet in states where cannabis was legal. The overlay describes; it doesn't estimate an effect."
             </p>
+            <FindingsOn view=View::Ffd />
         </header>
         <div class="row wrap">
             <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| go(ViewState { table: !table.get_untracked(), ..state.get_untracked() })>

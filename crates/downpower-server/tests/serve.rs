@@ -166,6 +166,57 @@ fn e2e_scrams_serve_renders_the_page_its_series_and_the_trigger_filter() {
     });
 }
 
+/// `text` as the server's HTML writes it in a text node.
+fn text(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+#[test]
+fn e2e_findings_serve_the_index_each_finding_with_its_tags_and_each_views_line() {
+    use downpower_app::findings::FINDINGS;
+    use downpower_app::views::View;
+
+    let tmp = tempfile::tempdir().unwrap();
+    raw_store(tmp.path(), None);
+    let (_server, base) = serve(tmp.path());
+
+    block_on(async move {
+        let client = reqwest::Client::new();
+        let get = |path: String| {
+            let client = client.clone();
+            let url = format!("{base}{path}");
+            async move { String::from_utf8(get_ok(&client, &url, Duration::from_secs(5)).await).unwrap() }
+        };
+        let index = get("/findings".to_owned()).await;
+        assert!(index.contains("<h1>Findings</h1>"), "{index}");
+        assert!(index.contains(r#"href="/findings""#), "the nav links it");
+        let missing = get("/findings/9999-missing".to_owned()).await;
+        assert!(missing.contains("No finding 9999-missing"), "{missing}");
+        for finding in FINDINGS {
+            assert!(index.contains(&format!(r#"href="{}""#, finding.href())), "the index lists {}", finding.stem);
+            let page = get(finding.href()).await;
+            for part in [
+                format!("<title>{} · downpower</title>", text(finding.title)),
+                r#"name="description""#.to_owned(),
+                r#"property="og:title""#.to_owned(),
+                r#"property="og:description""#.to_owned(),
+                format!("<h1>{}</h1>", text(finding.title)),
+                format!(r#"id="{}""#, finding.figure),
+                format!("Written {}, on data through {}", finding.written, finding.through),
+                format!(r#"href="{}""#, text(&finding.view_href())),
+            ] {
+                assert!(page.contains(&part), "{}: {part}", finding.stem);
+            }
+            let view = View::from_path(finding.view).unwrap();
+            for other in view.figures().iter().filter(|figure| figure.id != finding.figure) {
+                assert!(!page.contains(&format!(r#"id="{}""#, other.id)), "{}: only its own figure, not {}", finding.stem, other.id);
+            }
+            let listed = get(finding.view.to_owned()).await;
+            assert!(listed.contains(&format!(r#"href="{}""#, finding.href())), "{} lists {}", finding.view, finding.stem);
+        }
+    });
+}
+
 /// The 2025-07-15 status page with Browns Ferry 3 down and citing EN 45290, its 2009 scram.
 fn citing_page() -> Vec<u8> {
     let page = String::from_utf8(fixture("status/2025-07-15.html")).unwrap();

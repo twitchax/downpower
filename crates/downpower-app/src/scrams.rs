@@ -19,7 +19,9 @@ use downpower_core::triggers::{self, Circumstance, Series, System, UnitRow, Year
 use crate::bars;
 use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
 use crate::filters::Range;
+use crate::findings::FindingsOn;
 use crate::state::ViewState;
+use crate::views::View;
 
 /// A system's CSS class suffix: its slug with hyphens.
 fn css(system: System) -> String {
@@ -332,6 +334,7 @@ pub fn ScramsPage() -> impl IntoView {
             <p class="muted">
                 "What started each reactor scram the NRC was notified of, and what the scrams cost: the output each unit lost until it was back near the power it scrammed from. The range above drives every chart."
             </p>
+            <FindingsOn view=View::Scrams />
         </header>
         <div class="filters">
             <Range state />

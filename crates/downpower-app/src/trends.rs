@@ -19,7 +19,9 @@ use downpower_core::{Families, Family};
 use crate::bars;
 use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
 use crate::filters::Filters;
+use crate::findings::FindingsOn;
 use crate::state::ViewState;
+use crate::views::View;
 
 /// The visible families bottom up, each with its index in a column of eight.
 fn stack(visible: Families) -> Vec<(Family, usize)> {
@@ -400,6 +402,7 @@ pub fn TrendsPage() -> impl IntoView {
             <p class="muted">
                 "The fleet over the years, each chart a rate so a fleet that changes size doesn't skew it. The range, layer and families above drive every chart."
             </p>
+            <FindingsOn view=View::Trends />
         </header>
         <Filters state markers=false />
         <div class="row">

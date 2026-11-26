@@ -1,10 +1,121 @@
 //! Findings (DESIGN.md Decisions 25 and 44–47, PRD-0008): the table the build script compiles in
 //! from `findings/*.md`, their pages, and each view's line of the findings drawn on it.
 
+use leptos::prelude::*;
+use leptos_meta::{Meta, Title};
+use leptos_router::hooks::{use_params_map, use_query_map};
+
 use downpower_core::findings::Finding;
+
+use crate::state::ViewState;
+use crate::views::{View, ViewFigure};
 
 /// Every finding, by number.
 pub static FINDINGS: &[Finding] = include!(concat!(env!("OUT_DIR"), "/findings.rs"));
+
+/// `/findings`: every finding, newest first.
+#[component]
+pub fn FindingsPage() -> impl IntoView {
+    let items = FINDINGS
+        .iter()
+        .rev()
+        .map(|finding| {
+            view! {
+                <li>
+                    <a href=finding.href()>{finding.title}</a>
+                    <p class="muted">{finding.summary}</p>
+                    <p class="meta">{format!("{:04} · written {} · on {}", finding.number, finding.written, finding.view)}</p>
+                </li>
+            }
+        })
+        .collect_view();
+    view! {
+        <Title text="Findings · downpower" />
+        <header class="intro">
+            <h1>"Findings"</h1>
+            <p class="muted">"Short notes on what the charts show, each beside its chart. A note's numbers hold as of the day it was written."</p>
+        </header>
+        {FINDINGS.is_empty().then(|| view! { <p class="muted">"No findings yet."</p> })}
+        <ol class="findings">{items}</ol>
+    }
+}
+
+/// `/findings/{NNNN-slug}`: one finding (DESIGN.md Decision 45).
+#[component]
+pub fn FindingPage() -> impl IntoView {
+    let params = use_params_map();
+    move || {
+        let stem = params.with(|params| params.get("stem")).unwrap_or_default();
+        match FINDINGS.iter().find(|finding| finding.stem == stem) {
+            Some(finding) => view! { <Note finding /> }.into_any(),
+            None => view! { <p class="muted">{format!("No finding {stem}.")}</p> }.into_any(),
+        }
+    }
+}
+
+/// A finding's page: its title, summary and dates, its figure live at the pinned state, and its
+/// note. Only `table` comes from the page's own URL, so the figure's table can be opened here.
+#[component]
+fn Note(finding: &'static Finding) -> impl IntoView {
+    let query = use_query_map();
+    let pinned = ViewState::parse_query(finding.query);
+    let state = Memo::new(move |_| ViewState {
+        table: query.with(|query| query.get("table")).as_deref() == Some("1"),
+        ..pinned
+    });
+    let figure = View::from_path(finding.view).and_then(|view| {
+        let index = view.figure(finding.figure)?;
+        Some(view! { <ViewFigure view index state /> })
+    });
+    let table = move || if state.get().table { finding.href() } else { format!("{}?table=1", finding.href()) };
+    view! {
+        <Title text=format!("{} · downpower", finding.title) />
+        <Meta name="description" content=finding.summary />
+        <Meta property="og:title" content=finding.title />
+        <Meta property="og:description" content=finding.summary />
+        <Meta property="og:type" content="article" />
+        <article class="finding">
+            <header class="intro">
+                <p class="label">
+                    <a href="/findings">"Findings"</a>
+                    {format!(" · {:04}", finding.number)}
+                </p>
+                <h1>{finding.title}</h1>
+                <p class="muted">{finding.summary}</p>
+                <p class="meta">{format!("Written {}, on data through {}", finding.written, finding.through)}</p>
+            </header>
+            {figure}
+            <div class="row wrap">
+                <a class="btn" href=finding.view_href()>
+                    "Open the whole view"
+                </a>
+                <a class="btn" aria-pressed=move || state.get().table.to_string() href=table>
+                    "Table"
+                </a>
+            </div>
+            <div class="note" inner_html=finding.html></div>
+        </article>
+    }
+}
+
+/// A view's line of the findings drawn on it, if any.
+#[component]
+pub fn FindingsOn(view: View) -> impl IntoView {
+    let mine: Vec<&'static Finding> = FINDINGS.iter().filter(|finding| finding.view == view.path()).collect();
+    (!mine.is_empty()).then(|| {
+        let links = mine
+            .into_iter()
+            .enumerate()
+            .map(|(index, finding)| {
+                view! {
+                    {(index > 0).then_some(" · ")}
+                    <a href=finding.href()>{finding.title}</a>
+                }
+            })
+            .collect_view();
+        view! { <p class="meta findings-on">"Findings: " {links}</p> }
+    })
+}
 
 #[cfg(test)]
 mod tests {

@@ -39,12 +39,14 @@ use crate::event::EventPage;
 use crate::explorer::EventsExplorer;
 use crate::ffd::FfdPage;
 use crate::filters::Filters;
+use crate::findings::{FindingPage, FindingsOn, FindingsPage};
 pub use crate::icon::Icon;
 use crate::lost::StackedArea;
 use crate::scrams::ScramsPage;
 use crate::state::ViewState;
 use crate::status::StatusPage;
 use crate::trends::TrendsPage;
+use crate::views::View;
 
 /// The HTML document the server renders around [`App`].
 #[must_use]
@@ -85,6 +87,7 @@ pub fn App() -> impl IntoView {
             <main>
                 <nav class="nav">
                     <a href="/">"downpower"</a>
+                    <a href="/findings">"findings"</a>
                     <a href="/trends">"trends"</a>
                     <a href="/scrams">"scrams"</a>
                     <a href="/events">"events"</a>
@@ -95,6 +98,8 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("") view=HomePage />
                     <Route path=StaticSegment("events") view=EventsExplorer />
                     <Route path=(StaticSegment("events"), ParamSegment("number")) view=EventPage />
+                    <Route path=StaticSegment("findings") view=FindingsPage />
+                    <Route path=(StaticSegment("findings"), ParamSegment("stem")) view=FindingPage />
                     <Route path=StaticSegment("trends") view=TrendsPage />
                     <Route path=StaticSegment("scrams") view=ScramsPage />
                     <Route path=StaticSegment("ffd") view=FfdPage />
@@ -118,6 +123,7 @@ fn HomePage() -> impl IntoView {
             <p class="muted">
                 "Why US nuclear reactors lose output: every unit, every day since 1999, colored by the cause the NRC's daily status report gives."
             </p>
+            <FindingsOn view=View::Home />
         </header>
         <Filters state />
         <BarcodeView state />

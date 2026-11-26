@@ -237,3 +237,20 @@ path.rule { fill: none; stroke: var(--text-2); stroke-width: 1px; stroke-dasharr
   // An axis thinned for a wide plot crowds a phone's: only the five-year marks show.
   .axis .tick.minor { display: none; }
 }
+
+// Findings (PRD-0008): the index, a finding's page and its note, and a view's line of them.
+.findings { list-style: none; margin: 0; padding: 0; display: grid; max-width: 72ch; }
+.findings li { display: grid; gap: var(--s-1); padding: var(--s-3) 0; border-bottom: 1px solid var(--line); }
+.findings a, .findings-on a, .finding .label a { color: var(--text-1); text-decoration: none; }
+.findings a:hover, .findings a:focus-visible, .findings-on a:hover, .findings-on a:focus-visible,
+.finding .label a:hover, .finding .label a:focus-visible { color: var(--accent-mid); }
+.finding { display: grid; gap: var(--s-4); min-width: 0; }
+.note { max-width: 72ch; line-height: 1.65; }
+.note > :first-child { margin-top: 0; }
+.note h2 { font-size: var(--text-lg); font-weight: 500; }
+.note a { color: var(--accent-mid); }
+.note table { border-collapse: collapse; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.note th, .note td { padding: var(--s-1) var(--s-4) var(--s-1) 0; text-align: right; border-bottom: 1px solid var(--line); }
+.note th:first-child, .note td:first-child { text-align: left; }
+.note .footnote-definition { font-size: var(--text-sm); color: var(--text-2); display: flex; gap: var(--s-2); }
+.note .footnote-definition p { margin: 0; }
