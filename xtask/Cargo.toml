@@ -13,10 +13,18 @@ serde_json.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 downpower-ingest.workspace = true
+# `finding`: the views and their state (the app), and the parser a stub must pass (core's `render`,
+# which also puts core's render tests in the workspace's test run).
+downpower-app.workspace = true
+downpower-core = { workspace = true, features = ["render"] }
 chrono.workspace = true
 zip.workspace = true
 calamine.workspace = true
 dbase.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

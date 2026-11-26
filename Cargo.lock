@@ -7542,8 +7542,12 @@ dependencies = [
  "chrono",
  "clap",
  "dbase",
+ "downpower-app",
+ "downpower-core",
  "downpower-ingest",
+ "pretty_assertions",
  "serde_json",
+ "tempfile",
  "zip",
 ]
 

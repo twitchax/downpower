@@ -23,6 +23,7 @@ mod capacity;
 mod crosscheck;
 mod events;
 mod ffd;
+mod finding;
 mod oracle;
 mod scrams;
 mod triggers;
@@ -109,6 +110,15 @@ enum Command {
         #[arg(long)]
         episodes: bool,
     },
+    /// Writes the next finding's stub (PRD-0008 T-004) from a chart view's URL, with the figure as
+    /// its fragment: `cargo xtask finding 'http://127.0.0.1:3917/trends?from=1999-01-01#scram-rate'
+    /// scrams-fell`. The note and summary are written by hand.
+    Finding {
+        /// The view's URL, or its path and query, ending in `#<figure id>`.
+        url: String,
+        /// The file's slug: lowercase words joined by hyphens.
+        slug: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -126,6 +136,7 @@ fn main() -> anyhow::Result<()> {
         Command::Scrams { examples } => scrams::run(&cli.data_dir, examples),
         Command::Ffd { candidates, texts } => ffd::run(&cli.data_dir, candidates, texts.as_deref()),
         Command::Triggers { episodes } => triggers::run(&cli.data_dir, episodes),
+        Command::Finding { url, slug } => finding::run(&cli.data_dir, &url, &slug),
     }
 }
 

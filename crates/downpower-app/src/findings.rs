@@ -14,11 +14,15 @@ mod tests {
     use crate::state::ViewState;
     use crate::views::View;
 
-    /// Whether a finding draws a figure its view has, at a state its view reads: its query sets only
-    /// the view's parameters and reads back unchanged, so a renamed or reordered parameter fails here
-    /// instead of quietly drawing the default view.
+    /// Whether a finding is written and draws a figure its view has, at a state its view reads: its
+    /// query sets only the view's parameters and reads back unchanged, so a renamed or reordered
+    /// parameter fails here instead of quietly drawing the default view. A stub builds, so a draft
+    /// can be read locally, but can't land with its TODOs.
     fn check(finding: &Finding) -> Result<(), String> {
         let stem = finding.stem;
+        if [finding.title, finding.summary, finding.html].iter().any(|text| text.contains("TODO")) {
+            return Err(format!("{stem}: a TODO is left from the stub (`cargo xtask finding`); write it before it lands"));
+        }
         let views = View::ALL.map(View::path).join(", ");
         let view = View::from_path(finding.view).ok_or_else(|| format!("{stem}: no chart view at {:?}; there are {views}", finding.view))?;
         let reads = view.reads();
@@ -87,6 +91,20 @@ mod tests {
     fn uat_findings_checks_reject_a_parameter_the_view_doesnt_read() {
         let error = error(&finding("/ffd", "?from=2010-01-01", "ffd-rate"));
         assert!(error.contains("`from`"), "{error}");
+    }
+
+    #[test]
+    fn uat_findings_checks_reject_a_stub_left_unwritten() {
+        let stub = Finding {
+            summary: "TODO: one sentence for the index and the link preview.",
+            ..finding("/trends", "", "scram-rate")
+        };
+        assert!(error(&stub).contains("TODO"));
+        let stub = Finding {
+            html: "<p>TODO: the note.</p>\n",
+            ..finding("/trends", "", "scram-rate")
+        };
+        assert!(error(&stub).contains("TODO"));
     }
 
     #[test]
