@@ -53,8 +53,9 @@ pub fn FindingPage() -> impl IntoView {
     }
 }
 
-/// A finding's page: its title, summary and dates, its figure live at the pinned state, and its
-/// note. Only `table` comes from the page's own URL, so the figure's table can be opened here.
+/// A finding's page: its title and dates, its figure live at the pinned state, and its note. The
+/// summary is the index's and the link preview's, since the note's opening says it again here.
+/// Only `table` comes from the page's own URL, so the figure's table can be opened here.
 #[component]
 fn Note(finding: &'static Finding) -> impl IntoView {
     let query = use_query_map();
@@ -81,7 +82,6 @@ fn Note(finding: &'static Finding) -> impl IntoView {
                     {format!(" · {:04}", finding.number)}
                 </p>
                 <h1>{finding.title}</h1>
-                <p class="muted">{finding.summary}</p>
                 <p class="meta">{format!("Written {}, on data through {}", finding.written, finding.through)}</p>
             </header>
             {figure}

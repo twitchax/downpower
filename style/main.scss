@@ -141,7 +141,7 @@ h1 { font-size: var(--text-xl); font-weight: 500; margin: 0; }
 .totals caption { text-align: left; padding-bottom: var(--s-2); }
 .totals tr.hidden { color: var(--text-3); }
 
-.nav { display: flex; gap: var(--s-4); font-size: var(--text-sm); }
+.nav { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--text-sm); }
 .nav a { color: var(--text-3); text-decoration: none; }
 .nav a:hover, .nav a:focus-visible { color: var(--accent-mid); }
 
