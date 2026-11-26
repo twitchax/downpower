@@ -17,7 +17,7 @@ use downpower_core::trends::DAYS_PER_YEAR;
 
 use crate::area::HEIGHT;
 use crate::bars;
-use crate::chart::{Chart, Column, Line, Mark, Plot, Table, TableView, one, percent, scale, year_label};
+use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
 use crate::state::ViewState;
 
 /// The year columns of the overlay, starred when partial.
@@ -298,65 +298,96 @@ async fn load() -> Result<Arc<Series>, String> {
     Err("the FFD series loads in the browser".to_owned())
 }
 
+/// The page's figures, in order (PRD-0008 T-002).
+pub const FIGURES: [Figure; 3] = [
+    Figure {
+        id: "ffd-count",
+        label: "FFD events by year",
+        meta: "at operating reactors",
+    },
+    Figure {
+        id: "ffd-rate",
+        label: "Rate",
+        meta: "FFD events per 100 operating unit-years",
+    },
+    Figure {
+        id: "legal-share",
+        label: "Legal cannabis",
+        meta: "% of operating unit-years in states where it was legal",
+    },
+];
+
+/// The series and its charts, and the loading status.
+#[derive(Clone, Copy)]
+struct Model {
+    series: Memo<Option<Arc<Series>>>,
+    charts: Memo<Option<[(Chart, Table); 3]>>,
+    status: Memo<Option<String>>,
+}
+
+/// Loads the FFD series and builds its charts. They span every year: the page takes no range.
+fn model() -> Model {
+    let data = LocalResource::new(load);
+    let series = Memo::new(move |_| data.get()?.ok());
+    let charts = Memo::new(move |_| {
+        let years = series.get().map(|series| ffd::years(&series))?;
+        Some([counts(&years), rates(&years), shares(&years)])
+    });
+    let status = Memo::new(move |_| match data.get() {
+        None => Some("loading…".to_owned()),
+        Some(Err(error)) => Some(error),
+        Some(Ok(_)) => None,
+    });
+    Model { series, charts, status }
+}
+
+/// A figure's legend: its swatches, and the rule marking Part 26's 2008 rewrite.
+fn legend(keys: &[(&'static str, &'static str)]) -> AnyView {
+    let items = keys
+        .iter()
+        .map(|(class, label)| {
+            view! {
+                <span class="legend-key">
+                    <span class=format!("swatch {class}")></span>
+                    {*label}
+                </span>
+            }
+        })
+        .collect_view();
+    view! {
+        <span class="row">
+            {items}
+            <span class="legend-key">
+                <span class="swatch rule-key"></span>
+                "Part 26 rewrite"
+            </span>
+        </span>
+    }
+    .into_any()
+}
+
+/// Figure `index` of [`FIGURES`] at `state`.
+fn draw(model: Model, state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let keys: &[(&'static str, &'static str)] = match index {
+        0 => &[("ffd-drug", "drug-related"), ("ffd-alcohol", "alcohol"), ("ffd-other", "neither named")],
+        1 => &[("ffd-drug", "drug-related"), ("ffd-rest", "every other FFD event")],
+        _ => &[("legal-adult", "adult use"), ("legal-medical", "medical only")],
+    };
+    let table = Memo::new(move |_| state.get().table);
+    FIGURES.get(index).map(|spec| chart::figure(*spec, model.charts, index, table, Some(legend(keys))))
+}
+
 #[component]
 pub fn FfdPage() -> impl IntoView {
     let query = use_query_map();
     let state = Memo::new(move |_| query.with(|query| ViewState::from_query(|name| query.get(name))));
     let table = Memo::new(move |_| state.get().table);
     let go = crate::filters::navigator();
-    let data = LocalResource::new(load);
-    let series = Memo::new(move |_| data.get()?.ok());
-    let years = Memo::new(move |_| series.get().map(|series| ffd::years(&series)));
-    let charts = Memo::new(move |_| {
-        let years = years.get()?;
-        Some([counts(&years), rates(&years), shares(&years)])
-    });
-    let status = move || match data.get() {
-        None => Some("loading…".to_owned()),
-        Some(Err(error)) => Some(error),
-        Some(Ok(_)) => None,
-    };
+    let model = model();
+    let Model { series, status, .. } = model;
     let marijuana = move || {
         let series = series.get()?;
         Some(series.events.iter().filter(|event| event.tags.substance == Substance::Marijuana).count())
-    };
-    let figure = move |index: usize, label: &'static str, meta: &'static str, legend: AnyView| {
-        let chart = Memo::new(move |_| charts.get().map(|charts| charts[index].0.clone()));
-        let rows = Memo::new(move |_| charts.get().map(|charts| charts[index].1.clone()));
-        view! {
-            <figure class="area bars">
-                <figcaption class="row">
-                    <span class="label">{label}</span>
-                    <span class="meta">{meta}</span>
-                    {legend}
-                </figcaption>
-                <Plot chart />
-                {move || table.get().then(|| view! { <TableView table=rows /> })}
-            </figure>
-        }
-    };
-    let legend = |keys: &[(&'static str, &'static str)]| {
-        let items = keys
-            .iter()
-            .map(|(class, label)| {
-                view! {
-                    <span class="legend-key">
-                        <span class=format!("swatch {class}")></span>
-                        {*label}
-                    </span>
-                }
-            })
-            .collect_view();
-        view! {
-            <span class="row">
-                {items}
-                <span class="legend-key">
-                    <span class="swatch rule-key"></span>
-                    "Part 26 rewrite"
-                </span>
-            </span>
-        }
-        .into_any()
     };
 
     view! {
@@ -373,11 +404,9 @@ pub fn FfdPage() -> impl IntoView {
             <a class="btn" href=format!("/events{}", EventsState { ffd: true, ..EventsState::default() }.to_query())>
                 "List the events"
             </a>
-            {move || status().map(|status| view! { <span class="meta">{status}</span> })}
+            {move || status.get().map(|status| view! { <span class="meta">{status}</span> })}
         </div>
-        {figure(0, "FFD events by year", "at operating reactors", legend(&[("ffd-drug", "drug-related"), ("ffd-alcohol", "alcohol"), ("ffd-other", "neither named")]))}
-        {figure(1, "Rate", "FFD events per 100 operating unit-years", legend(&[("ffd-drug", "drug-related"), ("ffd-rest", "every other FFD event")]))}
-        {figure(2, "Legal cannabis", "% of operating unit-years in states where it was legal", legend(&[("legal-adult", "adult use"), ("legal-medical", "medical only")]))}
+        {(0..FIGURES.len()).map(|index| draw(model, state, index)).collect_view()}
         <StateTable series />
         <Breakdowns series />
         <section class="intro caveats">
@@ -397,6 +426,16 @@ pub fn FfdPage() -> impl IntoView {
                 "Rates are per 100 operating unit-years: the ledger's in-service unit-days. Events at construction sites (Vogtle 3 and 4 before commercial operation, Summer 2 and 3), at shut-down reactors and outside power reactors count apart. Legalization dates are hand-curated from Wikipedia's timeline (CC BY-SA 4.0), checked against NCSL and the statutes; medical means a comprehensive program, as NCSL defines one."
             </p>
         </section>
+    }
+}
+
+/// One of the page's figures alone, for a finding's page (DESIGN.md Decision 45).
+#[component]
+pub(crate) fn FfdFigure(state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let model = model();
+    view! {
+        {move || model.status.get().map(|status| view! { <p class="meta">{status}</p> })}
+        {draw(model, state, index)}
     }
 }
 

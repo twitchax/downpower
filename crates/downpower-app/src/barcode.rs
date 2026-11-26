@@ -12,6 +12,7 @@ use downpower_core::Family;
 use downpower_core::barcode::{Barcode, Cell, Layer};
 use downpower_core::markers::Markers;
 
+use crate::chart::Figure;
 use crate::paint::{self, Window};
 use crate::state::{ViewState, year_ticks};
 
@@ -193,6 +194,14 @@ fn marked(markers: Option<&Markers>, target: &Target) -> Vec<(u32, bool)> {
     marked
 }
 
+/// The barcode as the home view lists it (PRD-0008 T-002). It has no caption: the label names it
+/// where a finding lists it.
+pub const FIGURE: Figure = Figure {
+    id: "barcode",
+    label: "Fleet barcode",
+    meta: "one row per unit, each reduced day colored by its cause family",
+};
+
 #[component]
 pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
     let layer = Memo::new(move |_| state.get().layer);
@@ -259,7 +268,7 @@ pub fn BarcodeView(state: Memo<ViewState>) -> impl IntoView {
     };
 
     view! {
-        <figure class="barcode">
+        <figure class="barcode" id=FIGURE.id>
             <div class="plot">
                 <canvas
                     node_ref=canvas

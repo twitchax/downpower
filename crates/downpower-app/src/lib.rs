@@ -15,6 +15,7 @@ pub mod event;
 pub mod explorer;
 pub mod ffd;
 pub mod filters;
+pub mod findings;
 mod icon;
 pub mod lost;
 pub mod paint;
@@ -23,6 +24,7 @@ pub mod state;
 pub mod status;
 mod tooltip;
 pub mod trends;
+pub mod views;
 
 use leptos::prelude::*;
 use leptos_meta::{HashedStylesheet, MetaTags, Title, provide_meta_context};

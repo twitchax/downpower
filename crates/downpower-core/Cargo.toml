@@ -12,6 +12,12 @@ repository.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 serde.workspace = true
+# `render` only: the app's build script parses findings/*.md and renders their notes.
+pulldown-cmark = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+
+[features]
+render = ["dep:pulldown-cmark", "dep:toml"]
 
 [dev-dependencies]
 pretty_assertions.workspace = true

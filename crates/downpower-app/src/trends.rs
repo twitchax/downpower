@@ -17,7 +17,7 @@ use downpower_core::trends::{self as fleet, OutageYear, ScramKind, Season, Trend
 use downpower_core::{Families, Family};
 
 use crate::bars;
-use crate::chart::{Chart, Column, Line, Mark, Plot, Table, TableView, one, percent, scale, year_label};
+use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
 use crate::filters::Filters;
 use crate::state::ViewState;
 
@@ -297,70 +297,102 @@ fn kinds(state: Memo<ViewState>) -> AnyView {
     .into_any()
 }
 
-#[component]
-pub fn TrendsPage() -> impl IntoView {
-    let query = use_query_map();
-    let state = Memo::new(move |_| query.with(|query| ViewState::from_query(|name| query.get(name))));
+/// The page's figures, in order (PRD-0008 T-002).
+pub const FIGURES: [Figure; 4] = [
+    Figure {
+        id: "loss-by-year",
+        label: "Reported power reduction by year",
+        meta: "% of net capacity, by cause family",
+    },
+    Figure {
+        id: "loss-by-month",
+        label: "By month of the year",
+        meta: "% of net capacity, each calendar month across the range",
+    },
+    Figure {
+        id: "outage-length",
+        label: "Refueling outage length",
+        meta: "days at 0% power, by the year the outage began",
+    },
+    Figure {
+        id: "scram-rate",
+        label: "Scrams",
+        meta: "Event Notification scrams per 100 operating unit-years",
+    },
+];
+
+/// The charts at a state, and what the page says beside them: the loading status and the partial
+/// year's note.
+#[derive(Clone, Copy)]
+struct Model {
+    charts: Memo<Option<[(Chart, Table); 4]>>,
+    status: Memo<Option<String>>,
+    note: Memo<Option<String>>,
+}
+
+/// Loads the trends and the layer's monthly series, and builds the charts at `state`.
+fn model(state: Memo<ViewState>) -> Model {
     let layer = Memo::new(move |_| state.get().layer);
     let monthly = LocalResource::new(move || crate::lost::load(layer.get()));
     let trends = LocalResource::new(load_trends);
     let data = Memo::new(move |_| -> Option<(Arc<Trends>, Arc<Monthly>)> { Some((trends.get()?.ok()?, monthly.get()?.ok()?)) });
-    let years = Memo::new(move |_| {
-        let (trends, monthly) = data.get()?;
-        let view = state.get();
-        Some(fleet::years(&trends, &monthly, view.from, view.to))
-    });
     let charts = Memo::new(move |_| {
         let (trends, monthly) = data.get()?;
         let view = state.get();
-        let years = years.get()?;
+        let years = fleet::years(&trends, &monthly, view.from, view.to);
         let seasons = fleet::seasons(&trends, &monthly, view.from, view.to);
         let outages = fleet::outage_years(&trends, view.from, view.to);
         Some([loss_by_year(&years, view.families), loss_by_month(&seasons, view.families), outage_length(&outages), scram_rate(&years)])
     });
-    let status = move || match (trends.get(), monthly.get()) {
+    let status = Memo::new(move |_| match (trends.get(), monthly.get()) {
         (Some(Err(error)), _) | (_, Some(Err(error))) => Some(error),
         (Some(Ok(_)), Some(Ok(_))) => None,
         _ => Some("loading…".to_owned()),
-    };
-    let note = move || {
+    });
+    let note = Memo::new(move |_| {
         let last = data.get().and_then(|(trends, _)| trends.last)?;
         Some(format!(
             "* partial: the range or the data covers part of the year. The data runs through {last}, and the last 28 days await their reasons."
         ))
+    });
+    Model { charts, status, note }
+}
+
+/// The outage chart's legend.
+fn spread() -> AnyView {
+    view! {
+        <span class="row">
+            <span class="legend-key">
+                <span class="swatch spread-key"></span>
+                "middle half"
+            </span>
+            <span class="legend-key">
+                <span class="swatch median-key"></span>
+                "median"
+            </span>
+        </span>
+    }
+    .into_any()
+}
+
+/// Figure `index` of [`FIGURES`] at `state`.
+fn draw(model: Model, state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let legend = match index {
+        2 => Some(spread()),
+        3 => Some(kinds(state)),
+        _ => None,
     };
+    let table = Memo::new(move |_| state.get().table);
+    FIGURES.get(index).map(|spec| chart::figure(*spec, model.charts, index, table, legend))
+}
+
+#[component]
+pub fn TrendsPage() -> impl IntoView {
+    let query = use_query_map();
+    let state = Memo::new(move |_| query.with(|query| ViewState::from_query(|name| query.get(name))));
+    let model = model(state);
     let go = crate::filters::navigator();
     let table = Memo::new(move |_| state.get().table);
-    let figure = move |index: usize, label: &'static str, meta: &'static str, legend: Option<AnyView>| {
-        let chart = Memo::new(move |_| charts.get().map(|charts| charts[index].0.clone()));
-        let rows = Memo::new(move |_| charts.get().map(|charts| charts[index].1.clone()));
-        view! {
-            <figure class="area bars">
-                <figcaption class="row">
-                    <span class="label">{label}</span>
-                    <span class="meta">{meta}</span>
-                    {legend}
-                </figcaption>
-                <Plot chart />
-                {move || table.get().then(|| view! { <TableView table=rows /> })}
-            </figure>
-        }
-    };
-    let spread = || {
-        view! {
-            <span class="row">
-                <span class="legend-key">
-                    <span class="swatch spread-key"></span>
-                    "middle half"
-                </span>
-                <span class="legend-key">
-                    <span class="swatch median-key"></span>
-                    "median"
-                </span>
-            </span>
-        }
-        .into_any()
-    };
 
     view! {
         <header class="intro">
@@ -374,13 +406,21 @@ pub fn TrendsPage() -> impl IntoView {
             <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| go(ViewState { table: !table.get_untracked(), ..state.get_untracked() })>
                 "Tables"
             </button>
-            {move || status().map(|status| view! { <span class="meta">{status}</span> })}
-            {move || note().map(|note| view! { <span class="meta">{note}</span> })}
+            {move || model.status.get().map(|status| view! { <span class="meta">{status}</span> })}
+            {move || model.note.get().map(|note| view! { <span class="meta">{note}</span> })}
         </div>
-        {figure(0, "Reported power reduction by year", "% of net capacity, by cause family", None)}
-        {figure(1, "By month of the year", "% of net capacity, each calendar month across the range", None)}
-        {figure(2, "Refueling outage length", "days at 0% power, by the year the outage began", Some(spread()))}
-        {figure(3, "Scrams", "Event Notification scrams per 100 operating unit-years", Some(kinds(state)))}
+        {(0..FIGURES.len()).map(|index| draw(model, state, index)).collect_view()}
+    }
+}
+
+/// One of the page's figures alone at `state`, for a finding's page (DESIGN.md Decision 45).
+#[component]
+pub(crate) fn TrendsFigure(state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let model = model(state);
+    view! {
+        {move || model.status.get().map(|status| view! { <p class="meta">{status}</p> })}
+        {draw(model, state, index)}
+        {move || model.note.get().map(|note| view! { <p class="meta">{note}</p> })}
     }
 }
 

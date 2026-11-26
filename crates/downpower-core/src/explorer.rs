@@ -250,14 +250,7 @@ impl EventsState {
     /// The state of a raw query string, with or without its `?`, decoding `+` and `%XX`.
     #[must_use]
     pub fn parse_query(query: &str) -> Self {
-        let pairs: Vec<(String, String)> = query
-            .trim_start_matches('?')
-            .split('&')
-            .filter_map(|pair| {
-                let (name, value) = pair.split_once('=')?;
-                Some((decode(name), decode(value)))
-            })
-            .collect();
+        let pairs = pairs(query);
         Self::from_query(|name| pairs.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone()))
     }
 
@@ -375,6 +368,20 @@ fn encode(value: &str) -> String {
         }
     }
     out
+}
+
+/// A query string's `name=value` pairs, decoded, in order: `?a=1&b=x%20y`, or the same without its
+/// `?`. A pair without `=` is dropped.
+#[must_use]
+pub fn pairs(query: &str) -> Vec<(String, String)> {
+    query
+        .trim_start_matches('?')
+        .split('&')
+        .filter_map(|pair| {
+            let (name, value) = pair.split_once('=')?;
+            Some((decode(name), decode(value)))
+        })
+        .collect()
 }
 
 /// Decodes `+` and `%XX`; a malformed escape stays as written.

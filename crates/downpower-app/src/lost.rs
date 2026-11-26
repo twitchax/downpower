@@ -14,6 +14,7 @@ use downpower_core::barcode::Layer;
 use downpower_core::series::Monthly;
 
 use crate::area::{self, HEIGHT, WIDTH};
+use crate::chart::Figure;
 use crate::state::{ViewState, thin};
 
 /// Kilowatt-hours in a terawatt-hour.
@@ -76,6 +77,13 @@ pub(crate) async fn load(layer: Layer) -> Result<Arc<Monthly>, String> {
 pub(crate) async fn load(_layer: Layer) -> Result<Arc<Monthly>, String> {
     Err("the series loads in the browser".to_owned())
 }
+
+/// The stacked area as the home view lists it (PRD-0008 T-002).
+pub const FIGURE: Figure = Figure {
+    id: "lost",
+    label: "Reported power reduction",
+    meta: "TWh per month, by cause family",
+};
 
 #[component]
 pub fn StackedArea(state: Memo<ViewState>) -> impl IntoView {
@@ -145,10 +153,10 @@ pub fn StackedArea(state: Memo<ViewState>) -> impl IntoView {
     };
 
     view! {
-        <figure class="area">
+        <figure class="area" id=FIGURE.id>
             <figcaption class="row">
-                <span class="label">"Reported power reduction"</span>
-                <span class="meta">"TWh per month, by cause family"</span>
+                <span class="label">{FIGURE.label}</span>
+                <span class="meta">{FIGURE.meta}</span>
                 <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| go(ViewState { table: !table.get_untracked(), ..state.get_untracked() })>
                     "Table"
                 </button>

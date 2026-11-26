@@ -17,7 +17,7 @@ use downpower_core::trends::Trends;
 use downpower_core::triggers::{self, Circumstance, Series, System, UnitRow, Year};
 
 use crate::bars;
-use crate::chart::{Chart, Column, Line, Mark, Plot, Table, TableView, one, percent, scale, year_label};
+use crate::chart::{self, Chart, Column, Figure, Line, Mark, Table, one, percent, scale, year_label};
 use crate::filters::Range;
 use crate::state::ViewState;
 
@@ -255,10 +255,38 @@ fn legend() -> AnyView {
     view! { <span class="row legend-keys">{items}</span> }.into_any()
 }
 
-#[component]
-pub fn ScramsPage() -> impl IntoView {
-    let query = use_query_map();
-    let state = Memo::new(move |_| query.with(|query| ViewState::from_query(|name| query.get(name))));
+/// The page's figures, in order (PRD-0008 T-002).
+pub const FIGURES: [Figure; 3] = [
+    Figure {
+        id: "trigger-rate",
+        label: "Scrams by trigger",
+        meta: "per 100 operating unit-years, by the system the report says started the scram",
+    },
+    Figure {
+        id: "trigger-loss",
+        label: "Output lost to scrams",
+        meta: "% of net capacity, each scram's episode counted in the year it began",
+    },
+    Figure {
+        id: "tied-rate",
+        label: "Scrams tied to testing, maintenance or an error",
+        meta: "per 100 operating unit-years; the readout and table add weather",
+    },
+];
+
+/// The series and charts at a state, and what the page says beside them.
+#[derive(Clone, Copy)]
+struct Model {
+    data: Memo<Option<(Arc<Trends>, Arc<Series>)>>,
+    years: Memo<Option<Vec<Year>>>,
+    charts: Memo<Option<[(Chart, Table); 3]>>,
+    status: Memo<Option<String>>,
+    note: Memo<Option<String>>,
+}
+
+/// Loads the trends (for the fleet's exposure) and the scram series, and builds the charts at
+/// `state`.
+fn model(state: Memo<ViewState>) -> Model {
     let trends = LocalResource::new(crate::trends::load_trends);
     let series = LocalResource::new(load_series);
     let data = Memo::new(move |_| -> Option<(Arc<Trends>, Arc<Series>)> { Some((trends.get()?.ok()?, series.get()?.ok()?)) });
@@ -271,32 +299,33 @@ pub fn ScramsPage() -> impl IntoView {
         let years = years.get()?;
         Some([trigger_rate(&years), trigger_loss(&years), tied_rate(&years)])
     });
-    let status = move || match (trends.get(), series.get()) {
+    let status = Memo::new(move |_| match (trends.get(), series.get()) {
         (Some(Err(error)), _) | (_, Some(Err(error))) => Some(error),
         (Some(Ok(_)), Some(Ok(_))) => None,
         _ => Some("loading…".to_owned()),
-    };
-    let note = move || {
+    });
+    let note = Memo::new(move |_| {
         let last = data.get().and_then(|(trends, _)| trends.last)?;
         Some(format!("* partial: the range or the data covers part of the year. The data runs through {last}."))
-    };
+    });
+    Model { data, years, charts, status, note }
+}
+
+/// Figure `index` of [`FIGURES`] at `state`.
+fn draw(model: Model, state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let legend = (index < 2).then(legend);
+    let table = Memo::new(move |_| state.get().table);
+    FIGURES.get(index).map(|spec| chart::figure(*spec, model.charts, index, table, legend))
+}
+
+#[component]
+pub fn ScramsPage() -> impl IntoView {
+    let query = use_query_map();
+    let state = Memo::new(move |_| query.with(|query| ViewState::from_query(|name| query.get(name))));
+    let model = model(state);
     let go = crate::filters::navigator();
     let table = Memo::new(move |_| state.get().table);
-    let figure = move |index: usize, label: &'static str, meta: &'static str, legend: Option<AnyView>| {
-        let chart = Memo::new(move |_| charts.get().map(|charts| charts[index].0.clone()));
-        let rows = Memo::new(move |_| charts.get().map(|charts| charts[index].1.clone()));
-        view! {
-            <figure class="area bars">
-                <figcaption class="row">
-                    <span class="label">{label}</span>
-                    <span class="meta">{meta}</span>
-                    {legend}
-                </figcaption>
-                <Plot chart />
-                {move || table.get().then(|| view! { <TableView table=rows /> })}
-            </figure>
-        }
-    };
+    let Model { data, years, .. } = model;
     view! {
         <header class="intro">
             <h1>"Scram triggers"</h1>
@@ -311,14 +340,23 @@ pub fn ScramsPage() -> impl IntoView {
             <button class="btn" aria-pressed=move || table.get().to_string() on:click=move |_| go(ViewState { table: !table.get_untracked(), ..state.get_untracked() })>
                 "Tables"
             </button>
-            {move || status().map(|status| view! { <span class="meta">{status}</span> })}
-            {move || note().map(|note| view! { <span class="meta">{note}</span> })}
+            {move || model.status.get().map(|status| view! { <span class="meta">{status}</span> })}
+            {move || model.note.get().map(|note| view! { <span class="meta">{note}</span> })}
         </div>
-        {figure(0, "Scrams by trigger", "per 100 operating unit-years, by the system the report says started the scram", Some(legend()))}
-        {figure(1, "Output lost to scrams", "% of net capacity, each scram's episode counted in the year it began", Some(legend()))}
-        {figure(2, "Scrams tied to testing, maintenance or an error", "per 100 operating unit-years; the readout and table add weather", None)}
+        {(0..FIGURES.len()).map(|index| draw(model, state, index)).collect_view()}
         <UnitTable data state years />
         <Caveats />
+    }
+}
+
+/// One of the page's figures alone at `state`, for a finding's page (DESIGN.md Decision 45).
+#[component]
+pub(crate) fn ScramsFigure(state: Memo<ViewState>, index: usize) -> impl IntoView {
+    let model = model(state);
+    view! {
+        {move || model.status.get().map(|status| view! { <p class="meta">{status}</p> })}
+        {draw(model, state, index)}
+        {move || model.note.get().map(|note| view! { <p class="meta">{note}</p> })}
     }
 }
 

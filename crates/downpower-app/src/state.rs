@@ -51,6 +51,14 @@ impl ViewState {
         }
     }
 
+    /// The state a query string names (`?from=2010-01-01&table=1`, with or without its `?`), as
+    /// [`ViewState::from_query`] reads a URL's.
+    #[must_use]
+    pub fn parse_query(query: &str) -> Self {
+        let pairs = downpower_core::explorer::pairs(query);
+        Self::from_query(|name| pairs.iter().find(|(key, _)| key == name).map(|(_, value)| value.clone()))
+    }
+
     /// The query string for this state, with its `?`, or empty at the defaults.
     #[must_use]
     pub fn to_query(&self) -> String {
@@ -133,6 +141,17 @@ mod tests {
         assert!(hangs_left(0.98));
         assert!(!minor(2020) && !minor(2005));
         assert!(minor(2026) && minor(2002));
+    }
+
+    #[test]
+    fn a_query_string_parses_and_writes_back_canonically() {
+        let query = "?from=2010-01-01&to=2020-12-31&families=forced%2Cgrid&table=1";
+        let state = ViewState::parse_query(query);
+        assert_eq!(state.from, NaiveDate::from_ymd_opt(2010, 1, 1));
+        assert!(state.table);
+        assert_eq!(state.to_query(), "?from=2010-01-01&to=2020-12-31&families=grid,forced&table=1", "the families in their own order");
+        assert_eq!(ViewState::parse_query("table=1&from=2010-01-01").to_query(), "?from=2010-01-01&table=1");
+        assert_eq!(ViewState::parse_query(""), ViewState::default());
     }
 
     fn parse(query: &[(&str, &str)]) -> ViewState {

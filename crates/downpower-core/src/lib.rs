@@ -6,6 +6,7 @@ pub mod barcode;
 pub mod explorer;
 pub mod family;
 pub mod ffd;
+pub mod findings;
 pub mod markers;
 pub mod scrams;
 pub mod series;

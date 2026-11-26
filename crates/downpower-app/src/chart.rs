@@ -11,6 +11,15 @@ use crate::area::{self, HEIGHT, WIDTH};
 use crate::bars::{self, Rect};
 use crate::state::thin;
 
+/// A figure as a view lists it (PRD-0008 T-002): its id, the anchor a finding links to, and its
+/// caption's label and meta line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Figure {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub meta: &'static str,
+}
+
 /// A column along x: its label, and whether the days shown leave part of it out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Column {
@@ -51,6 +60,25 @@ pub struct Table {
     pub caption: String,
     pub head: Vec<String>,
     pub rows: Vec<Vec<String>>,
+}
+
+/// A bar chart's figure: the caption from `spec`, the plot of chart `index` of `charts`, and its
+/// table when `table` is on. Every page draws its figures through this, and a finding's page
+/// draws one the same way.
+pub(crate) fn figure<const N: usize>(spec: Figure, charts: Memo<Option<[(Chart, Table); N]>>, index: usize, table: Memo<bool>, legend: Option<AnyView>) -> impl IntoView {
+    let chart = Memo::new(move |_| charts.get().and_then(|charts| charts.get(index).map(|(chart, _)| chart.clone())));
+    let rows = Memo::new(move |_| charts.get().and_then(|charts| charts.get(index).map(|(_, rows)| rows.clone())));
+    view! {
+        <figure class="area bars" id=spec.id>
+            <figcaption class="row">
+                <span class="label">{spec.label}</span>
+                <span class="meta">{spec.meta}</span>
+                {legend}
+            </figcaption>
+            <Plot chart />
+            {move || table.get().then(|| view! { <TableView table=rows /> })}
+        </figure>
+    }
 }
 
 /// A percentage to two places.

@@ -41,6 +41,11 @@ default = []
 hydrate = ["leptos/hydrate", "dep:serde_json", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
 ssr = ["leptos/ssr", "leptos_meta/ssr", "leptos_router/ssr"]
 
+# The build script compiles findings/*.md in (DESIGN.md Decision 44).
+[build-dependencies]
+anyhow.workspace = true
+downpower-core = { workspace = true, features = ["render"] }
+
 [dev-dependencies]
 anyhow.workspace = true
 serde_json.workspace = true

@@ -63,6 +63,8 @@ csv = "1"
 # The tag table: catalog/tags.toml, and its keyword rules.
 regex = "1"
 toml = "1"
+# Findings' notes, rendered to HTML at build time (the app's build script), never in the browser.
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 # EIA's NUC_STATUS.zip: one deflated NDJSON file, read through the flate2 already in the tree.
 zip = { version = "9.5", default-features = false, features = ["deflate-flate2"] }
 # The NRC's scram dataset (.xlsx), and in xtask EIA-860's 1999–2006 generator files (.xls).
